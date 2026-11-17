@@ -58,13 +58,11 @@ impl PciNames {
                         name.to_string(),
                     );
                 }
-            } else if let Some(rest) = line.strip_prefix('\t') {
+            } else if let Some((id, name)) = line.strip_prefix('\t').and_then(|rest| rest.split_once("  ")) {
                 // device line: "<device-id>  name"
-                if let Some((id, name)) = rest.split_once("  ") {
-                    if id.len() == 4 && id.chars().all(|c| c.is_ascii_hexdigit()) {
-                        device = id.to_ascii_lowercase();
-                        devices.insert((vendor.clone(), device.clone()), name.to_string());
-                    }
+                if id.len() == 4 && id.chars().all(|c| c.is_ascii_hexdigit()) {
+                    device = id.to_ascii_lowercase();
+                    devices.insert((vendor.clone(), device.clone()), name.to_string());
                 }
             } else if let Some((id, name)) = line.split_once("  ") {
                 vendor = id.to_ascii_lowercase();

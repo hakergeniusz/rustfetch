@@ -119,8 +119,10 @@ mod tests {
         let (lines, width) = parse_art("  $1abc$2def\n  carried", colors);
         assert_eq!(lines.len(), 2);
         assert_eq!(seg_text(&lines[0]), "  abcdef");
-        assert_eq!(lines[0][0].color, "31");
-        assert_eq!(lines[0][1].color, "34");
+        // text before the first placeholder keeps the default color
+        assert_eq!(lines[0][0].color, "39");
+        assert_eq!(lines[0][1].color, "31");
+        assert_eq!(lines[0][2].color, "34");
         // color carries over to the next line
         assert_eq!(lines[1][0].color, "34");
         assert_eq!(width, 9);
