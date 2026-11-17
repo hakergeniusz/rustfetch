@@ -200,23 +200,22 @@ pub fn data_dirs() -> Vec<std::path::PathBuf> {
     dirs
 }
 
-/// Formats a byte count the way fastfetch does: two decimals in GiB,
-/// whole MiB/KiB otherwise.
+/// ffSizeAppendNum with fastfetch's defaults (IEC prefixes, 2 digits with
+/// trailing zeros kept, at most YiB): divide until below the base, then
+/// format like glibc %.*f.
 pub fn fmt_bytes(bytes: u64) -> String {
-    const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
-    const MIB: f64 = 1024.0 * 1024.0;
-    const KIB: f64 = 1024.0;
+    const UNITS: [&str; 9] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
 
-    let value = bytes as f64;
-    if value >= GIB {
-        format!("{:.2} GiB", value / GIB)
-    } else if value >= MIB {
-        format!("{:.0} MiB", value / MIB)
-    } else if value >= KIB {
-        format!("{:.0} KiB", value / KIB)
-    } else {
-        format!("{bytes} B")
+    let mut size = bytes as f64;
+    let mut counter = 0usize;
+    while size >= 1024.0 && counter < 8 {
+        size /= 1024.0;
+        counter += 1;
     }
+    if counter == 0 {
+        return format!("{bytes} B");
+    }
+    format!("{size:.2} {}", UNITS[counter])
 }
 
 #[cfg(test)]
@@ -250,10 +249,12 @@ mod tests {
     #[test]
     fn fmt_bytes_units() {
         assert_eq!(fmt_bytes(999), "999 B");
-        assert_eq!(fmt_bytes(1024), "1 KiB");
-        assert_eq!(fmt_bytes(1024 * 1024), "1 MiB");
+        assert_eq!(fmt_bytes(1024), "1.00 KiB");
+        assert_eq!(fmt_bytes(1024 * 1024), "1.00 MiB");
         assert_eq!(fmt_bytes(1024 * 1024 * 1024), "1.00 GiB");
-        assert_eq!(fmt_bytes(1024 * 1024 * 999), "999 MiB");
+        assert_eq!(fmt_bytes(1024 * 1024 * 999), "999.00 MiB");
+        assert_eq!(fmt_bytes(1024 * 1024 * 1024 * 58), "58.00 GiB");
+        assert_eq!(fmt_bytes(1024 * 1024 * 1024 * 11 + 125 * 1024 * 1024), "11.12 GiB");
     }
 
     #[test]
