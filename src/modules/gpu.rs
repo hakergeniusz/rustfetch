@@ -34,6 +34,7 @@ struct Card {
     device: String,
     subvendor: Option<String>,
     subdevice: Option<String>,
+    addr: Option<String>,
 }
 
 fn read_cards() -> Vec<Card> {
@@ -55,6 +56,9 @@ fn read_cards() -> Vec<Card> {
                 return None;
             }
             let dev = util::read_trimmed_in(&device, "device").map(|v| normalize_id(&v))?;
+            let addr = std::fs::canonicalize(&device)
+                .ok()
+                .and_then(|path| path.file_name().map(|name| name.to_string_lossy().into_owned()));
             Some(Card {
                 vendor,
                 device: dev,
@@ -62,11 +66,33 @@ fn read_cards() -> Vec<Card> {
                     .map(|v| normalize_id(&v)),
                 subdevice: util::read_trimmed_in(&device, "subsystem_device")
                     .map(|v| normalize_id(&v)),
+                addr,
             })
         })
         .collect();
     cards.sort_by(|a, b| a.vendor.cmp(&b.vendor).then(a.device.cmp(&b.device)));
     cards
+}
+
+/// fastfetch's ffGPUDetectTypeByVendorAndName, keyed by PCI vendor id.
+/// Returns the tag fastfetch appends ("Discrete"/"Integrated") or None.
+fn gpu_type(card: &Card, name: &str) -> Option<&'static str> {
+    match card.vendor.as_str() {
+        "10de" => {
+            let lowered = name.to_ascii_lowercase();
+            ["geforce", "quadro", "tesla"]
+                .iter()
+                .any(|prefix| lowered.starts_with(prefix))
+                .then_some("Discrete")
+        }
+        // 0000:00:02.0 is reserved for Intel integrated graphics
+        "8086" => match card.addr.as_deref() {
+            Some(addr) if addr.ends_with("00:02.0") => Some("Integrated"),
+            _ => Some("Discrete"),
+        },
+        "15ad" | "1af4" => Some("Integrated"), // VMware / RedHat virtio
+        _ => None,
+    }
 }
 
 /// The section of pci.ids covering one vendor: the vendor line plus every
@@ -193,7 +219,11 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         let block = content.as_deref().and_then(|content| vendor_block(content, &card.vendor));
         let name = describe(card, block);
         if seen.insert(name.clone()) {
-            rows.push(Row::new("GPU", name));
+            let value = match gpu_type(card, &name) {
+                Some(tag) => format!("{name} [{tag}]"),
+                None => name,
+            };
+            rows.push(Row::new("GPU", value));
         }
     }
     rows
