@@ -48,12 +48,12 @@ fn count_prefixed_lines(path: &str, prefix: &str) -> u64 {
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let mut total = 0u64;
+    let mut any = false;
     let mut parts = Vec::new();
 
     let mut add = |count: u64, label: &str| {
         if count > 0 {
-            total += count;
+            any = true;
             parts.push(format!("{count} ({label})"));
         }
     };
@@ -65,8 +65,8 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     add(count_subdirs("/var/lib/flatpak/app"), "flatpak");
     add(count_files_with_ext("/var/lib/snapd/snaps", "snap"), "snap");
 
-    if total == 0 {
+    if !any {
         return Vec::new();
     }
-    vec![Row::new("Packages", format!("{total} ({})", parts.join(", ")))]
+    vec![Row::new("Packages", parts.join(", "))]
 }
