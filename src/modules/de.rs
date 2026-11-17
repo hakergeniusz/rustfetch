@@ -71,5 +71,5 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         Some(version) => format!("{name} {version}"),
         None => name.to_string(),
     };
-    vec![Row::new("DE", value)]
+    vec![Row::new("Desktop Environment", value)]
 }

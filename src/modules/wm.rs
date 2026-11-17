@@ -54,5 +54,5 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         _ => "",
     };
 
-    vec![Row::new("WM", format!("{}{suffix}", pretty_name(found)))]
+    vec![Row::new("Window Manager", format!("{}{suffix}", pretty_name(found)))]
 }
