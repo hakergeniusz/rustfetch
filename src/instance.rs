@@ -1,5 +1,7 @@
 //! Runtime context shared by all modules: color capability and distro identity.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::io::IsTerminal;
 
 use crate::{cli::Cli, util};
@@ -12,6 +14,9 @@ pub struct Instance {
     pub distro_id: Option<String>,
     /// `ID_LIKE=` entries from /etc/os-release, lowercased.
     pub distro_like: Vec<String>,
+    /// Cached `gsettings list-recursively` results per schema, filled lazily
+    /// by the GTK modules so they share at most two spawns per run.
+    pub gnome_settings: RefCell<HashMap<String, HashMap<String, String>>>,
 }
 
 impl Instance {
@@ -35,10 +40,6 @@ impl Instance {
             }
         }
 
-        Self {
-            color,
-            distro_id,
-            distro_like,
-        }
+        Self { color, distro_id, distro_like, gnome_settings: RefCell::new(HashMap::new()) }
     }
 }

@@ -3,11 +3,15 @@
 pub mod battery;
 pub mod colors;
 pub mod cpu;
+pub mod cursor;
 pub mod de;
 pub mod display;
 pub mod disk;
+pub mod font;
 pub mod gpu;
+pub mod gtk;
 pub mod host;
+pub mod icons;
 pub mod kernel;
 pub mod locale;
 pub mod localip;
@@ -18,9 +22,11 @@ pub mod separator;
 pub mod shell;
 pub mod swap;
 pub mod terminal;
+pub mod theme;
 pub mod title;
 pub mod uptime;
 pub mod wm;
+pub mod wmtheme;
 
 use crate::instance::Instance;
 
@@ -94,6 +100,11 @@ modules![
     (display, "monitors: resolution, size, refresh rate"),
     (de, "desktop environment"),
     (wm, "window manager"),
+    (wmtheme, "window manager theme"),
+    (theme, "gtk theme"),
+    (icons, "icon theme"),
+    (font, "desktop font"),
+    (cursor, "cursor theme and size"),
     (terminal, "terminal emulator"),
     (cpu, "cpu model, core count and frequency"),
     (gpu, "gpu vendor and model"),
@@ -120,6 +131,11 @@ pub const DEFAULT_PRESET: &[&str] = &[
     "display",
     "de",
     "wm",
+    "wmtheme",
+    "theme",
+    "icons",
+    "font",
+    "cursor",
     "terminal",
     "cpu",
     "gpu",
