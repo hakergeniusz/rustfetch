@@ -23,10 +23,10 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
     let frsize = fs.f_frsize as u64;
     let total = fs.f_blocks as u64 * frsize;
-    // df-style used space: blocks minus free blocks.
+    // fastfetch's default calcType FREE: used = blocks - free (not just
+    // non-root-reserved available), and the percentage is over total.
     let used = fs.f_blocks.saturating_sub(fs.f_bfree) as u64 * frsize;
-    let available = fs.f_bavail as u64 * frsize;
-    let pct = util::percent(used, used + available).unwrap_or(0);
+    let pct = util::percent(used, total).unwrap_or(0);
 
     let mut value = format!(
         "{} / {} ({})",
