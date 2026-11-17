@@ -1,7 +1,0 @@
-{c:8}          /{c:7}o{c:1}.
-{c:8}        /{c:7}sssso{c:1}-
-{c:8}      /{c:7}ossssssso{c:1}:
-{c:8}    /{c:7}ssssssssssso{c:1}+
-{c:8}  /{c:7}ssssssssssssssso{c:1}+
-{c:8}//{c:7}osssssssssssssso{c:1}+-
- `+++++++++++++++-`
