@@ -58,8 +58,10 @@ fn read_cards() -> Vec<Card> {
             Some(Card {
                 vendor,
                 device: dev,
-                subvendor: util::read_trimmed_in(&device, "subsystem_vendor").map(|v| normalize_id(&v)),
-                subdevice: util::read_trimmed_in(&device, "subsystem_device").map(|v| normalize_id(&v)),
+                subvendor: util::read_trimmed_in(&device, "subsystem_vendor")
+                    .map(|v| normalize_id(&v)),
+                subdevice: util::read_trimmed_in(&device, "subsystem_device")
+                    .map(|v| normalize_id(&v)),
             })
         })
         .collect();
@@ -157,7 +159,11 @@ fn bracketed(name: &str) -> Option<String> {
 
 fn describe(card: &Card, block: Option<&str>) -> String {
     if let Some(block) = block {
-        let vendor = block.lines().next().and_then(|line| line.split_once("  ")).map(|(_, name)| name);
+        let vendor = block
+            .lines()
+            .next()
+            .and_then(|line| line.split_once("  "))
+            .map(|(_, name)| name);
         let (device, subsystem) =
             device_names(block, &card.device, card.subvendor.as_deref(), card.subdevice.as_deref());
 

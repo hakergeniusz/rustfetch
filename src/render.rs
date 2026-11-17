@@ -74,7 +74,8 @@ fn row_line(row: &Row, accent: &str, title: &str, color: bool) -> String {
     }
 }
 
-pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) {    if cli.pipe {
+pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) {
+    if cli.pipe {
         for row in rows {
             match &row.key {
                 Some(key) => println!("{key}: {}", row.value),

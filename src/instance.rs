@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::IsTerminal;
 
-use crate::{cli::Format, cli::Cli, util};
+use crate::{cli::Cli, cli::Format, util};
 
 pub struct Instance {
     /// True when ANSI escape sequences may be printed (interactive tty, colors
@@ -41,6 +41,11 @@ impl Instance {
             }
         }
 
-        Self { color, distro_id, distro_like, gnome_settings: RefCell::new(HashMap::new()) }
+        Self {
+            color,
+            distro_id,
+            distro_like,
+            gnome_settings: RefCell::new(HashMap::new()),
+        }
     }
 }

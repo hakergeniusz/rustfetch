@@ -237,7 +237,13 @@ fn parse_mode_name(name: &str) -> Option<(u32, u32, f64)> {
     Some((width.parse().ok()?, height.parse().ok()?, refresh.parse().ok()?))
 }
 
-fn format_value(width: u32, height: u32, refresh: f64, physical_mm: (u32, u32), built_in: bool) -> String {
+fn format_value(
+    width: u32,
+    height: u32,
+    refresh: f64,
+    physical_mm: (u32, u32),
+    built_in: bool,
+) -> String {
     let mut value = format!("{width}x{height}");
     let inch = f64::hypot(f64::from(physical_mm.0), f64::from(physical_mm.1)) / 25.4;
     if inch > 1.0 {
@@ -246,7 +252,11 @@ fn format_value(width: u32, height: u32, refresh: f64, physical_mm: (u32, u32), 
     if refresh > 0.0 {
         value.push_str(&format!(", {} Hz", (refresh + 0.5) as u64));
     }
-    value.push_str(if built_in { " [Built-in]" } else { " [External]" });
+    value.push_str(if built_in {
+        " [Built-in]"
+    } else {
+        " [External]"
+    });
     value
 }
 
@@ -258,13 +268,8 @@ fn rows_from_mutter(displays: &[MutterDisplay], edids: &[(String, Edid)]) -> Vec
             let edid = edids.iter().find(|(name, _)| *name == display.connector);
             let physical_mm = edid.map_or((0, 0), |(_, edid)| edid.physical_mm);
             let built_in = display.connector.contains("eDP") || display.connector.contains("LVDS");
-            let value = format_value(
-                display.width,
-                display.height,
-                display.refresh,
-                physical_mm,
-                built_in,
-            );
+            let value =
+                format_value(display.width, display.height, display.refresh, physical_mm, built_in);
             let name = edid
                 .and_then(|(_, edid)| edid.name.clone())
                 .unwrap_or_else(|| display.model.clone());

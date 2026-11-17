@@ -16,13 +16,15 @@ pub fn get(instance: &Instance, schema: &str, key: &str) -> Option<String> {
     }
 
     let mut values = HashMap::new();
-    if let Ok(output) =
-        std::process::Command::new("gsettings").args(["list-recursively", schema]).output()
+    if let Ok(output) = std::process::Command::new("gsettings")
+        .args(["list-recursively", schema])
+        .output()
     {
         // lines look like: "org.gnome.desktop.interface gtk-theme 'Adwaita-dark'"
         for line in String::from_utf8_lossy(&output.stdout).lines() {
             let mut fields = line.splitn(3, ' ');
-            let (Some(_schema), Some(name), Some(value)) = (fields.next(), fields.next(), fields.next())
+            let (Some(_schema), Some(name), Some(value)) =
+                (fields.next(), fields.next(), fields.next())
             else {
                 continue;
             };

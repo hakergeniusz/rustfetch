@@ -7,7 +7,9 @@ use std::net::Ipv4Addr;
 use crate::{instance::Instance, modules::Row};
 
 /// Virtual plumbing interfaces that are not real networks.
-const SKIPPED: &[&str] = &["docker", "br-", "veth", "virbr", "vboxnet", "wg", "tun", "tap"];
+const SKIPPED: &[&str] = &[
+    "docker", "br-", "veth", "virbr", "vboxnet", "wg", "tun", "tap",
+];
 
 fn is_skipped(name: &str) -> bool {
     name == "lo" || SKIPPED.iter().any(|prefix| name.starts_with(prefix))

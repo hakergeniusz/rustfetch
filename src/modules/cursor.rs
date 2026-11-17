@@ -4,7 +4,8 @@
 use crate::{instance::Instance, modules::Row};
 
 pub fn run(instance: &Instance) -> Vec<Row> {
-    let Some(theme) = super::gtk::get(instance, "org.gnome.desktop.interface", "cursor-theme") else {
+    let Some(theme) = super::gtk::get(instance, "org.gnome.desktop.interface", "cursor-theme")
+    else {
         return Vec::new();
     };
 
