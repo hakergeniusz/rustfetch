@@ -82,8 +82,9 @@ fn pretty_name(comm: &str) -> String {
 }
 
 /// Walks ancestors from our own pid, skipping shells and wrappers; the
-/// first process that is neither is the terminal.
-fn from_process_tree() -> Option<String> {
+/// first process that is neither is the terminal. Returns the raw comm so
+/// the terminalfont module can dispatch on it like fastfetch does.
+pub fn from_process_tree_raw() -> Option<String> {
     let mut pid = std::process::id();
     for _ in 0..32 {
         if pid <= 1 {
@@ -94,9 +95,31 @@ fn from_process_tree() -> Option<String> {
             pid = ppid;
             continue;
         }
-        return Some(pretty_name(&name));
+        return Some(name);
     }
     None
+}
+
+/// The terminal process name (comm) or the best env-based name, without
+/// pretty-casing; shared with the terminalfont module's dispatch.
+pub fn detect_raw() -> Option<String> {
+    if let Some(name) = from_process_tree_raw() {
+        return Some(name);
+    }
+    if let Ok(term_program) = std::env::var("TERM_PROGRAM") {
+        return Some(term_program);
+    }
+    if std::env::var_os("KONSOLE_VERSION").is_some() {
+        return Some("konsole".to_string());
+    }
+    if std::env::var_os("GHOSTTY_RESOURCES_DIR").is_some() {
+        return Some("ghostty".to_string());
+    }
+    std::env::var("TERM").ok().map(|term| from_term(&term))
+}
+
+fn from_process_tree() -> Option<String> {
+    from_process_tree_raw().as_deref().map(pretty_name)
 }
 
 fn from_term_program(value: &str) -> String {
