@@ -9,6 +9,7 @@ pub mod gpu;
 pub mod host;
 pub mod kernel;
 pub mod locale;
+pub mod localip;
 pub mod memory;
 pub mod os;
 pub mod packages;
@@ -97,6 +98,7 @@ modules![
     (memory, "ram usage"),
     (swap, "swap usage"),
     (disk, "root filesystem usage"),
+    (localip, "lan addresses of network interfaces"),
     (locale, "system locale"),
     (battery, "battery charge and status"),
     (colors, "terminal color palette"),
@@ -121,6 +123,7 @@ pub const DEFAULT_PRESET: &[&str] = &[
     "memory",
     "swap",
     "disk",
+    "localip",
     "locale",
     "battery",
     "colors",
