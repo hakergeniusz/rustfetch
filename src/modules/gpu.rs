@@ -183,7 +183,9 @@ fn bracketed(name: &str) -> Option<String> {
     (!inner.is_empty()).then(|| inner.to_string())
 }
 
-fn describe(card: &Card, block: Option<&str>) -> String {
+/// Returns (printed name, vendorless GPU name) — the type heuristics run on
+/// the vendorless name like fastfetch's gpu->name.
+fn describe(card: &Card, block: Option<&str>) -> (String, String) {
     if let Some(block) = block {
         let vendor = block
             .lines()
@@ -198,11 +200,11 @@ fn describe(card: &Card, block: Option<&str>) -> String {
                 .map(str::to_string)
                 .or_else(|| bracketed(device))
                 .unwrap_or_else(|| device.to_string());
-            return format!("{} {}", short_vendor(vendor), display);
+            return (format!("{} {}", short_vendor(vendor), display), display);
         }
     }
 
-    format!("{} {}", card.vendor, card.device)
+    (format!("{} {}", card.vendor, card.device), format!("{} {}", card.vendor, card.device))
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
@@ -217,9 +219,9 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
 
     for card in &cards {
         let block = content.as_deref().and_then(|content| vendor_block(content, &card.vendor));
-        let name = describe(card, block);
+        let (name, gpu_name) = describe(card, block);
         if seen.insert(name.clone()) {
-            let value = match gpu_type(card, &name) {
+            let value = match gpu_type(card, &gpu_name) {
                 Some(tag) => format!("{name} [{tag}]"),
                 None => name,
             };
