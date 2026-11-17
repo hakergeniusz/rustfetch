@@ -264,7 +264,7 @@ fn format_value(
 fn rows_from_mutter(displays: &[MutterDisplay], edids: &[(String, Edid)]) -> Vec<Row> {
     displays
         .iter()
-        .filter_map(|display| {
+        .map(|display| {
             let edid = edids.iter().find(|(name, _)| *name == display.connector);
             let physical_mm = edid.map_or((0, 0), |(_, edid)| edid.physical_mm);
             let built_in = display.connector.contains("eDP") || display.connector.contains("LVDS");
@@ -273,7 +273,7 @@ fn rows_from_mutter(displays: &[MutterDisplay], edids: &[(String, Edid)]) -> Vec
             let name = edid
                 .and_then(|(_, edid)| edid.name.clone())
                 .unwrap_or_else(|| display.model.clone());
-            Some(Row::new(&format!("Display ({name})"), value))
+            Row::new(&format!("Display ({name})"), value)
         })
         .collect()
 }

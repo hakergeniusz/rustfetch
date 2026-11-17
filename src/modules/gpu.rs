@@ -206,7 +206,9 @@ mod tests {
     #[test]
     fn vendor_block_slices_vendor_section() {
         let content = "# comment\n1002  AMD\n\t7300  card\n10de  NVIDIA\n\t2508  GA106 [GeForce RTX 3050 OEM]\n\t\t174b a630  sub\n2000  next\n";
-        let block = vendor_block(content, "10de").expect("block found");
+        let block = vendor_block(content, "10de");
+        assert!(block.is_some(), "block found");
+        let block = block.unwrap_or_default();
         assert!(block.starts_with("10de  NVIDIA"), "got: {block:?}");
         assert!(block.contains("2508"), "got: {block:?}");
         assert!(!block.contains("2000"), "got: {block:?}");
