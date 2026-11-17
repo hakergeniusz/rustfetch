@@ -70,5 +70,12 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         return Vec::new();
     };
 
-    vec![Row::new("WM", pretty_name(found).to_string())]
+    // fastfetch notes the session type on Wayland ("Mutter (Wayland)").
+    let suffix = match std::env::var("XDG_SESSION_TYPE").as_deref() {
+        Ok("wayland") => " (Wayland)",
+        Ok("x11") => " (x11)",
+        _ => "",
+    };
+
+    vec![Row::new("WM", format!("{}{suffix}", pretty_name(found)))]
 }
