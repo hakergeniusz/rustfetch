@@ -3,6 +3,7 @@
 pub mod battery;
 pub mod bios;
 pub mod board;
+pub mod r#break;
 pub mod colors;
 pub mod cpu;
 pub mod cursor;
@@ -23,11 +24,13 @@ pub mod memory;
 pub mod os;
 pub mod packages;
 pub mod physicaldisk;
+pub mod poweradapter;
 pub mod processes;
 pub mod separator;
 pub mod shell;
 pub mod swap;
 pub mod terminal;
+pub mod terminalfont;
 pub mod terminalsize;
 pub mod theme;
 pub mod title;
@@ -35,7 +38,7 @@ pub mod uptime;
 pub mod wm;
 pub mod wmtheme;
 
-use crate::instance::Instance;
+use crate::{instance::Instance, util};
 
 /// How a row should be rendered.
 #[derive(Clone, Copy)]
@@ -87,52 +90,50 @@ pub struct ModuleDef {
     pub run: fn(&Instance) -> Vec<Row>,
 }
 
-macro_rules! modules {
-    ($(($name:ident, $doc:literal)),+ $(,)?) => {
-        pub const REGISTRY: &[ModuleDef] = &[
-            $(ModuleDef { name: stringify!($name), doc: $doc, run: $name::run }),+
-        ];
-    };
-}
-
-modules![
-    (title, "user@host"),
-    (separator, "dashed separator line"),
-    (os, "operating system name and architecture"),
-    (host, "device model name"),
-    (bios, "firmware version and release date"),
-    (board, "motherboard name and version"),
-    (kernel, "kernel name and release"),
-    (uptime, "time since boot"),
-    (loadavg, "load averages of the last 1, 5 and 15 minutes"),
-    (lm, "login manager"),
-    (processes, "number of running processes"),
-    (packages, "installed packages by package manager"),
-    (shell, "user shell and version"),
-    (display, "monitors: resolution, size, refresh rate"),
-    (de, "desktop environment"),
-    (wm, "window manager"),
-    (wmtheme, "window manager theme"),
-    (theme, "gtk theme"),
-    (icons, "icon theme"),
-    (font, "desktop font"),
-    (cursor, "cursor theme and size"),
-    (terminal, "terminal emulator"),
-    (terminalsize, "terminal dimensions in cells and pixels"),
-    (cpu, "cpu model, core count and frequency"),
-    (gpu, "gpu vendor and model"),
-    (memory, "ram usage"),
-    (swap, "swap usage"),
-    (disk, "root filesystem usage"),
-    (physicaldisk, "physical storage devices"),
-    (localip, "lan addresses of network interfaces"),
-    (locale, "system locale"),
-    (battery, "battery charge and status"),
-    (colors, "terminal color palette"),
+/// All modules in fastfetch's ordering; `break` can't use the old macro
+/// because its name is a Rust keyword.
+pub const REGISTRY: &[ModuleDef] = &[
+    ModuleDef { name: "title", doc: "user@host", run: title::run },
+    ModuleDef { name: "separator", doc: "dashed separator line", run: separator::run },
+    ModuleDef { name: "os", doc: "operating system name and architecture", run: os::run },
+    ModuleDef { name: "host", doc: "device model name", run: host::run },
+    ModuleDef { name: "bios", doc: "firmware version and release date", run: bios::run },
+    ModuleDef { name: "board", doc: "motherboard name and version", run: board::run },
+    ModuleDef { name: "kernel", doc: "kernel name and release", run: kernel::run },
+    ModuleDef { name: "uptime", doc: "time since boot", run: uptime::run },
+    ModuleDef { name: "loadavg", doc: "load averages of the last 1, 5 and 15 minutes", run: loadavg::run },
+    ModuleDef { name: "lm", doc: "login manager", run: lm::run },
+    ModuleDef { name: "processes", doc: "number of running processes", run: processes::run },
+    ModuleDef { name: "packages", doc: "installed packages by package manager", run: packages::run },
+    ModuleDef { name: "shell", doc: "user shell and version", run: shell::run },
+    ModuleDef { name: "display", doc: "monitors: resolution, size, refresh rate", run: display::run },
+    ModuleDef { name: "de", doc: "desktop environment", run: de::run },
+    ModuleDef { name: "wm", doc: "window manager", run: wm::run },
+    ModuleDef { name: "wmtheme", doc: "window manager theme", run: wmtheme::run },
+    ModuleDef { name: "theme", doc: "gtk theme", run: theme::run },
+    ModuleDef { name: "icons", doc: "icon theme", run: icons::run },
+    ModuleDef { name: "font", doc: "desktop font", run: font::run },
+    ModuleDef { name: "cursor", doc: "cursor theme and size", run: cursor::run },
+    ModuleDef { name: "terminal", doc: "terminal emulator", run: terminal::run },
+    ModuleDef { name: "terminalfont", doc: "terminal font", run: terminalfont::run },
+    ModuleDef { name: "terminalsize", doc: "terminal dimensions in cells and pixels", run: terminalsize::run },
+    ModuleDef { name: "cpu", doc: "cpu model, core count and frequency", run: cpu::run },
+    ModuleDef { name: "gpu", doc: "gpu vendor and model", run: gpu::run },
+    ModuleDef { name: "memory", doc: "ram usage", run: memory::run },
+    ModuleDef { name: "swap", doc: "swap usage", run: swap::run },
+    ModuleDef { name: "disk", doc: "root filesystem usage", run: disk::run },
+    ModuleDef { name: "physicaldisk", doc: "physical storage devices", run: physicaldisk::run },
+    ModuleDef { name: "localip", doc: "lan addresses of network interfaces", run: localip::run },
+    ModuleDef { name: "locale", doc: "system locale", run: locale::run },
+    ModuleDef { name: "battery", doc: "battery charge and status", run: battery::run },
+    ModuleDef { name: "poweradapter", doc: "power adapter wattage", run: poweradapter::run },
+    ModuleDef { name: "break", doc: "an empty line", run: r#break::run },
+    ModuleDef { name: "colors", doc: "terminal color palette", run: colors::run },
 ];
 
 /// Modules shown when no explicit selection is given, mirroring fastfetch's
-/// default output.
+/// default preset (CMakeLists.txt DEFAULT_STRUCTURE). A fastfetch
+/// config.jsonc with a modules list overrides this.
 pub const DEFAULT_PRESET: &[&str] = &[
     "title",
     "separator",
@@ -151,16 +152,92 @@ pub const DEFAULT_PRESET: &[&str] = &[
     "font",
     "cursor",
     "terminal",
+    "terminalfont",
     "cpu",
     "gpu",
     "memory",
     "swap",
     "disk",
     "localip",
-    "locale",
     "battery",
+    "poweradapter",
+    "locale",
+    "break",
     "colors",
 ];
+
+/// fastfetch preset compatibility: a ~/.config/fastfetch/config.jsonc with a
+/// "modules" array takes over the default preset. Unknown module names are
+/// skipped (this port covers a subset of fastfetch's modules).
+fn preset_from_fastfetch_config() -> Option<Vec<&'static str>> {
+    let mut config = std::path::PathBuf::from(std::env::var_os("HOME")?);
+    config.push(".config/fastfetch/config.jsonc");
+    let content = util::read_file(config.to_str()?)?;
+
+    // strip comments, then take the array following "modules"
+    let mut cleaned = String::with_capacity(content.len());
+    let mut in_string = false;
+    let mut chars = content.chars().peekable();
+    while let Some(c) = chars.next() {
+        if in_string {
+            if c == '"' {
+                in_string = false;
+            }
+            cleaned.push(c);
+            continue;
+        }
+        if c == '"' {
+            in_string = true;
+            cleaned.push(c);
+        } else if c == '/' && chars.peek() == Some(&'/') {
+            for skipped in chars.by_ref() {
+                if skipped == '\n' {
+                    cleaned.push('\n');
+                    break;
+                }
+            }
+        } else if c == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            while let Some(skipped) = chars.next() {
+                if skipped == '*' && chars.peek() == Some(&'/') {
+                    chars.next();
+                    break;
+                }
+            }
+        } else {
+            cleaned.push(c);
+        }
+    }
+
+    let modules_pos = cleaned.find("\"modules\"")?;
+    let rest = &cleaned[modules_pos..];
+    let start = rest.find('[')?;
+    let depth_end = rest[start..]
+        .char_indices()
+        .scan(0i32, |depth, (i, c)| {
+            *depth += match c {
+                '[' => 1,
+                ']' => -1,
+                _ => 0,
+            };
+            Some((*depth, i))
+        })
+        .find(|(depth, _)| *depth == 0)
+        .map(|(_, i)| i + start)?;
+    let array = &rest[start + 1..depth_end];
+
+    let names: Vec<&'static str> = array
+        .split(',')
+        .filter_map(|item| {
+            let name = item.trim().trim_matches('"');
+            REGISTRY
+                .iter()
+                .find(|module| module.name == name)
+                .map(|module| module.name)
+        })
+        .collect();
+    (!names.is_empty()).then_some(names)
+}
 
 pub fn list_modules() {
     for module in REGISTRY {
@@ -192,7 +269,7 @@ pub fn colorize_percent(pct: u64, color: bool) -> String {
 /// overlap instead of adding up. Rows are still emitted in registry order.
 pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
     let names: Vec<&str> = if selected.is_empty() {
-        DEFAULT_PRESET.to_vec()
+        preset_from_fastfetch_config().unwrap_or_else(|| DEFAULT_PRESET.to_vec())
     } else {
         let unknown: Vec<&str> = selected
             .iter()
@@ -217,4 +294,14 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
             .collect()
     });
     results.into_iter().flatten().collect()
+}
+
+#[cfg(test)]
+mod preset_tests {
+    #[test]
+    fn fastfetch_config_preset_parses() {
+        let names = super::preset_from_fastfetch_config();
+        println!("preset: {:?}", names);
+        assert!(names.is_some(), "config.jsonc preset should parse");
+    }
 }
