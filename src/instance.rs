@@ -1,8 +1,8 @@
 //! Runtime context shared by all modules: color capability and distro identity.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::IsTerminal;
+use std::sync::Mutex;
 
 use crate::{cli::Cli, cli::Format, util};
 
@@ -15,8 +15,8 @@ pub struct Instance {
     /// `ID_LIKE=` entries from /etc/os-release, lowercased.
     pub distro_like: Vec<String>,
     /// Cached `gsettings list-recursively` results per schema, filled lazily
-    /// by the GTK modules so they share at most two spawns per run.
-    pub gnome_settings: RefCell<HashMap<String, HashMap<String, String>>>,
+    /// by the GTK modules. A Mutex because modules run in parallel threads.
+    pub gnome_settings: Mutex<HashMap<String, HashMap<String, String>>>,
 }
 
 impl Instance {
@@ -45,7 +45,7 @@ impl Instance {
             color,
             distro_id,
             distro_like,
-            gnome_settings: RefCell::new(HashMap::new()),
+            gnome_settings: Mutex::new(HashMap::new()),
         }
     }
 }

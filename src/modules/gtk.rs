@@ -8,11 +8,9 @@ use crate::instance::Instance;
 
 /// Reads one key from a gsettings schema, unquoting string values.
 pub fn get(instance: &Instance, schema: &str, key: &str) -> Option<String> {
-    {
-        let cache = instance.gnome_settings.borrow();
-        if let Some(values) = cache.get(schema) {
-            return values.get(key).cloned();
-        }
+    let mut cache = instance.gnome_settings.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(values) = cache.get(schema) {
+        return values.get(key).cloned();
     }
 
     let mut values = HashMap::new();
@@ -33,7 +31,7 @@ pub fn get(instance: &Instance, schema: &str, key: &str) -> Option<String> {
     }
 
     let value = values.get(key).cloned();
-    instance.gnome_settings.borrow_mut().insert(schema.to_string(), values);
+    cache.insert(schema.to_string(), values);
     value
 }
 

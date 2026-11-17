@@ -172,6 +172,10 @@ pub fn colorize_percent(pct: u64, color: bool) -> String {
 }
 
 /// Runs the selected modules (or the default preset) in registry order.
+///
+/// Modules are independent of each other, so each one runs in its own
+/// scoped thread: the slow data sources (gdbus, gsettings, process scans)
+/// overlap instead of adding up. Rows are still emitted in registry order.
 pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
     let names: Vec<&str> = if selected.is_empty() {
         DEFAULT_PRESET.to_vec()
@@ -188,11 +192,15 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
         selected.iter().map(String::as_str).collect()
     };
 
-    let mut rows = Vec::new();
-    for module in REGISTRY {
-        if names.contains(&module.name) {
-            rows.extend((module.run)(instance));
-        }
-    }
-    rows
+    let results: Vec<Vec<Row>> = std::thread::scope(|scope| {
+        REGISTRY
+            .iter()
+            .filter(|module| names.contains(&module.name))
+            .map(|module| scope.spawn(move || (module.run)(instance)))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|handle| handle.join().unwrap_or_default())
+            .collect()
+    });
+    results.into_iter().flatten().collect()
 }
