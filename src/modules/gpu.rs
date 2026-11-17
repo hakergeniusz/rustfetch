@@ -10,7 +10,14 @@ const PCI_IDS_PATHS: &[&str] =
     &["/usr/share/hwdata/pci.ids", "/usr/share/misc/pci.ids", "/var/lib/usbutils/pci.ids"];
 
 /// PCI vendor ids known to host GPUs, including virtual machine adapters.
-const GPU_VENDORS: &[&str] = &["0x1002", "0x8086", "0x10de", "0x1022", "0x15ad", "0x1234", "0x1af4", "0x1b36"];
+/// Values match pci.ids casing (`10de`), matching what normalize_id produces.
+const GPU_VENDORS: &[&str] = &["1002", "8086", "10de", "1022", "15ad", "1234", "1af4", "1b36"];
+
+/// sysfs ids come as `0x10de` while pci.ids keys are `10de`.
+fn normalize_id(raw: &str) -> String {
+    let lowered = raw.to_ascii_lowercase();
+    lowered.strip_prefix("0x").unwrap_or(&lowered).to_string()
+}
 
 /// Parsed lookup tables from pci.ids.
 struct PciNames {
@@ -128,8 +135,8 @@ fn describe_card(
     device_id: &str,
     device: &Path,
 ) -> String {
-    let subvendor = util::read_trimmed_in(device, "subsystem_vendor").map(|v| v.to_ascii_lowercase());
-    let subdevice = util::read_trimmed_in(device, "subsystem_device").map(|v| v.to_ascii_lowercase());
+    let subvendor = util::read_trimmed_in(device, "subsystem_vendor").map(|v| normalize_id(&v));
+    let subdevice = util::read_trimmed_in(device, "subsystem_device").map(|v| normalize_id(&v));
 
     if let Some(lookup) = lookup {
         let subsystem = match (&subvendor, &subdevice) {
@@ -156,13 +163,13 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     let mut seen = HashSet::new();
 
     for device in gpu_cards() {
-        let Some(vendor_id) = util::read_trimmed_in(&device, "vendor").map(|v| v.to_ascii_lowercase()) else {
+        let Some(vendor_id) = util::read_trimmed_in(&device, "vendor").map(|v| normalize_id(&v)) else {
             continue;
         };
         if !GPU_VENDORS.contains(&vendor_id.as_str()) {
             continue;
         }
-        let Some(device_id) = util::read_trimmed_in(&device, "device").map(|v| v.to_ascii_lowercase()) else {
+        let Some(device_id) = util::read_trimmed_in(&device, "device").map(|v| normalize_id(&v)) else {
             continue;
         };
 
