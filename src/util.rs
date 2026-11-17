@@ -44,9 +44,10 @@ pub fn parse_colon_line(line: &str) -> Option<(&str, &str)> {
     Some((key.trim(), value.trim()))
 }
 
-/// Floored percentage of `part` over `total`; None when total is zero.
+/// Percentage of `part` over `total`, rounded to nearest like fastfetch's
+/// %.0f printing; None when total is zero.
 pub fn percent(part: u64, total: u64) -> Option<u64> {
-    (total > 0).then(|| part * 100 / total)
+    (total > 0).then(|| (part * 100 + total / 2) / total)
 }
 
 /// Names of all processes visible in /proc (comm values, truncated to 15
@@ -213,8 +214,10 @@ mod tests {
     }
 
     #[test]
-    fn percent_floors_and_guards() {
+    fn percent_rounds_to_nearest_and_guards() {
         assert_eq!(percent(1, 3), Some(33));
+        assert_eq!(percent(998, 1545), Some(65));
+        assert_eq!(percent(1077, 5800), Some(19));
         assert_eq!(percent(0, 0), None);
         assert_eq!(percent(5, 0), None);
     }
