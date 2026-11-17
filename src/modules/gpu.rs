@@ -3,7 +3,6 @@
 //! vendor blocks of pci.ids are scanned.
 
 use std::collections::HashSet;
-use std::path::Path;
 
 use crate::{instance::Instance, modules::Row, util};
 
@@ -77,10 +76,11 @@ fn vendor_block<'a>(content: &'a str, vendor: &str) -> Option<&'a str> {
         .or_else(|| content.starts_with(&format!("{vendor}  ")).then_some(0))?;
     let rest = &content[start..];
 
-    // The block ends at the first unindented line after the vendor line.
+    // The block ends at the first unindented, non-comment line after the
+    // vendor line; pci.ids scatters `#` comments inside vendor sections.
     let mut end = rest.find('\n').map(|pos| pos + 1).unwrap_or(rest.len());
     for line in rest[end..].lines() {
-        if !line.starts_with('\t') {
+        if !line.starts_with('\t') && !line.starts_with('#') {
             break;
         }
         end += line.len() + 1;
@@ -191,4 +191,26 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         }
     }
     rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vendor_block_slices_vendor_section() {
+        let content = "# comment\n1002  AMD\n\t7300  card\n10de  NVIDIA\n\t2508  GA106 [GeForce RTX 3050 OEM]\n\t\t174b a630  sub\n2000  next\n";
+        let block = vendor_block(content, "10de").expect("block found");
+        assert!(block.starts_with("10de  NVIDIA"), "got: {block:?}");
+        assert!(block.contains("2508"), "got: {block:?}");
+        assert!(!block.contains("2000"), "got: {block:?}");
+    }
+
+    #[test]
+    fn device_names_match_subsystem() {
+        let content = "10de  NVIDIA\n\t2508  GA106 [GeForce RTX 3050 OEM]\n\t\t174b a630  sub\n";
+        let (device, subsystem) = device_names(content, "2508", Some("174b"), Some("a630"));
+        assert_eq!(device, Some("GA106 [GeForce RTX 3050 OEM]"));
+        assert_eq!(subsystem, Some("sub"));
+    }
 }
