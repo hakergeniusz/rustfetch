@@ -26,6 +26,7 @@ pub mod packages;
 pub mod physicaldisk;
 pub mod poweradapter;
 pub mod processes;
+pub mod qt;
 pub mod separator;
 pub mod shell;
 pub mod swap;

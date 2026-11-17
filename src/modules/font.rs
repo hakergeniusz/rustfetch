@@ -1,6 +1,5 @@
-//! `font` module: desktop font per version with source tags, ported from
-//! fastfetch's font module ("Adwaita Sans (11pt) [GTK2/3/4]"; the Qt half
-//! arrives with kdeglobals support).
+//! `font` module: desktop font per source with tags, ported from fastfetch's
+//! font module ("Adwaita Sans (11pt) [GTK2/3/4]", Qt first when present).
 
 use crate::{instance::Instance, modules::Row};
 
@@ -14,13 +13,30 @@ fn pretty(font: &Option<String>) -> Option<String> {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
+    let qt = super::qt::detect(instance);
     let versions = super::gtk::detect(instance);
-    match super::gtk::parse_gtk(
+
+    // fastfetch's generateString: the Qt font pretty-printed and tagged,
+    // then the GTK values via ffParseGTK
+    let mut value = String::new();
+    if let Some(font) = qt.font.as_deref() {
+        value.push_str(&super::terminalfont::qt_font(font));
+        value.push_str(" [Qt]");
+    }
+    if let Some(font) = super::gtk::parse_gtk(
         pretty(&versions.v2.font).as_deref(),
         pretty(&versions.v3.font).as_deref(),
         pretty(&versions.v4.font).as_deref(),
     ) {
-        Some(font) => vec![Row::new("Font", font)],
-        None => Vec::new(),
+        if !value.is_empty() {
+            value.push_str(", ");
+        }
+        value.push_str(&font);
+    }
+
+    if value.is_empty() {
+        Vec::new()
+    } else {
+        vec![Row::new("Font", value)]
     }
 }

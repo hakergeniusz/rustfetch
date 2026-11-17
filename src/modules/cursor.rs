@@ -10,6 +10,28 @@ struct Detected {
     size: Option<u32>,
 }
 
+/// fastfetch's detectCursorFromConfigFile for Plasma (kcminputrc) and LXQt,
+/// with their built-in defaults.
+fn from_desktop_config(de: &str) -> Option<Detected> {
+    let (relative, theme_query, size_query, default_theme, default_size) = match de {
+        "KDE Plasma" => ("kcminputrc", "cursorTheme =", "cursorSize =", "Breeze", "24"),
+        "LXQt" => ("lxqt/session.conf", "cursor_theme =", "cursor_size =", "Adwaita", "24"),
+        _ => return None,
+    };
+
+    let (found, values) = util::parse_props_in_config_dirs(relative, &[theme_query, size_query]);
+    if !found {
+        return None;
+    }
+    let theme = values[0].clone().unwrap_or_else(|| default_theme.to_string());
+    let size = values[1]
+        .clone()
+        .unwrap_or_else(|| default_size.to_string())
+        .parse()
+        .ok();
+    Some(Detected { theme, size })
+}
+
 /// fastfetch's detectCursorHyprcursor, gated on Hyprland running like
 /// fastfetch gates on the WM name.
 fn from_hyprcursor(comms: &std::collections::HashSet<String>) -> Option<Detected> {
@@ -93,7 +115,8 @@ fn pretty_theme(theme: &str) -> String {
 
 pub fn run(instance: &Instance) -> Vec<Row> {
     let comms = util::process_comms();
-    let detected = from_hyprcursor(&comms)
+    let detected = from_desktop_config(super::de::detect().unwrap_or(""))
+        .or_else(|| from_hyprcursor(&comms))
         .or_else(|| from_gtk(instance))
         .or_else(from_env)
         .or_else(from_files);

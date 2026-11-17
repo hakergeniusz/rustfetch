@@ -49,6 +49,21 @@ fn de_version(name: &str) -> Option<String> {
     first.split_whitespace().next_back().map(str::to_string)
 }
 
+/// The pretty DE name without version detection; shared by the qt/gtk
+/// modules for their per-desktop settings sources. Returns the raw token
+/// lowercased when it is not a known desktop.
+pub fn detect() -> Option<&'static str> {
+    let raw = std::env::var("XDG_CURRENT_DESKTOP").ok()?;
+    let token = raw.split(':').next()?;
+    if token.is_empty() {
+        return None;
+    }
+    DESKTOPS
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(token))
+        .map(|(_, pretty)| *pretty)
+}
+
 pub fn run(_instance: &Instance) -> Vec<Row> {
     let Ok(raw) = std::env::var("XDG_CURRENT_DESKTOP") else {
         return Vec::new();

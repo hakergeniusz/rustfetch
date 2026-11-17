@@ -44,8 +44,9 @@ fn xft_font(pattern: &str) -> String {
 }
 
 /// Qt font string (QFont::toString): family first, size second, the style
-/// name last; everything between is QFont plumbing.
-fn qt_font(data: &str) -> String {
+/// name last; everything between is QFont plumbing. Shared with the font
+/// module's Qt half.
+pub fn qt_font(data: &str) -> String {
     let mut fields = data.split(',');
     let family = fields.next().unwrap_or("").trim().to_string();
     let size = fields.next().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
@@ -358,10 +359,10 @@ fn detect_font_size_pair(
     fallback_name: &str,
     fallback_size: &str,
 ) -> Option<String> {
-    let (font, size) = parse_prop_file_config_2(relative, font_query, size_query);
+    let values = util::parse_props_in_config_dirs(relative, &[font_query, size_query]).1;
     Some(pretty(
-        &font.unwrap_or_else(|| fallback_name.to_string()),
-        Some(size.unwrap_or_else(|| fallback_size.to_string())).as_deref(),
+        &values[0].clone().unwrap_or_else(|| fallback_name.to_string()),
+        Some(values[1].clone().unwrap_or_else(|| fallback_size.to_string())).as_deref(),
     ))
 }
 

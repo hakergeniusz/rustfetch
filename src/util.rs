@@ -135,6 +135,31 @@ pub fn parse_prop_file(path: &Path, queries: &mut [(&'static str, &mut Option<St
     true
 }
 
+/// fastfetch's ffParsePropFileConfigValues: read a file under each config
+/// dir, stopping when all queries are set. Returns whether any file was
+/// found alongside the values.
+pub fn parse_props_in_config_dirs(
+    relative: &str,
+    queries: &[&'static str],
+) -> (bool, Vec<Option<String>>) {
+    let mut values: Vec<Option<String>> = vec![None; queries.len()];
+    let mut found = false;
+    for dir in config_dirs() {
+        let mut pairs: Vec<(&'static str, &mut Option<String>)> = queries
+            .iter()
+            .zip(values.iter_mut())
+            .map(|(query, value)| (*query, value))
+            .collect();
+        if parse_prop_file(&dir.join(relative), &mut pairs) {
+            found = true;
+        }
+        if values.iter().all(Option::is_some) {
+            break;
+        }
+    }
+    (found, values)
+}
+
 /// XDG config dirs in fastfetch's order: XDG_CONFIG_HOME, ~/.config, $HOME,
 /// XDG_CONFIG_DIRS, /etc/xdg and /etc.
 pub fn config_dirs() -> Vec<std::path::PathBuf> {
