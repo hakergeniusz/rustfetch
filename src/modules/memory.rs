@@ -1,6 +1,6 @@
 //! `memory` and `swap` modules: usage from /proc/meminfo.
 
-use crate::{instance::Instance, modules::colorize_percent, modules::Row, util};
+use crate::{instance::Instance, modules::Row, modules::colorize_percent, util};
 
 /// Reads "<key>: <value> kB" from meminfo content.
 fn meminfo_value(content: &str, key: &str) -> Option<u64> {

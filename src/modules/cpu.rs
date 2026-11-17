@@ -63,7 +63,13 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     // 3.7 GHz on desktop parts, whole GHz on very fast ones.
     let freq = if mhz > 0.0 {
         let ghz = mhz / 1000.0;
-        let digits = if ghz >= 100.0 { 0 } else if ghz >= 10.0 { 1 } else { 2 };
+        let digits = if ghz >= 100.0 {
+            0
+        } else if ghz >= 10.0 {
+            1
+        } else {
+            2
+        };
         format!(" @ {ghz:.digits$} GHz")
     } else {
         String::new()

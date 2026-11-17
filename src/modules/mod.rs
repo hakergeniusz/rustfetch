@@ -40,17 +40,29 @@ pub struct Row {
 impl Row {
     /// Regular `key: value` line.
     pub fn new(key: &str, value: impl Into<String>) -> Self {
-        Self { key: Some(key.to_string()), value: value.into(), kind: Kind::Value }
+        Self {
+            key: Some(key.to_string()),
+            value: value.into(),
+            kind: Kind::Value,
+        }
     }
 
     /// Keyless line styled by the renderer (e.g. the title).
     pub fn bare(value: impl Into<String>) -> Self {
-        Self { key: None, value: value.into(), kind: Kind::Value }
+        Self {
+            key: None,
+            value: value.into(),
+            kind: Kind::Value,
+        }
     }
 
     /// Keyless line printed as-is (separator, color blocks).
     pub fn raw(value: impl Into<String>) -> Self {
-        Self { key: None, value: value.into(), kind: Kind::Raw }
+        Self {
+            key: None,
+            value: value.into(),
+            kind: Kind::Raw,
+        }
     }
 }
 

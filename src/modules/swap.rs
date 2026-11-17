@@ -1,23 +1,19 @@
 //! `swap` module: usage from /proc/meminfo; hidden when no swap is configured.
 
-use crate::{instance::Instance, modules::colorize_percent, modules::Row, util};
+use crate::{instance::Instance, modules::Row, modules::colorize_percent, util};
 
 pub fn run(instance: &Instance) -> Vec<Row> {
     let Some(content) = util::read_file("/proc/meminfo") else {
         return Vec::new();
     };
-    let total = content
-        .lines()
-        .find_map(|line| {
-            let (name, value) = util::parse_colon_line(line)?;
-            (name == "SwapTotal").then(|| value.split_whitespace().next()?.parse::<u64>().ok())?
-        });
-    let free = content
-        .lines()
-        .find_map(|line| {
-            let (name, value) = util::parse_colon_line(line)?;
-            (name == "SwapFree").then(|| value.split_whitespace().next()?.parse::<u64>().ok())?
-        });
+    let total = content.lines().find_map(|line| {
+        let (name, value) = util::parse_colon_line(line)?;
+        (name == "SwapTotal").then(|| value.split_whitespace().next()?.parse::<u64>().ok())?
+    });
+    let free = content.lines().find_map(|line| {
+        let (name, value) = util::parse_colon_line(line)?;
+        (name == "SwapFree").then(|| value.split_whitespace().next()?.parse::<u64>().ok())?
+    });
 
     let (Some(total), Some(free)) = (total, free) else {
         return Vec::new();

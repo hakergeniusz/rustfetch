@@ -111,7 +111,17 @@ pub static LOGOS: &[LogoDef] = &[
     },
     LogoDef {
         names: &["alt-atomic"],
-        colors: &["38;2;79;157;207", "38;2;113;174;213", "38;2;61;120;158", "38;2;244;250;252", "38;2;207;230;243", "38;2;29;58;76", "38;2;213;201;181", "38;2;150;180;193", "38;2;161;204;230"],
+        colors: &[
+            "38;2;79;157;207",
+            "38;2;113;174;213",
+            "38;2;61;120;158",
+            "38;2;244;250;252",
+            "38;2;207;230;243",
+            "38;2;29;58;76",
+            "38;2;213;201;181",
+            "38;2;150;180;193",
+            "38;2;161;204;230",
+        ],
         color_keys: Some("38;2;80;157;207"),
         color_title: Some("38;2;255;209;164"),
         big: include_str!("logo/a/alt_atomic.txt"),
@@ -447,7 +457,16 @@ pub static LOGOS: &[LogoDef] = &[
     },
     LogoDef {
         names: &["AstrOS"],
-        colors: &["38;2;54;19;170", "38;2;73;32;182", "38;2;91;46;193", "38;2;110;59;205", "38;2;129;73;216", "38;2;148;86;228", "38;2;166;100;239", "38;2;185;113;251"],
+        colors: &[
+            "38;2;54;19;170",
+            "38;2;73;32;182",
+            "38;2;91;46;193",
+            "38;2;110;59;205",
+            "38;2;129;73;216",
+            "38;2;148;86;228",
+            "38;2;166;100;239",
+            "38;2;185;113;251",
+        ],
         color_keys: Some("38;2;148;86;228"),
         color_title: Some("38;2;185;113;251"),
         big: include_str!("logo/a/astros.txt"),
@@ -2183,7 +2202,12 @@ pub static LOGOS: &[LogoDef] = &[
     },
     LogoDef {
         names: &["NurOS"],
-        colors: &["38;2;41;19;182", "38;2;31;59;205", "38;2;18;95;225", "38;2;13;125;250"],
+        colors: &[
+            "38;2;41;19;182",
+            "38;2;31;59;205",
+            "38;2;18;95;225",
+            "38;2;13;125;250",
+        ],
         color_keys: Some("38;2;13;125;250"),
         color_title: Some("38;2;41;19;182"),
         big: include_str!("logo/n/nuros.txt"),
@@ -3110,7 +3134,12 @@ pub static LOGOS: &[LogoDef] = &[
         small: None,
     },
     LogoDef {
-        names: &["Source Mage", "Source Mage GNU/Linux", "source_mage", "sourcemage"],
+        names: &[
+            "Source Mage",
+            "Source Mage GNU/Linux",
+            "source_mage",
+            "sourcemage",
+        ],
         colors: &["39"],
         color_keys: Some("31"),
         color_title: Some("39"),
@@ -3542,7 +3571,12 @@ pub static LOGOS: &[LogoDef] = &[
         small: None,
     },
     LogoDef {
-        names: &["Windows", "Windows 7", "Windows Server 2008", "Windows Server 2008 R2"],
+        names: &[
+            "Windows",
+            "Windows 7",
+            "Windows Server 2008",
+            "Windows Server 2008 R2",
+        ],
         colors: &["31", "32", "34", "33"],
         color_keys: Some("34"),
         color_title: Some("32"),
@@ -3558,7 +3592,15 @@ pub static LOGOS: &[LogoDef] = &[
         small: Some(include_str!("logo/w/windows_11_small.txt")),
     },
     LogoDef {
-        names: &["Windows 8", "Windows 8.1", "Windows 10", "Windows Server 2012", "Windows Server 2012 R2", "Windows Server 2016", "Windows Server 2019"],
+        names: &[
+            "Windows 8",
+            "Windows 8.1",
+            "Windows 10",
+            "Windows Server 2012",
+            "Windows Server 2012 R2",
+            "Windows Server 2016",
+            "Windows Server 2019",
+        ],
         colors: &["36", "36", "36", "36"],
         color_keys: Some("33"),
         color_title: Some("39"),
@@ -3615,7 +3657,9 @@ pub static LOGOS: &[LogoDef] = &[
     },
     LogoDef {
         names: &["XeroArch"],
-        colors: &["38;5;50", "38;5;14", "38;5;50", "38;5;93", "38;5;16", "38;5;15"],
+        colors: &[
+            "38;5;50", "38;5;14", "38;5;50", "38;5;93", "38;5;16", "38;5;15",
+        ],
         color_keys: None,
         color_title: None,
         big: include_str!("logo/x/xeroarch.txt"),

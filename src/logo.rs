@@ -37,10 +37,17 @@ pub fn parse_art(art: &str, colors: &[&'static str]) -> (Vec<Vec<Segment>>, usiz
         while i < chars.len() {
             if chars[i] == '$' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit() {
                 if !text.is_empty() {
-                    segments.push(Segment { text: std::mem::take(&mut text), color: current });
+                    segments.push(Segment {
+                        text: std::mem::take(&mut text),
+                        color: current,
+                    });
                 }
                 let n = chars[i + 1] as usize - b'0' as usize;
-                current = if n == 0 { DEFAULT } else { colors.get(n - 1).copied().unwrap_or(DEFAULT) };
+                current = if n == 0 {
+                    DEFAULT
+                } else {
+                    colors.get(n - 1).copied().unwrap_or(DEFAULT)
+                };
                 carried = current;
                 i += 2;
             } else {
@@ -49,7 +56,10 @@ pub fn parse_art(art: &str, colors: &[&'static str]) -> (Vec<Vec<Segment>>, usiz
             }
         }
         if !text.is_empty() {
-            segments.push(Segment { text, color: current });
+            segments.push(Segment {
+                text,
+                color: current,
+            });
         }
 
         max_width = max_width.max(segments.iter().map(|s| s.text.chars().count()).sum());
@@ -74,7 +84,11 @@ fn find_logo(id: &str) -> Option<&'static LogoDef> {
 
 /// Builds a renderable logo from its definition, honoring `--small`.
 fn build(def: &'static LogoDef, cli: &Cli) -> Logo {
-    let art = if cli.small { def.small.unwrap_or(def.big) } else { def.big };
+    let art = if cli.small {
+        def.small.unwrap_or(def.big)
+    } else {
+        def.big
+    };
     let (lines, width) = parse_art(art, def.colors);
     Logo { def, lines, width }
 }
@@ -91,7 +105,11 @@ pub fn load(cli: &Cli, instance: &Instance) -> Option<Logo> {
         }
         if let Ok(art) = std::fs::read_to_string(source) {
             let (lines, width) = parse_art(&art, logo_data::UNKNOWN.colors);
-            return Some(Logo { def: &logo_data::UNKNOWN, lines, width });
+            return Some(Logo {
+                def: &logo_data::UNKNOWN,
+                lines,
+                width,
+            });
         }
         eprintln!("rustfetch: unknown logo or unreadable file: {source}");
         return None;

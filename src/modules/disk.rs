@@ -1,6 +1,6 @@
 //! `disk` module: root filesystem usage via statvfs(3).
 
-use crate::{instance::Instance, modules::colorize_percent, modules::Row, util};
+use crate::{instance::Instance, modules::Row, modules::colorize_percent, util};
 
 /// Filesystem name for the "/" mount from /proc/self/mounts (e.g. btrfs).
 fn root_filesystem() -> Option<String> {

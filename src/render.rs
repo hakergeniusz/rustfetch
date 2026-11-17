@@ -98,7 +98,12 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) 
         if i < logo_lines.len() {
             let (text, width) = &logo_lines[i];
             let _ = write!(out, "{text}");
-            let _ = write!(out, "{:width$}", "", width = logo.as_ref().map_or(pad, |l| l.width) - width + pad);
+            let _ = write!(
+                out,
+                "{:width$}",
+                "",
+                width = logo.as_ref().map_or(pad, |l| l.width) - width + pad
+            );
         } else {
             let empty_width = logo.as_ref().map_or(0, |l| l.width) + pad;
             let _ = write!(out, "{:width$}", "", width = empty_width);

@@ -35,6 +35,10 @@ impl Instance {
             }
         }
 
-        Self { color, distro_id, distro_like }
+        Self {
+            color,
+            distro_id,
+            distro_like,
+        }
     }
 }

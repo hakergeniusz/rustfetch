@@ -4,7 +4,8 @@
 use crate::{instance::Instance, modules::Row};
 
 const VERSIONABLE: &[&str] = &[
-    "bash", "zsh", "fish", "nu", "nushell", "dash", "ksh", "csh", "tcsh", "elvish", "xonsh", "oil", "osh", "pwsh",
+    "bash", "zsh", "fish", "nu", "nushell", "dash", "ksh", "csh", "tcsh", "elvish", "xonsh", "oil",
+    "osh", "pwsh",
 ];
 
 fn shell_version(path: &str) -> Option<String> {

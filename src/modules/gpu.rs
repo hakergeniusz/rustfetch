@@ -6,12 +6,17 @@ use std::path::Path;
 
 use crate::{instance::Instance, modules::Row, util};
 
-const PCI_IDS_PATHS: &[&str] =
-    &["/usr/share/hwdata/pci.ids", "/usr/share/misc/pci.ids", "/var/lib/usbutils/pci.ids"];
+const PCI_IDS_PATHS: &[&str] = &[
+    "/usr/share/hwdata/pci.ids",
+    "/usr/share/misc/pci.ids",
+    "/var/lib/usbutils/pci.ids",
+];
 
 /// PCI vendor ids known to host GPUs, including virtual machine adapters.
 /// Values match pci.ids casing (`10de`), matching what normalize_id produces.
-const GPU_VENDORS: &[&str] = &["1002", "8086", "10de", "1022", "15ad", "1234", "1af4", "1b36"];
+const GPU_VENDORS: &[&str] = &[
+    "1002", "8086", "10de", "1022", "15ad", "1234", "1af4", "1b36",
+];
 
 /// sysfs ids come as `0x10de` while pci.ids keys are `10de`.
 fn normalize_id(raw: &str) -> String {
@@ -54,11 +59,18 @@ impl PciNames {
                         continue;
                     };
                     subsystems.insert(
-                        (vendor.clone(), device.clone(), subvendor.to_ascii_lowercase(), subdevice.to_ascii_lowercase()),
+                        (
+                            vendor.clone(),
+                            device.clone(),
+                            subvendor.to_ascii_lowercase(),
+                            subdevice.to_ascii_lowercase(),
+                        ),
                         name.to_string(),
                     );
                 }
-            } else if let Some((id, name)) = line.strip_prefix('\t').and_then(|rest| rest.split_once("  ")) {
+            } else if let Some((id, name)) =
+                line.strip_prefix('\t').and_then(|rest| rest.split_once("  "))
+            {
                 // device line: "<device-id>  name"
                 if id.len() == 4 && id.chars().all(|c| c.is_ascii_hexdigit()) {
                     device = id.to_ascii_lowercase();
@@ -70,7 +82,11 @@ impl PciNames {
             }
         }
 
-        Some(Self { vendors, devices, subsystems })
+        Some(Self {
+            vendors,
+            devices,
+            subsystems,
+        })
     }
 
     fn device_name(&self, vendor: &str, device: &str) -> Option<&String> {
@@ -88,7 +104,12 @@ impl PciNames {
         subvendor: &str,
         subdevice: &str,
     ) -> Option<&String> {
-        self.subsystems.get(&(vendor.to_string(), device.to_string(), subvendor.to_string(), subdevice.to_string()))
+        self.subsystems.get(&(
+            vendor.to_string(),
+            device.to_string(),
+            subvendor.to_string(),
+            subdevice.to_string(),
+        ))
     }
 }
 
@@ -153,14 +174,18 @@ fn describe_card(
 
     if let Some(lookup) = lookup {
         let subsystem = match (&subvendor, &subdevice) {
-            (Some(subvendor), Some(subdevice)) => lookup.subsystem_name(vendor_id, device_id, subvendor, subdevice),
+            (Some(subvendor), Some(subdevice)) => {
+                lookup.subsystem_name(vendor_id, device_id, subvendor, subdevice)
+            },
             _ => None,
         };
         if let (Some(vendor_name), Some(device_name)) =
             (lookup.vendor_name(vendor_id), lookup.device_name(vendor_id, device_id))
         {
-            let device_display =
-                subsystem.cloned().or_else(|| bracketed(device_name)).unwrap_or_else(|| device_name.clone());
+            let device_display = subsystem
+                .cloned()
+                .or_else(|| bracketed(device_name))
+                .unwrap_or_else(|| device_name.clone());
             return format!("{} {}", short_vendor(vendor_name), device_display);
         }
     }
@@ -174,13 +199,15 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     let mut seen = HashSet::new();
 
     for device in gpu_cards() {
-        let Some(vendor_id) = util::read_trimmed_in(&device, "vendor").map(|v| normalize_id(&v)) else {
+        let Some(vendor_id) = util::read_trimmed_in(&device, "vendor").map(|v| normalize_id(&v))
+        else {
             continue;
         };
         if !GPU_VENDORS.contains(&vendor_id.as_str()) {
             continue;
         }
-        let Some(device_id) = util::read_trimmed_in(&device, "device").map(|v| normalize_id(&v)) else {
+        let Some(device_id) = util::read_trimmed_in(&device, "device").map(|v| normalize_id(&v))
+        else {
             continue;
         };
 
