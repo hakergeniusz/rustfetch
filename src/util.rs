@@ -68,18 +68,6 @@ pub fn fmt_bytes(bytes: u64) -> String {
     }
 }
 
-/// Terminal column width via ioctl; 80 when unavailable (e.g. piped output).
-pub fn term_width() -> u16 {
-    let mut ws = libc::winsize { ws_row: 0, ws_col: 0, ws_xpixel: 0, ws_ypixel: 0 };
-    // SAFETY: `ws` is a plain POD struct and ioctl only writes into it on success.
-    let ok = unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut ws) } == 0;
-    if ok && ws.ws_col > 0 {
-        ws.ws_col
-    } else {
-        80
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
