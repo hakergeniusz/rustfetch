@@ -2,6 +2,14 @@
 
 use crate::{instance::Instance, modules::colorize_percent, modules::Row, util};
 
+/// Filesystem name for the "/" mount from /proc/self/mounts (e.g. btrfs).
+fn root_filesystem() -> Option<String> {
+    util::read_file("/proc/self/mounts")?.lines().find_map(|line| {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        (fields.len() >= 3 && fields[1] == "/").then(|| fields[2].to_string())
+    })
+}
+
 pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(root) = std::ffi::CString::new("/") else {
         return Vec::new();
@@ -20,13 +28,15 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     let available = fs.f_bavail as u64 * frsize;
     let pct = util::percent(used, used + available).unwrap_or(0);
 
-    vec![Row::new(
-        "Disk (/)",
-        format!(
-            "{} / {} ({})",
-            util::fmt_bytes(used),
-            util::fmt_bytes(total),
-            colorize_percent(pct, instance.color)
-        ),
-    )]
+    let mut value = format!(
+        "{} / {} ({})",
+        util::fmt_bytes(used),
+        util::fmt_bytes(total),
+        colorize_percent(pct, instance.color)
+    );
+    if let Some(fstype) = root_filesystem() {
+        value.push_str(&format!(" - {fstype}"));
+    }
+
+    vec![Row::new("Disk (/)", value)]
 }
