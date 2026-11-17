@@ -19,6 +19,13 @@ fn main() {
     }
 
     let instance = instance::Instance::new(&cli);
+
+    if cli.format == cli::Format::Json {
+        let rows = modules::collect(&cli.modules, &instance);
+        render::print_json(&rows);
+        return;
+    }
+
     let logo = logo::load(&cli, &instance);
     let rows = modules::collect(&cli.modules, &instance);
     render::print(&logo, &rows, &cli, &instance);

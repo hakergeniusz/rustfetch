@@ -1,6 +1,16 @@
 //! CLI definition for rustfetch.
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+/// Output format, mirroring fastfetch's `--format`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Format {
+    /// Two-column terminal layout with logo and colors.
+    #[default]
+    Standard,
+    /// One JSON object per module, no logo or colors.
+    Json,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -32,4 +42,8 @@ pub struct Cli {
     /// Disable colors, logo and layout (for scripting)
     #[arg(long)]
     pub pipe: bool,
+
+    /// Output format
+    #[arg(long, value_enum, default_value = "standard")]
+    pub format: Format,
 }

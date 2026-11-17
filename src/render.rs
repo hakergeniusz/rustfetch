@@ -74,8 +74,7 @@ fn row_line(row: &Row, accent: &str, title: &str, color: bool) -> String {
     }
 }
 
-pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) {
-    if cli.pipe {
+pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) {    if cli.pipe {
         for row in rows {
             match &row.key {
                 Some(key) => println!("{key}: {}", row.value),
@@ -116,4 +115,41 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) 
         }
     }
     let _ = out.flush();
+}
+
+/// JSON string escaping without a serde dependency; values are ASCII text.
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// fastfetch-style JSON output: one compact object per module row.
+pub fn print_json(rows: &[Row]) {
+    let mut out = String::from("[");
+    for (i, row) in rows.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str("{\"key\":");
+        match &row.key {
+            Some(key) => out.push_str(&format!("\"{}\"", json_escape(key))),
+            None => out.push_str("null"),
+        }
+        out.push_str(",\"value\":\"");
+        out.push_str(&json_escape(&row.value));
+        out.push_str("\"}");
+    }
+    out.push(']');
+    println!("{out}");
 }

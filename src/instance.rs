@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::IsTerminal;
 
-use crate::{cli::Cli, util};
+use crate::{cli::Format, cli::Cli, util};
 
 pub struct Instance {
     /// True when ANSI escape sequences may be printed (interactive tty, colors
@@ -22,6 +22,7 @@ pub struct Instance {
 impl Instance {
     pub fn new(cli: &Cli) -> Self {
         let color = !cli.pipe
+            && cli.format == Format::Standard
             && std::env::var_os("NO_COLOR").is_none()
             && std::env::var("TERM").is_ok_and(|term| term != "dumb")
             && std::io::stdout().is_terminal();
