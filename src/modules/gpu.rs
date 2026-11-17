@@ -1,7 +1,8 @@
 //! `gpu` module: GPUs from /sys/class/drm named via pci.ids, with subsystem
-//! refinement. No processes spawned, no giant dependencies.
+//! refinement. No processes spawned, no giant dependencies; only the needed
+//! vendor blocks of pci.ids are scanned.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 
 use crate::{instance::Instance, modules::Row, util};
@@ -24,101 +25,23 @@ fn normalize_id(raw: &str) -> String {
     lowered.strip_prefix("0x").unwrap_or(&lowered).to_string()
 }
 
-/// Parsed lookup tables from pci.ids.
-struct PciNames {
-    vendors: HashMap<String, String>,
-    devices: HashMap<(String, String), String>,
-    subsystems: HashMap<(String, String, String, String), String>,
+fn is_hex_id(id: &str) -> bool {
+    id.len() == 4 && id.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-impl PciNames {
-    fn load() -> Option<Self> {
-        let content = PCI_IDS_PATHS.iter().find_map(|path| util::read_file(path))?;
-
-        let mut vendors = HashMap::new();
-        let mut devices = HashMap::new();
-        let mut subsystems = HashMap::new();
-        let mut vendor = String::new();
-        let mut device = String::new();
-
-        let push_id = |id: &str, name: &str, map: &mut HashMap<String, String>| {
-            if id.len() == 4 && id.chars().all(|c| c.is_ascii_hexdigit()) {
-                map.insert(id.to_ascii_lowercase(), name.to_string());
-            }
-        };
-
-        for line in content.lines() {
-            if line.starts_with('#') || line.is_empty() {
-                continue;
-            }
-            if let Some(rest) = line.strip_prefix("\t\t") {
-                // subsystem line: "<subvendor> <subdevice>  name"
-                if let Some((ids, name)) = rest.split_once("  ") {
-                    let mut fields = ids.split(' ');
-                    let (Some(subvendor), Some(subdevice)) = (fields.next(), fields.next()) else {
-                        continue;
-                    };
-                    subsystems.insert(
-                        (
-                            vendor.clone(),
-                            device.clone(),
-                            subvendor.to_ascii_lowercase(),
-                            subdevice.to_ascii_lowercase(),
-                        ),
-                        name.to_string(),
-                    );
-                }
-            } else if let Some((id, name)) =
-                line.strip_prefix('\t').and_then(|rest| rest.split_once("  "))
-            {
-                // device line: "<device-id>  name"
-                if id.len() == 4 && id.chars().all(|c| c.is_ascii_hexdigit()) {
-                    device = id.to_ascii_lowercase();
-                    devices.insert((vendor.clone(), device.clone()), name.to_string());
-                }
-            } else if let Some((id, name)) = line.split_once("  ") {
-                vendor = id.to_ascii_lowercase();
-                push_id(id, name, &mut vendors);
-            }
-        }
-
-        Some(Self {
-            vendors,
-            devices,
-            subsystems,
-        })
-    }
-
-    fn device_name(&self, vendor: &str, device: &str) -> Option<&String> {
-        self.devices.get(&(vendor.to_string(), device.to_string()))
-    }
-
-    fn vendor_name(&self, vendor: &str) -> Option<&String> {
-        self.vendors.get(vendor)
-    }
-
-    fn subsystem_name(
-        &self,
-        vendor: &str,
-        device: &str,
-        subvendor: &str,
-        subdevice: &str,
-    ) -> Option<&String> {
-        self.subsystems.get(&(
-            vendor.to_string(),
-            device.to_string(),
-            subvendor.to_string(),
-            subdevice.to_string(),
-        ))
-    }
+/// One DRM card with its PCI identity read from sysfs.
+struct Card {
+    vendor: String,
+    device: String,
+    subvendor: Option<String>,
+    subdevice: Option<String>,
 }
 
-/// Paths of /sys/class/drm cardN/device for real PCI devices.
-fn gpu_cards() -> Vec<std::path::PathBuf> {
+fn read_cards() -> Vec<Card> {
     let Ok(entries) = std::fs::read_dir("/sys/class/drm") else {
         return Vec::new();
     };
-    let mut cards: Vec<std::path::PathBuf> = entries
+    let mut cards: Vec<Card> = entries
         .filter_map(Result::ok)
         .filter(|entry| {
             let name = entry.file_name();
@@ -127,9 +50,78 @@ fn gpu_cards() -> Vec<std::path::PathBuf> {
         })
         .map(|entry| entry.path().join("device"))
         .filter(|device| device.join("vendor").exists())
+        .filter_map(|device| {
+            let vendor = util::read_trimmed_in(&device, "vendor").map(|v| normalize_id(&v))?;
+            if !GPU_VENDORS.contains(&vendor.as_str()) {
+                return None;
+            }
+            let dev = util::read_trimmed_in(&device, "device").map(|v| normalize_id(&v))?;
+            Some(Card {
+                vendor,
+                device: dev,
+                subvendor: util::read_trimmed_in(&device, "subsystem_vendor").map(|v| normalize_id(&v)),
+                subdevice: util::read_trimmed_in(&device, "subsystem_device").map(|v| normalize_id(&v)),
+            })
+        })
         .collect();
-    cards.sort();
+    cards.sort_by(|a, b| a.vendor.cmp(&b.vendor).then(a.device.cmp(&b.device)));
     cards
+}
+
+/// The section of pci.ids covering one vendor: the vendor line plus every
+/// indented device/subsystem line under it.
+fn vendor_block<'a>(content: &'a str, vendor: &str) -> Option<&'a str> {
+    let start = content
+        .find(&format!("\n{vendor}  "))
+        .map(|pos| pos + 1)
+        .or_else(|| content.starts_with(&format!("{vendor}  ")).then_some(0))?;
+    let rest = &content[start..];
+
+    // The block ends at the first unindented line after the vendor line.
+    let mut end = rest.find('\n').map(|pos| pos + 1).unwrap_or(rest.len());
+    for line in rest[end..].lines() {
+        if !line.starts_with('\t') {
+            break;
+        }
+        end += line.len() + 1;
+    }
+    Some(&rest[..end])
+}
+
+/// Device and subsystem names inside a vendor block, as `(&str, Option<&str>)`.
+fn device_names<'a>(
+    block: &'a str,
+    device_id: &str,
+    subvendor: Option<&str>,
+    subdevice: Option<&str>,
+) -> (Option<&'a str>, Option<&'a str>) {
+    let mut lines = block.lines();
+    let _vendor_line = lines.next();
+
+    let mut device_name = None;
+    for line in lines {
+        let Some(rest) = line.strip_prefix('\t') else {
+            continue;
+        };
+        if let Some(deeper) = rest.strip_prefix('\t') {
+            // subsystem line under the device we already matched
+            if device_name.is_some()
+                && let Some((ids, name)) = deeper.split_once("  ")
+            {
+                let mut fields = ids.split(' ');
+                if fields.next() == subvendor && fields.next() == subdevice {
+                    return (device_name, Some(name));
+                }
+            }
+        } else if let Some((id, name)) = rest.split_once("  ") {
+            if id == device_id && is_hex_id(id) {
+                device_name = Some(name);
+            } else if device_name.is_some() {
+                break; // walked past our device
+            }
+        }
+    }
+    (device_name, None)
 }
 
 /// Short vendor name: pci.ids names AMD as "Advanced Micro Devices, Inc.
@@ -163,55 +155,37 @@ fn bracketed(name: &str) -> Option<String> {
     (!inner.is_empty()).then(|| inner.to_string())
 }
 
-fn describe_card(
-    lookup: Option<&PciNames>,
-    vendor_id: &str,
-    device_id: &str,
-    device: &Path,
-) -> String {
-    let subvendor = util::read_trimmed_in(device, "subsystem_vendor").map(|v| normalize_id(&v));
-    let subdevice = util::read_trimmed_in(device, "subsystem_device").map(|v| normalize_id(&v));
+fn describe(card: &Card, block: Option<&str>) -> String {
+    if let Some(block) = block {
+        let vendor = block.lines().next().and_then(|line| line.split_once("  ")).map(|(_, name)| name);
+        let (device, subsystem) =
+            device_names(block, &card.device, card.subvendor.as_deref(), card.subdevice.as_deref());
 
-    if let Some(lookup) = lookup {
-        let subsystem = match (&subvendor, &subdevice) {
-            (Some(subvendor), Some(subdevice)) => {
-                lookup.subsystem_name(vendor_id, device_id, subvendor, subdevice)
-            },
-            _ => None,
-        };
-        if let (Some(vendor_name), Some(device_name)) =
-            (lookup.vendor_name(vendor_id), lookup.device_name(vendor_id, device_id))
-        {
-            let device_display = subsystem
-                .cloned()
-                .or_else(|| bracketed(device_name))
-                .unwrap_or_else(|| device_name.clone());
-            return format!("{} {}", short_vendor(vendor_name), device_display);
+        if let (Some(vendor), Some(device)) = (vendor, device) {
+            let display = subsystem
+                .map(str::to_string)
+                .or_else(|| bracketed(device))
+                .unwrap_or_else(|| device.to_string());
+            return format!("{} {}", short_vendor(vendor), display);
         }
     }
 
-    format!("{vendor_id} {device_id}")
+    format!("{} {}", card.vendor, card.device)
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let lookup = PciNames::load();
+    let cards = read_cards();
+    if cards.is_empty() {
+        return Vec::new();
+    }
+
+    let content = PCI_IDS_PATHS.iter().find_map(|path| util::read_file(path));
     let mut rows = Vec::new();
     let mut seen = HashSet::new();
 
-    for device in gpu_cards() {
-        let Some(vendor_id) = util::read_trimmed_in(&device, "vendor").map(|v| normalize_id(&v))
-        else {
-            continue;
-        };
-        if !GPU_VENDORS.contains(&vendor_id.as_str()) {
-            continue;
-        }
-        let Some(device_id) = util::read_trimmed_in(&device, "device").map(|v| normalize_id(&v))
-        else {
-            continue;
-        };
-
-        let name = describe_card(lookup.as_ref(), &vendor_id, &device_id, &device);
+    for card in &cards {
+        let block = content.as_deref().and_then(|content| vendor_block(content, &card.vendor));
+        let name = describe(card, block);
         if seen.insert(name.clone()) {
             rows.push(Row::new("GPU", name));
         }
