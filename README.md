@@ -15,6 +15,8 @@ Current modules: `title`, `separator`, `os`, `host`, `bios`, `board`,
 `terminalsize`, `cpu`, `gpu`, `memory`, `swap`, `disk`, `physicaldisk`,
 `localip`, `locale`, `battery`, `lm`, `colors`.
 
+Linux only for now.
+
 The default preset mirrors fastfetch's default output; extra modules run by
 name, e.g. `rustfetch bios physicaldisk lm`.
 
