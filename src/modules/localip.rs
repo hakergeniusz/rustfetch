@@ -84,8 +84,6 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn default_route_parses_procfs_format() {
         // 00000000 destination marks the default route; first field is iface
