@@ -173,8 +173,11 @@ pub const DEFAULT_PRESET: &[&str] = &[
 fn preset_from_fastfetch_config() -> Option<Vec<&'static str>> {
     let mut config = std::path::PathBuf::from(std::env::var_os("HOME")?);
     config.push(".config/fastfetch/config.jsonc");
-    let content = util::read_file(config.to_str()?)?;
+    preset_from_fastfetch_config_content(&util::read_file(config.to_str()?)?)
+}
 
+/// Parses the "modules" array out of a fastfetch config's JSONC content.
+fn preset_from_fastfetch_config_content(content: &str) -> Option<Vec<&'static str>> {
     // strip comments, then take the array following "modules"
     let mut cleaned = String::with_capacity(content.len());
     let mut in_string = false;
@@ -301,8 +304,30 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
 mod preset_tests {
     #[test]
     fn fastfetch_config_preset_parses() {
-        let names = super::preset_from_fastfetch_config();
-        println!("preset: {:?}", names);
-        assert!(names.is_some(), "config.jsonc preset should parse");
+        let config = r#"
+// this is a JSONC comment
+{
+    "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json/schema.json",
+    "logo": {"type": "small"},
+    /* block comment, ignored */
+    "modules": [
+        "title",
+        "separator",
+        // comments inside the array too
+        "os", "host",
+        "break",
+        "colors",
+    ],
+}
+"#;
+        let Some(names) = super::preset_from_fastfetch_config_content(config) else {
+            panic!("config with modules array should parse");
+        };
+        assert_eq!(names, ["title", "separator", "os", "host", "break", "colors"]);
+
+        assert_eq!(
+            super::preset_from_fastfetch_config_content("{\"other\": []}"),
+            None
+        );
     }
 }
