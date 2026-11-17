@@ -9,12 +9,14 @@ and a growing set of ported modules. Everything is read directly from procfs,
 sysfs, DMI and pci.ids — process spawning only happens for `shell --version`,
 DE version detection and GNOME settings.
 
-Current modules: `title`, `separator`, `os`, `host`, `kernel`, `uptime`,
-`packages`, `shell`, `display`, `de`, `wm`, `wmtheme`, `theme`, `icons`,
-`font`, `cursor`, `terminal`, `cpu`, `gpu`, `memory`, `swap`, `disk`,
-`localip`, `locale`, `battery`, `colors`.
+Current modules: `title`, `separator`, `os`, `host`, `bios`, `board`,
+`kernel`, `uptime`, `loadavg`, `processes`, `packages`, `shell`, `display`,
+`de`, `wm`, `wmtheme`, `theme`, `icons`, `font`, `cursor`, `terminal`,
+`terminalsize`, `cpu`, `gpu`, `memory`, `swap`, `disk`, `physicaldisk`,
+`localip`, `locale`, `battery`, `lm`, `colors`.
 
-Linux only for now.
+The default preset mirrors fastfetch's default output; extra modules run by
+name, e.g. `rustfetch bios physicaldisk lm`.
 
 ## Build
 
