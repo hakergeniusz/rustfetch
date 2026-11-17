@@ -1,0 +1,114 @@
+//! Two-column terminal renderer: logo on the left, info rows on the right.
+
+use std::io::{BufWriter, Write};
+
+use crate::{cli::Cli, instance::Instance, logo::Logo, modules::Kind, modules::Row};
+
+/// ANSI color parameter used for keys when the logo defines none.
+const FALLBACK_ACCENT: &str = "34";
+
+/// Keys are colored with the logo's key color if it defines one, else its
+/// first art color, else bold blue.
+fn accent_color(logo: &Option<Logo>) -> &'static str {
+    logo.as_ref()
+        .and_then(|logo| logo.def.color_keys.or(logo.def.colors.first().copied()))
+        .filter(|color| *color != "39")
+        .unwrap_or(FALLBACK_ACCENT)
+}
+
+/// The title row uses the logo's dedicated title color when set.
+fn title_color(logo: &Option<Logo>) -> &'static str {
+    logo.as_ref()
+        .and_then(|logo| logo.def.color_title.or(logo.def.colors.first().copied()))
+        .filter(|color| *color != "39")
+        .unwrap_or(FALLBACK_ACCENT)
+}
+
+/// Serializes parsed logo lines to strings, tracking visible widths separately.
+fn colorize(logo: &Logo, color: bool) -> Vec<(String, usize)> {
+    logo.lines
+        .iter()
+        .map(|line| {
+            let mut out = String::new();
+            let mut current = "";
+            for seg in line {
+                if seg.text.is_empty() {
+                    continue;
+                }
+                if color && seg.color != current {
+                    out.push_str("\x1b[");
+                    out.push_str(seg.color);
+                    out.push('m');
+                    current = seg.color;
+                }
+                out.push_str(&seg.text);
+            }
+            if color && !out.is_empty() {
+                out.push_str("\x1b[0m");
+            }
+            let width = line.iter().map(|seg| seg.text.chars().count()).sum();
+            (out, width)
+        })
+        .collect()
+}
+
+/// Renders a single info row; `Kind::Raw` values are printed verbatim because
+/// modules embed their own escapes there.
+fn row_line(row: &Row, accent: &str, title: &str, color: bool) -> String {
+    match (&row.key, row.kind) {
+        (Some(key), Kind::Value) => {
+            if color {
+                format!("\x1b[1;{accent}m{key}:\x1b[0m {}", row.value)
+            } else {
+                format!("{key}: {}", row.value)
+            }
+        },
+        (None, Kind::Value) => {
+            if color {
+                format!("\x1b[1;{title}m{}\x1b[0m", row.value)
+            } else {
+                row.value.clone()
+            }
+        },
+        (_, Kind::Raw) => row.value.clone(),
+    }
+}
+
+pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) {
+    if cli.pipe {
+        for row in rows {
+            match &row.key {
+                Some(key) => println!("{key}: {}", row.value),
+                None => println!("{}", row.value),
+            }
+        }
+        return;
+    }
+
+    let stdout = std::io::stdout();
+    let mut out = BufWriter::new(stdout.lock());
+    let accent = accent_color(logo);
+    let title = title_color(logo);
+    let logo_lines: Vec<(String, usize)> =
+        logo.as_ref().map(|logo| colorize(logo, instance.color)).unwrap_or_default();
+    let pad = cli.padding as usize;
+
+    let total = logo_lines.len().max(rows.len());
+    for i in 0..total {
+        if i < logo_lines.len() {
+            let (text, width) = &logo_lines[i];
+            let _ = write!(out, "{text}");
+            let _ = write!(out, "{:width$}", "", width = logo.as_ref().map_or(pad, |l| l.width) - width + pad);
+        } else {
+            let empty_width = logo.as_ref().map_or(0, |l| l.width) + pad;
+            let _ = write!(out, "{:width$}", "", width = empty_width);
+        }
+
+        if i < rows.len() {
+            let _ = writeln!(out, "{}", row_line(&rows[i], accent, title, instance.color));
+        } else {
+            let _ = writeln!(out);
+        }
+    }
+    let _ = out.flush();
+}

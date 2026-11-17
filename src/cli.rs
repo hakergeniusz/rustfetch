@@ -1,37 +1,35 @@
-//! This file handles all CLI flags such as -a or --all to display all options.
-//! It also manages the --help text with custom comments.
-
-use std::path::PathBuf;
+//! CLI definition for rustfetch.
 
 use clap::Parser;
 
 #[derive(Parser, Debug)]
-#[command(name = "rustfetch", version)]
+#[command(
+    name = "rustfetch",
+    version,
+    about = "Fastfetch, rewritten in Rust",
+    after_help = "Run `rustfetch <module> ...` to only show the given modules."
+)]
 pub struct Cli {
-    #[arg(short, long, help = "Display all info regardless of config")]
-    pub all: bool,
+    /// Only show these modules, e.g. `rustfetch os cpu memory`
+    pub modules: Vec<String>,
 
-    #[arg(long, help = "Regenerates the .toml config file with standard values")]
-    pub reset_config: bool,
+    /// List all available modules and exit
+    #[arg(short, long)]
+    pub list_modules: bool,
 
-    #[arg(
-        short,
-        long,
-        default_value_t = 1,
-        help = "Adds padding between the logo and the text"
-    )]
+    /// Logo to use: a distro id (e.g. `arch`), `none`, or a path to a text file
+    #[arg(long)]
+    pub logo: Option<String>,
+
+    /// Use the small variant of the logo when available
+    #[arg(short, long)]
+    pub small: bool,
+
+    /// Spaces between the logo and the info column
+    #[arg(short, long, default_value_t = 2)]
     pub padding: u8,
 
-    #[arg(
-        short,
-        long,
-        help = "Uses a different config file. Must provide a valid path"
-    )]
-    pub config_file: Option<PathBuf>,
-
-    #[arg(long, help = "Forcefully regenerates the cache file")]
-    pub clear_cache: bool,
-
-    #[arg(long, help = "Displays a smaller logo")]
-    pub small_logo: bool,
+    /// Disable colors, logo and layout (for scripting)
+    #[arg(long)]
+    pub pipe: bool,
 }

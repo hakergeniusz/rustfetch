@@ -1,0 +1,147 @@
+//! Module registry: every module is a name plus a function returning rows.
+
+pub mod battery;
+pub mod colors;
+pub mod cpu;
+pub mod de;
+pub mod disk;
+pub mod gpu;
+pub mod host;
+pub mod kernel;
+pub mod locale;
+pub mod memory;
+pub mod os;
+pub mod packages;
+pub mod separator;
+pub mod shell;
+pub mod swap;
+pub mod terminal;
+pub mod title;
+pub mod uptime;
+pub mod wm;
+
+use crate::instance::Instance;
+
+/// How a row should be rendered.
+#[derive(Clone, Copy)]
+pub enum Kind {
+    /// Styled by the renderer: `key: value` or accent-colored title.
+    Value,
+    /// Printed verbatim; the module owns any escape sequences.
+    Raw,
+}
+
+pub struct Row {
+    pub key: Option<String>,
+    pub value: String,
+    pub kind: Kind,
+}
+
+impl Row {
+    /// Regular `key: value` line.
+    pub fn new(key: &str, value: impl Into<String>) -> Self {
+        Self { key: Some(key.to_string()), value: value.into(), kind: Kind::Value }
+    }
+
+    /// Keyless line styled by the renderer (e.g. the title).
+    pub fn bare(value: impl Into<String>) -> Self {
+        Self { key: None, value: value.into(), kind: Kind::Value }
+    }
+
+    /// Keyless line printed as-is (separator, color blocks).
+    pub fn raw(value: impl Into<String>) -> Self {
+        Self { key: None, value: value.into(), kind: Kind::Raw }
+    }
+}
+
+pub struct ModuleDef {
+    pub name: &'static str,
+    pub doc: &'static str,
+    pub run: fn(&Instance) -> Vec<Row>,
+}
+
+macro_rules! modules {
+    ($(($name:ident, $doc:literal)),+ $(,)?) => {
+        pub const REGISTRY: &[ModuleDef] = &[
+            $(ModuleDef { name: stringify!($name), doc: $doc, run: $name::run }),+
+        ];
+    };
+}
+
+modules![
+    (title, "user@host"),
+    (separator, "dashed separator line"),
+    (os, "operating system name and architecture"),
+    (host, "device model name"),
+    (kernel, "kernel name and release"),
+    (uptime, "time since boot"),
+    (packages, "installed packages by package manager"),
+    (shell, "user shell and version"),
+    (de, "desktop environment"),
+    (wm, "window manager"),
+    (terminal, "terminal emulator"),
+    (cpu, "cpu model, core count and frequency"),
+    (gpu, "gpu vendor and model"),
+    (memory, "ram usage"),
+    (swap, "swap usage"),
+    (disk, "root filesystem usage"),
+    (locale, "system locale"),
+    (battery, "battery charge and status"),
+    (colors, "terminal color palette"),
+];
+
+/// Modules shown when no explicit selection is given, mirroring fastfetch's
+/// default output.
+pub const DEFAULT_PRESET: &[&str] = &[
+    "title",
+    "separator",
+    "os",
+    "host",
+    "kernel",
+    "uptime",
+    "packages",
+    "shell",
+    "de",
+    "wm",
+    "terminal",
+    "cpu",
+    "gpu",
+    "memory",
+    "swap",
+    "disk",
+    "locale",
+    "battery",
+    "colors",
+];
+
+pub fn list_modules() {
+    for module in REGISTRY {
+        println!("{:10} {}", module.name, module.doc);
+    }
+}
+
+/// Runs the selected modules (or the default preset) in registry order.
+pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
+    let names: Vec<&str> = if selected.is_empty() {
+        DEFAULT_PRESET.to_vec()
+    } else {
+        let unknown: Vec<&str> = selected
+            .iter()
+            .filter(|name| REGISTRY.iter().all(|module| module.name != name.as_str()))
+            .map(String::as_str)
+            .collect();
+        if !unknown.is_empty() {
+            eprintln!("rustfetch: unknown module(s): {}", unknown.join(", "));
+            std::process::exit(2);
+        }
+        selected.iter().map(String::as_str).collect()
+    };
+
+    let mut rows = Vec::new();
+    for module in REGISTRY {
+        if names.contains(&module.name) {
+            rows.extend((module.run)(instance));
+        }
+    }
+    rows
+}
