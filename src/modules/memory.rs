@@ -1,6 +1,6 @@
 //! `memory` and `swap` modules: usage from /proc/meminfo.
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{instance::Instance, modules::colorize_percent, modules::Row, util};
 
 /// Reads "<key>: <value> kB" from meminfo content.
 fn meminfo_value(content: &str, key: &str) -> Option<u64> {
@@ -13,7 +13,7 @@ fn meminfo_value(content: &str, key: &str) -> Option<u64> {
     })
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Some(content) = util::read_file("/proc/meminfo") else {
         return Vec::new();
     };
@@ -32,6 +32,11 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
 
     vec![Row::new(
         "Memory",
-        format!("{} / {} ({pct}%)", util::fmt_bytes(used * 1024), util::fmt_bytes(total * 1024)),
+        format!(
+            "{} / {} ({})",
+            util::fmt_bytes(used * 1024),
+            util::fmt_bytes(total * 1024),
+            colorize_percent(pct, instance.color)
+        ),
     )]
 }

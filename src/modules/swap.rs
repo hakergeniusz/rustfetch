@@ -1,8 +1,8 @@
 //! `swap` module: usage from /proc/meminfo; hidden when no swap is configured.
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{instance::Instance, modules::colorize_percent, modules::Row, util};
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Some(content) = util::read_file("/proc/meminfo") else {
         return Vec::new();
     };
@@ -31,6 +31,11 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
 
     vec![Row::new(
         "Swap",
-        format!("{} / {} ({pct}%)", util::fmt_bytes(used * 1024), util::fmt_bytes(total * 1024)),
+        format!(
+            "{} / {} ({})",
+            util::fmt_bytes(used * 1024),
+            util::fmt_bytes(total * 1024),
+            colorize_percent(pct, instance.color)
+        ),
     )]
 }

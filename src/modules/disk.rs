@@ -1,8 +1,8 @@
 //! `disk` module: root filesystem usage via statvfs(3).
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{instance::Instance, modules::colorize_percent, modules::Row, util};
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(root) = std::ffi::CString::new("/") else {
         return Vec::new();
     };
@@ -22,6 +22,11 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
 
     vec![Row::new(
         "Disk (/)",
-        format!("{} / {} ({pct}%)", util::fmt_bytes(used), util::fmt_bytes(total)),
+        format!(
+            "{} / {} ({})",
+            util::fmt_bytes(used),
+            util::fmt_bytes(total),
+            colorize_percent(pct, instance.color)
+        ),
     )]
 }

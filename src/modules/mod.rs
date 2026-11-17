@@ -120,6 +120,23 @@ pub fn list_modules() {
     }
 }
 
+/// Percent values colored like fastfetch: green when usage is low, yellow in
+/// the middle band, red when high. Plain text without colors.
+pub fn colorize_percent(pct: u64, color: bool) -> String {
+    let code = if pct < 25 {
+        "32"
+    } else if pct < 75 {
+        "93"
+    } else {
+        "91"
+    };
+    if color {
+        format!("\x1b[{code}m{pct}%\x1b[0m")
+    } else {
+        format!("{pct}%")
+    }
+}
+
 /// Runs the selected modules (or the default preset) in registry order.
 pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
     let names: Vec<&str> = if selected.is_empty() {
