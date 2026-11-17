@@ -62,7 +62,10 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     add(count_prefixed_lines("/var/lib/dpkg/status", "Package: "), "dpkg");
     add(count_prefixed_lines("/lib/apk/db/installed", "P:"), "apk");
     add(count_nested_dirs("/var/db/pkg"), "portage");
-    add(count_subdirs("/var/lib/flatpak/app"), "flatpak");
+    add(count_subdirs("/var/lib/flatpak/app"), "flatpak-system");
+    if let Ok(home) = std::env::var("HOME") {
+        add(count_subdirs(&format!("{home}/.local/share/flatpak/app")), "flatpak-user");
+    }
     add(count_files_with_ext("/var/lib/snapd/snaps", "snap"), "snap");
 
     if !any {
