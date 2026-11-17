@@ -114,7 +114,7 @@ fn gpu_cards() -> Vec<std::path::PathBuf> {
 }
 
 /// Short vendor name: pci.ids names AMD as "Advanced Micro Devices, Inc.
-/// [AMD/ATI]", whose bracketed alias reads much better on screen.
+/// [AMD/ATI]" and NVIDIA as "NVIDIA Corporation"; both read better short.
 fn short_vendor(name: &str) -> &str {
     if let Some(start) = name.find('[') {
         let inner = &name[start + 1..];
@@ -124,6 +124,11 @@ fn short_vendor(name: &str) -> &str {
                 return alias;
             }
             return alias;
+        }
+    }
+    for suffix in [" Corporation", " Inc.", " Ltd.", " Ltd"] {
+        if let Some(stripped) = name.strip_suffix(suffix) {
+            return stripped;
         }
     }
     name
@@ -143,14 +148,12 @@ fn describe_card(
             (Some(subvendor), Some(subdevice)) => lookup.subsystem_name(vendor_id, device_id, subvendor, subdevice),
             _ => None,
         };
-        if let (Some(vendor_name), Some(device_name)) = (lookup.vendor_name(vendor_id), lookup.device_name(vendor_id, device_id))
+        if let (Some(vendor_name), Some(device_name)) =
+            (lookup.vendor_name(vendor_id), lookup.device_name(vendor_id, device_id))
         {
-            return match subsystem {
-                Some(subsystem) => {
-                    format!("{} {} [{}]", short_vendor(vendor_name), device_name, subsystem)
-                },
-                None => format!("{} {}", short_vendor(vendor_name), device_name),
-            };
+            // The subsystem name is the marketing card name where one exists.
+            let device_display = subsystem.unwrap_or(device_name);
+            return format!("{} {}", short_vendor(vendor_name), device_display);
         }
     }
 
