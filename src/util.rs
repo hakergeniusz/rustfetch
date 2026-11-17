@@ -49,6 +49,23 @@ pub fn percent(part: u64, total: u64) -> Option<u64> {
     (total > 0).then(|| part * 100 / total)
 }
 
+/// Names of all processes visible in /proc (comm values, truncated to 15
+/// characters by the kernel). Shared by the wm and lm modules.
+pub fn process_comms() -> std::collections::HashSet<String> {
+    std::fs::read_dir("/proc")
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    entry.file_name().to_string_lossy().chars().all(|c| c.is_ascii_digit())
+                })
+                .filter_map(|entry| read_trimmed_in(&entry.path(), "comm"))
+                .filter(|comm| !comm.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Formats a byte count the way fastfetch does: two decimals in GiB,
 /// whole MiB/KiB otherwise.
 pub fn fmt_bytes(bytes: u64) -> String {

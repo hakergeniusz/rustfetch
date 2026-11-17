@@ -1,8 +1,6 @@
 //! `wm` module: window manager detected from running process names.
 
-use std::collections::HashSet;
-
-use crate::{instance::Instance, modules::Row};
+use crate::{instance::Instance, modules::Row, util};
 
 /// Compositors and window managers to look for, in lookup order.
 const WINDOW_MANAGERS: &[&str] = &[
@@ -34,27 +32,6 @@ const WINDOW_MANAGERS: &[&str] = &[
     "enlightenment",
 ];
 
-/// Processes running in /proc right now (comm names, truncated to 15 chars
-/// by the kernel, exactly what we match against).
-fn process_names() -> HashSet<String> {
-    std::fs::read_dir("/proc")
-        .map(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .filter(|entry| {
-                    entry.file_name().to_string_lossy().chars().all(|c| c.is_ascii_digit())
-                })
-                .filter_map(|entry| {
-                    std::fs::read_to_string(entry.path().join("comm"))
-                        .ok()
-                        .map(|comm| comm.trim().to_string())
-                        .filter(|comm| !comm.is_empty())
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 /// Maps raw comm names to the names fastfetch would report.
 fn pretty_name(comm: &str) -> &str {
     match comm {
@@ -65,7 +42,7 @@ fn pretty_name(comm: &str) -> &str {
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let names = process_names();
+    let names = util::process_comms();
     let Some(found) = WINDOW_MANAGERS.iter().find(|name| names.contains(**name)) else {
         return Vec::new();
     };
