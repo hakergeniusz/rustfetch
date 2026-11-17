@@ -7,9 +7,11 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         return Vec::new();
     };
 
-    // Version strings like "None" or a copy of the name add nothing.
+    // Versions like "None" or a bare revision number ("1.0") add nothing;
+    // real versions ("ThinkPad T14 Gen 3") always contain letters.
     let version = util::read_trimmed("/sys/class/dmi/id/product_version")
-        .filter(|v| !v.eq_ignore_ascii_case("none") && *v != name);
+        .filter(|v| !v.eq_ignore_ascii_case("none") && *v != name)
+        .filter(|v| !v.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ' '));
 
     let value = match version {
         Some(version) => format!("{name} ({version})"),
