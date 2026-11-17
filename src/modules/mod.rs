@@ -1,6 +1,8 @@
 //! Module registry: every module is a name plus a function returning rows.
 
 pub mod battery;
+pub mod bios;
+pub mod board;
 pub mod colors;
 pub mod cpu;
 pub mod cursor;
@@ -13,15 +15,20 @@ pub mod gtk;
 pub mod host;
 pub mod icons;
 pub mod kernel;
+pub mod lm;
+pub mod loadavg;
 pub mod locale;
 pub mod localip;
 pub mod memory;
 pub mod os;
 pub mod packages;
+pub mod physicaldisk;
+pub mod processes;
 pub mod separator;
 pub mod shell;
 pub mod swap;
 pub mod terminal;
+pub mod terminalsize;
 pub mod theme;
 pub mod title;
 pub mod uptime;
@@ -93,8 +100,13 @@ modules![
     (separator, "dashed separator line"),
     (os, "operating system name and architecture"),
     (host, "device model name"),
+    (bios, "firmware version and release date"),
+    (board, "motherboard name and version"),
     (kernel, "kernel name and release"),
     (uptime, "time since boot"),
+    (loadavg, "load averages of the last 1, 5 and 15 minutes"),
+    (lm, "login manager"),
+    (processes, "number of running processes"),
     (packages, "installed packages by package manager"),
     (shell, "user shell and version"),
     (display, "monitors: resolution, size, refresh rate"),
@@ -106,11 +118,13 @@ modules![
     (font, "desktop font"),
     (cursor, "cursor theme and size"),
     (terminal, "terminal emulator"),
+    (terminalsize, "terminal dimensions in cells and pixels"),
     (cpu, "cpu model, core count and frequency"),
     (gpu, "gpu vendor and model"),
     (memory, "ram usage"),
     (swap, "swap usage"),
     (disk, "root filesystem usage"),
+    (physicaldisk, "physical storage devices"),
     (localip, "lan addresses of network interfaces"),
     (locale, "system locale"),
     (battery, "battery charge and status"),
