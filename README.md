@@ -12,8 +12,13 @@ DE version detection and GNOME settings.
 Current modules: `title`, `separator`, `os`, `host`, `bios`, `board`,
 `kernel`, `uptime`, `loadavg`, `processes`, `packages`, `shell`, `display`,
 `de`, `wm`, `wmtheme`, `theme`, `icons`, `font`, `cursor`, `terminal`,
-`terminalsize`, `cpu`, `gpu`, `memory`, `swap`, `disk`, `physicaldisk`,
-`localip`, `locale`, `battery`, `lm`, `colors`.
+`terminalfont`, `terminalsize`, `cpu`, `gpu`, `memory`, `swap`, `disk`,
+`physicaldisk`, `localip`, `locale`, `battery`, `poweradapter`, `break`,
+`lm`, `colors`.
+
+A fastfetch `~/.config/fastfetch/config.jsonc` with a `modules` array is
+honored as the preset, so existing fastfetch configs keep working (unknown
+module names are skipped).
 
 Linux only for now.
 
