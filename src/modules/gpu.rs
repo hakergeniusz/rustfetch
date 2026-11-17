@@ -134,6 +134,16 @@ fn short_vendor(name: &str) -> &str {
     name
 }
 
+/// pci.ids device names like "GA106 [GeForce RTX 3050 OEM]" carry the
+/// marketing card name in brackets; subsystem names are already bare.
+fn bracketed(name: &str) -> Option<String> {
+    let start = name.find('[')? + 1;
+    let inner = &name[start..];
+    let end = inner.rfind(']')?;
+    let inner = &inner[..end];
+    (!inner.is_empty()).then(|| inner.to_string())
+}
+
 fn describe_card(
     lookup: Option<&PciNames>,
     vendor_id: &str,
@@ -151,8 +161,8 @@ fn describe_card(
         if let (Some(vendor_name), Some(device_name)) =
             (lookup.vendor_name(vendor_id), lookup.device_name(vendor_id, device_id))
         {
-            // The subsystem name is the marketing card name where one exists.
-            let device_display = subsystem.unwrap_or(device_name);
+            let device_display =
+                subsystem.cloned().or_else(|| bracketed(device_name)).unwrap_or_else(|| device_name.clone());
             return format!("{} {}", short_vendor(vendor_name), device_display);
         }
     }
