@@ -4,6 +4,7 @@ pub mod battery;
 pub mod colors;
 pub mod cpu;
 pub mod de;
+pub mod display;
 pub mod disk;
 pub mod gpu;
 pub mod host;
@@ -90,6 +91,7 @@ modules![
     (uptime, "time since boot"),
     (packages, "installed packages by package manager"),
     (shell, "user shell and version"),
+    (display, "monitors: resolution, size, refresh rate"),
     (de, "desktop environment"),
     (wm, "window manager"),
     (terminal, "terminal emulator"),
@@ -115,6 +117,7 @@ pub const DEFAULT_PRESET: &[&str] = &[
     "uptime",
     "packages",
     "shell",
+    "display",
     "de",
     "wm",
     "terminal",
