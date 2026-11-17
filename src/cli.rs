@@ -35,9 +35,10 @@ pub struct Cli {
     #[arg(short, long)]
     pub small: bool,
 
-    /// Spaces between the logo and the info column
-    #[arg(short, long, default_value_t = 2)]
-    pub padding: u8,
+    /// Set padding around the logo (like fastfetch: applies to both sides,
+    /// while the default puts 4 spaces on the right only)
+    #[arg(short, long)]
+    pub padding: Option<u8>,
 
     /// Disable colors, logo and layout (for scripting)
     #[arg(long)]

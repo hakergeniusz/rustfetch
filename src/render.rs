@@ -91,22 +91,28 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) 
     let title = title_color(logo);
     let logo_lines: Vec<(String, usize)> =
         logo.as_ref().map(|logo| colorize(logo, instance.color)).unwrap_or_default();
-    let pad = cli.padding as usize;
+
+    // fastfetch's padding model: defaults are 0 left / 4 right; --padding N
+    // sets both sides. The key column sits at logo width + left + right.
+    let (pad_left, pad_right) = match cli.padding {
+        Some(pad) => (pad as usize, pad as usize),
+        None => (0, 4),
+    };
+    let key_column = pad_left + logo.as_ref().map_or(0, |logo| logo.width) + pad_right;
 
     let total = logo_lines.len().max(rows.len());
     for i in 0..total {
         if i < logo_lines.len() {
             let (text, width) = &logo_lines[i];
+            let _ = write!(out, "{:width$}", "", width = pad_left);
             let _ = write!(out, "{text}");
-            let _ = write!(
-                out,
-                "{:width$}",
-                "",
-                width = logo.as_ref().map_or(pad, |l| l.width) - width + pad
-            );
+            // lines past the last info row are printed bare, like fastfetch's
+            // ffLogoPrintRemaining (no key-column fill)
+            if i < rows.len() {
+                let _ = write!(out, "{:width$}", "", width = key_column - pad_left - width);
+            }
         } else {
-            let empty_width = logo.as_ref().map_or(0, |l| l.width) + pad;
-            let _ = write!(out, "{:width$}", "", width = empty_width);
+            let _ = write!(out, "{:width$}", "", width = key_column);
         }
 
         if i < rows.len() {
