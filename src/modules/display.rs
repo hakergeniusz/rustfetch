@@ -140,7 +140,7 @@ fn edids_by_connector() -> Vec<(String, Edid)> {
         .into_iter()
         .filter_map(|connector| {
             let name = connector.file_name()?.to_string_lossy().into_owned();
-            let suffix = name.splitn(2, '-').nth(1)?.to_string();
+            let suffix = name.split_once('-')?.1.to_string();
             let edid = read_edid(&connector)?;
             Some((suffix, edid))
         })
@@ -201,16 +201,16 @@ fn mutter_displays() -> Option<Vec<MutterDisplay>> {
             None => &text[header_end..],
         };
 
-        if let Some(mode_name) = current_mode_name(region) {
-            if let Some((width, height, refresh)) = parse_mode_name(&mode_name) {
-                displays.push(MutterDisplay {
-                    connector: connector.to_string(),
-                    model: model.to_string(),
-                    width,
-                    height,
-                    refresh,
-                });
-            }
+        if let Some(mode_name) = current_mode_name(region)
+            && let Some((width, height, refresh)) = parse_mode_name(&mode_name)
+        {
+            displays.push(MutterDisplay {
+                connector: connector.to_string(),
+                model: model.to_string(),
+                width,
+                height,
+                refresh,
+            });
         }
 
         match next_header {
