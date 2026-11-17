@@ -73,7 +73,7 @@ fn flatpak_runtime_packages(base: &str) -> u64 {
                     let name = name.to_string_lossy();
                     !name.ends_with(".Locale") && !name.ends_with(".Debug")
                 })
-                .map(|entry| count_subdirs(&entry.path().to_string_lossy()))
+                .map(|entry| count_nested_dirs(&entry.path().to_string_lossy()))
                 .sum()
         })
         .unwrap_or(0)
