@@ -110,6 +110,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "processes", doc: "number of running processes", run: processes::run },
     ModuleDef { name: "packages", doc: "installed packages by package manager", run: packages::run },
     ModuleDef { name: "shell", doc: "user shell and version", run: shell::run },
+    ModuleDef { name: "editor", doc: "$VISUAL or $EDITOR and its version", run: editor::run },
     ModuleDef { name: "display", doc: "monitors: resolution, size, refresh rate", run: display::run },
     ModuleDef { name: "de", doc: "desktop environment", run: de::run },
     ModuleDef { name: "wm", doc: "window manager", run: wm::run },

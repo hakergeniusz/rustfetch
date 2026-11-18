@@ -44,10 +44,17 @@ pub fn parse_colon_line(line: &str) -> Option<(&str, &str)> {
     Some((key.trim(), value.trim()))
 }
 
-/// Percentage of `part` over `total`, rounded to nearest like fastfetch's
-/// %.0f printing; None when total is zero.
-pub fn percent(part: u64, total: u64) -> Option<u64> {
-    (total > 0).then(|| (part * 100 + total / 2) / total)
+/// ffBinaryExtractStrings: scan a binary's NUL-separated strings and let
+/// `extract` pull a value out of the first long-enough match.
+pub fn binary_extract_strings(
+    path: &str,
+    min_len: usize,
+    extract: impl Fn(&str) -> Option<String>,
+) -> Option<String> {
+    let data = std::fs::read(path).ok()?;
+    data.split(|&b| b == 0)
+        .filter_map(|chunk| std::str::from_utf8(chunk).ok())
+        .find_map(|line| (line.len() >= min_len).then(|| extract(line)).flatten())
 }
 
 /// Names of all processes visible in /proc (comm values, truncated to 15
@@ -235,15 +242,6 @@ mod tests {
     fn parse_colon_line_trims() {
         assert_eq!(parse_colon_line("MemTotal :  1234 kB"), Some(("MemTotal", "1234 kB")));
         assert_eq!(parse_colon_line("no colon here"), None);
-    }
-
-    #[test]
-    fn percent_rounds_to_nearest_and_guards() {
-        assert_eq!(percent(1, 3), Some(33));
-        assert_eq!(percent(998, 1545), Some(65));
-        assert_eq!(percent(1077, 5800), Some(19));
-        assert_eq!(percent(0, 0), None);
-        assert_eq!(percent(5, 0), None);
     }
 
     #[test]

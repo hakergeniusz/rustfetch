@@ -14,8 +14,9 @@ const WRAPPERS: &[&str] = &[
 ];
 
 /// comm and ppid from /proc/<pid>/stat; comm may contain spaces, so both
-/// ends are located and ppid is parsed after the closing paren.
-fn process_basic_info(pid: u32) -> Option<(String, u32)> {
+/// ends are located and ppid is parsed after the closing paren. Shared with
+/// the initsystem module for the pid 1 lookup.
+pub(crate) fn process_basic_info(pid: u32) -> Option<(String, u32)> {
     let stat = util::read_file(&format!("/proc/{pid}/stat"))?;
     let open = stat.find('(')?;
     let close = stat.rfind(')')?;
@@ -70,15 +71,6 @@ fn detect_shell() -> Option<(String, Option<String>)> {
     Some((pretty_name(&user_shell_name, Some(&user_shell)), Some(user_shell)))
 }
 
-/// ffBinaryExtractStrings: scan the binary's NUL-separated strings and let
-/// `extract` pull the version out of the first matching one.
-fn binary_version(path: &str, min_len: usize, extract: impl Fn(&str) -> Option<String>) -> Option<String> {
-    let data = std::fs::read(path).ok()?;
-    data.split(|&b| b == 0)
-        .filter_map(|chunk| std::str::from_utf8(chunk).ok())
-        .find_map(|line| (line.len() >= min_len).then(|| extract(line)).flatten())
-}
-
 fn extract_zsh_version(line: &str) -> Option<String> {
     let rest = line.strip_prefix("zsh-")?;
     let end = rest.find('-')?;
@@ -104,10 +96,14 @@ fn version_spawn_last(path: &str) -> Option<String> {
 /// Per-shell version resolution, mirroring fastfetch's dispatch.
 fn shell_version(name: &str, exe: Option<&str>) -> Option<String> {
     match (name, exe) {
-        ("zsh", Some(exe)) => binary_version(exe, "zsh-0.0-0".len(), extract_zsh_version)
-            .or_else(|| version_spawn_last(exe)),
-        ("bash", Some(exe)) => binary_version(exe, "@(#)Bash version 0.0.0(0) release GNU".len(), extract_bash_version)
-            .or_else(|| version_spawn_last(exe)),
+        ("zsh", Some(exe)) => {
+            util::binary_extract_strings(exe, "zsh-0.0-0".len(), extract_zsh_version)
+                .or_else(|| version_spawn_last(exe))
+        },
+        ("bash", Some(exe)) => {
+            util::binary_extract_strings(exe, "@(#)Bash version 0.0.0(0) release GNU".len(), extract_bash_version)
+                .or_else(|| version_spawn_last(exe))
+        },
         _ => None,
     }
 }
