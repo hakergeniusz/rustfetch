@@ -1,26 +1,298 @@
-//! `battery` module: charge and status of all batteries from sysfs.
+//! `battery` module: port of detection/battery/battery_linux.c and
+//! modules/battery/battery.c. Batteries are enumerated from
+//! /sys/class/power_supply: entries of type "Battery" (skipping absent
+//! ones, "Mains" supplies — which set the shared AC-connected bit — and
+//! "Device"-scoped batteries). The default value is
+//! "<capacity>% [(<duration> remaining)] [<statuses>]"; a "Full" or
+//! "Not charging" battery carries no status bits, so no brackets print
+//! at all. The upstream temperature option is off by default and this
+//! port has no flag for it, so temperature stays unset.
 
 use crate::{instance::Instance, modules::Row, util};
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Ok(entries) = std::fs::read_dir("/sys/class/power_supply") else {
-        return Vec::new();
+// FFBatteryStatus bits, in the printer's append order.
+const STATUS_UNKNOWN: u8 = 1 << 0;
+const STATUS_AC_CONNECTED: u8 = 1 << 1;
+const STATUS_USB_CONNECTED: u8 = 1 << 2;
+const STATUS_WIRELESS_CONNECTED: u8 = 1 << 3;
+const STATUS_CHARGING: u8 = 1 << 4;
+const STATUS_DISCHARGING: u8 = 1 << 5;
+const STATUS_CRITICAL: u8 = 1 << 6;
+
+struct BatteryResult {
+    #[allow(dead_code)]
+    manufacturer: String,
+    #[allow(dead_code)]
+    manufacture_date: String,
+    model_name: String,
+    #[allow(dead_code)]
+    technology: String,
+    #[allow(dead_code)]
+    serial: String,
+    status: u8,
+    capacity: f64,
+    #[allow(dead_code)]
+    cycle_count: u32,
+    /// Seconds until empty, -1 if unknown (upstream int32_t timeRemaining).
+    time_remaining: i32,
+}
+
+/// ffStrbufToSInt: the leading integer or the default.
+fn to_i64(text: &str, default: i64) -> i64 {
+    text.trim().parse().unwrap_or(default)
+}
+
+/// parseBattery: one power_supply directory; Mains supplies return None
+/// after updating `ac_connected`.
+fn parse_battery(path: &std::path::Path, id: &str, ac_connected: &mut bool) -> Option<BatteryResult> {
+    // present == '0' means the device exists but is not populated.
+    if util::read_trimmed_in(path, "present").is_some_and(|text| text == "0") {
+        return None;
+    }
+
+    // type must exist and be "Battery"; "Mains" supplies only report AC.
+    let battery_type = util::read_trimmed_in(path, "type")?;
+    if battery_type == "Mains" {
+        if !*ac_connected && util::read_trimmed_in(path, "online").is_some_and(|text| text == "1") {
+            *ac_connected = true;
+        }
+        return None;
+    }
+    if battery_type != "Battery" {
+        return None;
+    }
+
+    // Device-scoped batteries (e.g. peripherals) are not the laptop's.
+    if util::read_trimmed_in(path, "scope").is_some_and(|scope| scope == "Device") {
+        return None;
+    }
+
+    // capacity must exist.
+    let capacity = util::read_trimmed_in(path, "capacity")?.parse().unwrap_or(0.0);
+
+    let manufacturer = match util::read_trimmed_in(path, "manufacturer") {
+        Some(text) => text,
+        // asahi's SMC battery has no manufacturer file.
+        None if id == "macsmc-battery" => "Apple Inc.".to_string(),
+        None => String::new(),
+    };
+    let model_name = util::read_trimmed_in(path, "model_name").unwrap_or_default();
+    let technology = util::read_trimmed_in(path, "technology").unwrap_or_default();
+
+    let status_text = util::read_trimmed_in(path, "status").unwrap_or_default();
+    let mut status = 0u8;
+    let mut time_remaining = -1i32;
+
+    // Unknown, Charging, Discharging, Not charging, Full — only the first
+    // three map to status bits ("Full" and "Not charging" print none).
+    if status_text == "Discharging" {
+        status |= STATUS_DISCHARGING;
+        if let Some(text) = util::read_trimmed_in(path, "time_to_empty_now") {
+            time_remaining = to_i64(&text, 0) as i32;
+        } else if let Some(text) = util::read_trimmed_in(path, "charge_now") {
+            let charge_now = to_i64(&text, 0);
+            if let Some(text) = (charge_now > 0)
+                .then(|| util::read_trimmed_in(path, "current_now"))
+                .flatten()
+            {
+                // Missing values default to INT64_MIN, whose absolute value
+                // overflows back to itself and stays negative.
+                let mut current_now = to_i64(&text, i64::MIN);
+                if current_now < 0 {
+                    current_now = current_now.wrapping_neg();
+                }
+                if current_now > 0 {
+                    time_remaining = ((charge_now * 3600) / current_now) as i32;
+                }
+            }
+        }
+    } else if status_text == "Charging" {
+        status |= STATUS_CHARGING;
+    } else if status_text == "Unknown" {
+        status |= STATUS_UNKNOWN;
+    }
+
+    if util::read_trimmed_in(path, "capacity_level").is_some_and(|level| level == "Critical") {
+        status |= STATUS_CRITICAL;
+    }
+
+    let serial = util::read_trimmed_in(path, "serial_number").unwrap_or_default();
+
+    let cycle_count = {
+        let count = util::read_trimmed_in(path, "cycle_count")
+            .map(|text| to_i64(&text, 0))
+            .unwrap_or(0);
+        if count < 0 || count > u32::MAX as i64 {
+            0
+        } else {
+            count as u32
+        }
     };
 
-    let mut batteries = Vec::new();
-    for entry in entries.filter_map(Result::ok) {
-        if !entry.file_name().to_string_lossy().starts_with("BAT") {
+    let manufacture_date = (|| {
+        let year = util::read_trimmed_in(path, "manufacture_year").map(|text| to_i64(&text, 0))?;
+        if year <= 0 {
+            return None;
+        }
+        let month = util::read_trimmed_in(path, "manufacture_month").map(|text| to_i64(&text, 0))?;
+        if month <= 0 {
+            return None;
+        }
+        let day = util::read_trimmed_in(path, "manufacture_day").map(|text| to_i64(&text, 0))?;
+        if day <= 0 {
+            return None;
+        }
+        Some(format!("{year:04}-{month:02}-{day:02}"))
+    })()
+    .unwrap_or_default();
+
+    Some(BatteryResult {
+        manufacturer,
+        manufacture_date,
+        model_name,
+        technology,
+        serial,
+        status,
+        capacity,
+        cycle_count,
+        time_remaining,
+    })
+}
+
+fn detect() -> Option<Vec<BatteryResult>> {
+    let mut results = Vec::new();
+    let mut ac_connected = false;
+    for entry in std::fs::read_dir("/sys/class/power_supply").ok()?.filter_map(Result::ok) {
+        let id = entry.file_name().to_string_lossy().into_owned();
+        if id.starts_with('.') {
             continue;
         }
-        let Some(capacity) = util::read_trimmed_in(&entry.path(), "capacity") else {
-            continue;
-        };
-        let status = util::read_trimmed_in(&entry.path(), "status").unwrap_or_default();
-        batteries.push(format!("{capacity}% [{status}]"));
+        if let Some(battery) = parse_battery(&entry.path(), &id, &mut ac_connected) {
+            results.push(battery);
+        }
+    }
+    if ac_connected {
+        for battery in &mut results {
+            battery.status |= STATUS_AC_CONNECTED;
+        }
+    }
+    Some(results)
+}
+
+/// The status text pieces, in ffPrintBattery's append order.
+fn status_texts(status: u8) -> Vec<&'static str> {
+    [
+        (STATUS_AC_CONNECTED, "AC Connected"),
+        (STATUS_USB_CONNECTED, "USB Connected"),
+        (STATUS_WIRELESS_CONNECTED, "Wireless Connected"),
+        (STATUS_CHARGING, "Charging"),
+        (STATUS_DISCHARGING, "Discharging"),
+        (STATUS_CRITICAL, "Critical"),
+        (STATUS_UNKNOWN, "Unknown"),
+    ]
+    .into_iter()
+    .filter(|(bit, _)| status & bit != 0)
+    .map(|(_, text)| text)
+    .collect()
+}
+
+/// printBattery's default format for one battery; the USB and wireless
+/// bits are unreachable on Linux detection but kept for parity.
+fn item_value(battery: &BatteryResult, color: bool) -> String {
+    let mut value = String::new();
+    if battery.capacity >= 0.0 {
+        // ffPercentAppendNum with the battery's { green: 50, yellow: 20 }
+        // thresholds (a high value is good) and the default NUM_COLOR bit.
+        value.push_str(&super::colorize_percent(battery.capacity, 50, 20, color));
+        if battery.time_remaining > 0 {
+            value.push_str(" (");
+            value.push_str(&util::duration_parts(battery.time_remaining as u32 as u64).join(", "));
+            value.push_str(" remaining)");
+        }
     }
 
-    if batteries.is_empty() {
+    if battery.status != 0 {
+        let statuses = status_texts(battery.status).join(", ");
+        if !value.is_empty() {
+            value.push_str(" [");
+            value.push_str(&statuses);
+            value.push(']');
+        } else {
+            value.push_str(&statuses);
+        }
+    }
+
+    // temperature != FF_BATTERY_TEMP_UNSET requires options->temp, which
+    // defaults to false upstream and has no flag in this port.
+
+    value
+}
+
+pub fn run(instance: &Instance) -> Vec<Row> {
+    let Some(results) = detect() else {
+        // "opendir(...) == nullptr" is an error row, hidden by default.
+        return Vec::new();
+    };
+    if results.is_empty() {
+        // "No batteries found" is an error row, hidden by default.
         return Vec::new();
     }
-    vec![Row::new("Battery", batteries.join(", "))]
+    results
+        .iter()
+        .map(|battery| {
+            let key = if battery.model_name.is_empty() {
+                "Battery".to_string()
+            } else {
+                format!("Battery ({})", battery.model_name)
+            };
+            Row::new(&key, item_value(battery, instance.color))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn battery(status: u8, capacity: f64, time_remaining: i32) -> BatteryResult {
+        BatteryResult {
+            manufacturer: String::new(),
+            manufacture_date: String::new(),
+            model_name: String::new(),
+            technology: String::new(),
+            serial: String::new(),
+            status,
+            capacity,
+            cycle_count: 0,
+            time_remaining,
+        }
+    }
+
+    #[test]
+    fn status_maps_sysfs_strings_to_bits() {
+        assert_eq!(status_texts(STATUS_AC_CONNECTED), vec!["AC Connected"]);
+        assert_eq!(
+            status_texts(STATUS_AC_CONNECTED | STATUS_DISCHARGING | STATUS_CRITICAL),
+            vec!["AC Connected", "Discharging", "Critical"]
+        );
+        // "Full" and "Not charging" map to no bit at all.
+        assert_eq!(status_texts(0), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn value_matches_the_default_format() {
+        // A discharging battery with a known time remaining.
+        assert_eq!(
+            item_value(&battery(STATUS_DISCHARGING, 85.0, 95_400), false),
+            "85% (1 day, 2 hours, 30 mins remaining) [Discharging]"
+        );
+        // A full battery has no status bits, so no brackets print.
+        assert_eq!(item_value(&battery(0, 100.0, -1), false), "100%");
+        // The status text alone still prints, without brackets (capacity 0
+        // still passes the capacity >= 0 gate).
+        assert_eq!(
+            item_value(&battery(STATUS_AC_CONNECTED, 0.0, -1), false),
+            "0% [AC Connected]"
+        );
+    }
 }

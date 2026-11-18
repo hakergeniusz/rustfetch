@@ -326,6 +326,48 @@ pub fn dict_entries(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// ffDurationAppendNum: "<N days, [N hours,] N mins>" for a duration in
+/// whole seconds. Seconds fold into minutes with a >= 30 bump, zero tails
+/// are omitted, and 100+ days carry the "(!)" marker. Sub-minute
+/// durations print "<N seconds>".
+pub fn duration_parts(total_seconds: u64) -> Vec<String> {
+    if total_seconds < 60 {
+        return vec![plural(total_seconds, "second")];
+    }
+
+    let mut minutes_total = total_seconds / 60;
+    if total_seconds % 60 >= 30 {
+        minutes_total += 1;
+    }
+    let days = minutes_total / (60 * 24);
+    let hours = (minutes_total / 60) % 24;
+    let minutes = minutes_total % 60;
+
+    let mut parts = Vec::new();
+    if days > 0 {
+        let mut text = plural(days, "day");
+        if days >= 100 {
+            text.push_str("(!)");
+        }
+        parts.push(text);
+    }
+    if hours > 0 {
+        parts.push(plural(hours, "hour"));
+    }
+    if minutes > 0 {
+        parts.push(plural(minutes, "min"));
+    }
+    parts
+}
+
+fn plural(count: u64, unit: &str) -> String {
+    if count == 1 {
+        format!("{count} {unit}")
+    } else {
+        format!("{count} {unit}s")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,5 +468,21 @@ mod tests {
         assert_eq!(icons.as_deref(), Some("Icons"));
 
         std::fs::remove_dir_all(&dir).unwrap_or_default();
+    }
+
+    #[test]
+    fn duration_rounds_like_ffdurationappendnum() {
+        // 54 min 59 s still bumps to "55 mins"; 54 min 29 s does not.
+        assert_eq!(duration_parts(3299).join(", "), "55 mins");
+        assert_eq!(duration_parts(3269).join(", "), "54 mins");
+        assert_eq!(duration_parts(3300).join(", "), "55 mins");
+        // 55 min 30 s bumps into "56 mins".
+        assert_eq!(duration_parts(3330).join(", "), "56 mins");
+        assert_eq!(duration_parts(45).join(", "), "45 seconds");
+        assert_eq!(duration_parts(1).join(", "), "1 second");
+        assert_eq!(duration_parts(90_000).join(", "), "1 day, 1 hour");
+        assert_eq!(duration_parts(95_400).join(", "), "1 day, 2 hours, 30 mins");
+        assert_eq!(duration_parts(8_640_000).join(", "), "100 days(!)");
+        assert_eq!(duration_parts(60).join(", "), "1 min");
     }
 }
