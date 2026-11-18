@@ -1,11 +1,13 @@
 //! rustfetch: fastfetch, rewritten in Rust.
 
 mod cli;
+mod dbus;
 mod instance;
 mod logo;
 mod logo_data;
 mod modules;
 mod render;
+mod settings;
 mod util;
 
 use clap::Parser;
