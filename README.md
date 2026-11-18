@@ -5,22 +5,20 @@ Fastfetch, rewritten in Rust.
 A fast, dependency-light system information tool that mirrors fastfetch's
 behavior: fastfetch's logo database (534 distro logos with per-distro color
 tables), fastfetch-style `$N` logo color placeholders, per-distro key colors,
-and a growing set of ported modules. Everything is read directly from procfs,
-sysfs, DMI and pci.ids — process spawning only happens for `shell --version`,
+and all 76 fastfetch modules ported — from `os` and `gpu` to `wifi`
+(nl80211), `sound` (the PulseAudio native protocol and the ALSA control
+ioctls) and `weather` (wttr.in). Everything is read directly from procfs,
+sysfs, DMI and pci.ids; process spawning only happens for per-terminal and
 DE version detection and GNOME settings.
 
-Current modules: `title`, `separator`, `os`, `host`, `bios`, `board`,
-`kernel`, `uptime`, `loadavg`, `processes`, `packages`, `shell`, `display`,
-`de`, `wm`, `wmtheme`, `theme`, `icons`, `font`, `cursor`, `terminal`,
-`terminalfont`, `terminalsize`, `cpu`, `gpu`, `memory`, `swap`, `disk`,
-`physicaldisk`, `localip`, `locale`, `battery`, `poweradapter`, `break`,
-`lm`, `colors`.
+Output is verified byte-for-byte against fastfetch 2.71.0 on Arch Linux in
+both pipe and TTY modes.
 
 A fastfetch `~/.config/fastfetch/config.jsonc` with a `modules` array is
 honored as the preset, so existing fastfetch configs keep working (unknown
 module names are skipped).
 
-Linux only for now.
+Linux only.
 
 The default preset mirrors fastfetch's default output; extra modules run by
 name, e.g. `rustfetch bios physicaldisk lm`.
@@ -50,6 +48,15 @@ rustfetch --format json   # fastfetch-style JSON, one object per module
 
 Colors follow `NO_COLOR` and are disabled automatically when stdout is not a
 tty.
+
+## Benchmarks
+
+hyperfine, default module set, same machine (Arch Linux, ghostty):
+
+| | fastfetch 2.71.0 | rustfetch 0.1.0 |
+|---|---|---|
+| wall time | 10.8 ms ± 1.4 ms | **5.8 ms ± 0.7 ms** |
+| peak memory | 12.2 MiB | **10.7 MiB** |
 
 ## Credits
 
