@@ -24,11 +24,22 @@ const DESKTOPS: &[(&str, &str)] = &[
 ];
 
 /// Version string for the desktop environment, when it can be detected.
-/// Mirrors fastfetch: one spawn of the DE's own binary, last token.
+/// Mirrors fastfetch: an in-process D-Bus property read first (GNOME's
+/// org.gnome.Shell ShellVersion), a spawn of the DE's own binary otherwise.
 fn de_version(name: &str) -> Option<String> {
     if name == "Cinnamon" {
         return std::env::var("CINNAMON_VERSION").ok();
     }
+
+    // fastfetch's getGnomeByDbus: "GNOME Shell 51.1" -> "51.1" without
+    // paying for a gnome-shell process.
+    if matches!(name, "GNOME" | "GNOME Classic")
+        && let Some(version) =
+            crate::dbus::get_property_string("org.gnome.Shell", "/org/gnome/Shell", "org.gnome.Shell", "ShellVersion")
+    {
+        return Some(version);
+    }
+
     let (program, args): (&str, &[&str]) = match name {
         "GNOME" | "GNOME Classic" => ("gnome-shell", &["--version"]),
         "KDE Plasma" => ("plasmashell", &["--version"]),
