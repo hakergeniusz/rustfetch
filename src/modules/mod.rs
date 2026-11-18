@@ -9,6 +9,7 @@ pub mod brightness;
 pub mod camera;
 pub mod r#break;
 pub mod chassis;
+pub mod codec;
 pub mod colors;
 pub mod cpu;
 pub mod cpucache;
@@ -127,6 +128,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "bluetoothradio", doc: "bluetooth adapters and their versions", run: bluetoothradio::run },
     ModuleDef { name: "board", doc: "motherboard name and version", run: board::run },
     ModuleDef { name: "chassis", doc: "smbios chassis type and version", run: chassis::run },
+    ModuleDef { name: "codec", doc: "hardware video acceleration codecs", run: codec::run },
     ModuleDef { name: "kernel", doc: "kernel name and release", run: kernel::run },
     ModuleDef { name: "initsystem", doc: "pid 1 name and version", run: initsystem::run },
     ModuleDef { name: "uptime", doc: "time since boot", run: uptime::run },
