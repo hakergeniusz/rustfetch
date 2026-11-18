@@ -72,6 +72,7 @@ pub mod version;
 pub mod vulkan;
 pub mod wallpaper;
 pub mod weather;
+pub mod wifi;
 pub mod wm;
 pub mod wmtheme;
 
@@ -424,6 +425,11 @@ pub const REGISTRY: &[ModuleDef] = &[
         name: "dns",
         doc: "dns servers from resolv.conf",
         run: dns::run,
+    },
+    ModuleDef {
+        name: "wifi",
+        doc: "wireless interface state via nl80211 and wireless ioctls",
+        run: wifi::run,
     },
     ModuleDef {
         name: "datetime",
