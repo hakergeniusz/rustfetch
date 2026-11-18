@@ -1,10 +1,6 @@
 //! Per-version GTK settings (2/3/4), ported from fastfetch's gtk.c: the
-//! desktop settings daemon first (gsettings for the GNOME family), then
-//! config-file fallbacks under the XDG config dirs. One `gsettings
-//! list-recursively` spawn per schema, cached on the Instance so all GTK
-//! modules together cost at most two spawns.
-
-use std::collections::HashMap;
+//! desktop settings daemon first (GSettings/dconf read in-process), then
+//! config-file fallbacks under the XDG config dirs.
 
 use crate::{instance::Instance, util};
 
@@ -37,32 +33,19 @@ impl GtkVersions {
     }
 }
 
-/// Reads one key from a gsettings schema, unquoting string values.
+/// Reads one key from a GSettings schema (or "schema:path" relocatable
+/// form), unquoting string values, memoized per (schema, key).
 pub fn get(instance: &Instance, schema: &str, key: &str) -> Option<String> {
-    let mut cache = instance.gnome_settings.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Some(values) = cache.get(schema) {
-        return values.get(key).cloned();
+    let mut cache = instance
+        .gnome_settings
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let cache_key = format!("{schema}\x1f{key}");
+    if let Some(value) = cache.get(&cache_key) {
+        return value.clone();
     }
-
-    let mut values = HashMap::new();
-    if let Ok(output) = std::process::Command::new("gsettings")
-        .args(["list-recursively", schema])
-        .output()
-    {
-        // lines look like: "org.gnome.desktop.interface gtk-theme 'Adwaita-dark'"
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            let mut fields = line.splitn(3, ' ');
-            let (Some(_schema), Some(name), Some(value)) =
-                (fields.next(), fields.next(), fields.next())
-            else {
-                continue;
-            };
-            values.insert(name.to_string(), value.trim_matches('\'').to_string());
-        }
-    }
-
-    let value = values.get(key).cloned();
-    cache.insert(schema.to_string(), values);
+    let value = crate::settings::get(schema, key);
+    cache.insert(cache_key, value.clone());
     value
 }
 

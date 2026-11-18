@@ -14,9 +14,9 @@ pub struct Instance {
     pub distro_id: Option<String>,
     /// `ID_LIKE=` entries from /etc/os-release, lowercased.
     pub distro_like: Vec<String>,
-    /// Cached `gsettings list-recursively` results per schema, filled lazily
-    /// by the GTK modules. A Mutex because modules run in parallel threads.
-    pub gnome_settings: Mutex<HashMap<String, HashMap<String, String>>>,
+    /// Memoized GSettings/dconf reads per (schema, key), filled lazily by the
+    /// GTK modules. A Mutex because modules run in parallel threads.
+    pub gnome_settings: Mutex<HashMap<String, Option<String>>>,
 }
 
 impl Instance {
