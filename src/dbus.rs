@@ -421,6 +421,69 @@ fn render_value(api: &DbusApi, iter: &mut DBusMessageIter, out: &mut String) {
     }
 }
 
+/// org.freedesktop.DBus.Properties.GetAll: every property of one interface,
+/// each value rendered gdbus-like with the outer variant unwrapped.
+pub fn get_all_properties(dest: &str, path: &str, interface: &str) -> Option<Vec<(String, String)>> {
+    let api = dbus_api()?;
+    unsafe {
+        let connection = (api.bus_get)(DBUS_BUS_SESSION, std::ptr::null_mut());
+        if connection.is_null() {
+            return None;
+        }
+
+        let (cdest, cpath) = (CString::new(dest).ok()?, CString::new(path).ok()?);
+        let cinterface = CString::new(interface).ok()?;
+        let message = (api.new_method_call)(
+            cdest.as_ptr(),
+            cpath.as_ptr(),
+            c"org.freedesktop.DBus.Properties".as_ptr(),
+            c"GetAll".as_ptr(),
+        );
+        if message.is_null() {
+            return None;
+        }
+
+        let mut iter = DBusMessageIter::zeroed();
+        (api.iter_init_append)(message, iter.as_mut_ptr());
+        let mut iter = iter.assume_init();
+        let iface_ptr = cinterface.as_ptr();
+        (api.iter_append_basic)(&mut iter, DBUS_TYPE_STRING, (&iface_ptr as *const *const c_char).cast());
+
+        let reply = (api.send_with_reply_and_block)(connection, message, PROCESSING_TIMEOUT_MS, std::ptr::null_mut());
+        (api.message_unref)(message);
+        send_and_parse(api, reply, |api, root| {
+            // The reply is a{sv}; keys come out quoted, values are strings,
+            // nested variants, dicts or arrays.
+            let mut sub = recurse(api, root);
+            let mut props: Vec<(String, String)> = Vec::new();
+            loop {
+                let sub_type = (api.get_arg_type)(&mut sub);
+                if sub_type == DBUS_TYPE_INVALID {
+                    break;
+                }
+                if sub_type == DBUS_TYPE_DICT_ENTRY {
+                    let mut entry = recurse(api, &mut sub);
+                    let mut key = String::new();
+                    render_value(api, &mut entry, &mut key);
+                    let mut value = String::new();
+                    if (api.next)(&mut entry) != 0 {
+                        render_value(api, &mut entry, &mut value);
+                        // The outer variant wrapping is parse noise.
+                        if value.starts_with('<') && value.ends_with('>') {
+                            value = value[1..value.len() - 1].to_string();
+                        }
+                    }
+                    props.push((key, value));
+                }
+                if (api.next)(&mut sub) == 0 {
+                    break;
+                }
+            }
+            (!props.is_empty()).then_some(props)
+        })
+    }
+}
+
 /// Calls a zero-argument method and returns its reply rendered as
 /// gdbus-like text, for parsers written against `gdbus call` output.
 pub fn call_method_printed(dest: &str, path: &str, interface: &str, method: &str) -> Option<String> {
