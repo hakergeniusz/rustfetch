@@ -75,16 +75,8 @@ fn row_line(row: &Row, accent: &str, title: &str, color: bool) -> String {
 }
 
 pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) {
-    if cli.pipe {
-        for row in rows {
-            match &row.key {
-                Some(key) => println!("{key}: {}", row.value),
-                None => println!("{}", row.value),
-            }
-        }
-        return;
-    }
-
+    // Pipe mode keeps the two-column layout; it only drops the colors,
+    // which every writer below gates on instance.color.
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
     let accent = accent_color(logo);
