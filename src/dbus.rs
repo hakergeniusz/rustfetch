@@ -484,12 +484,24 @@ pub fn get_all_properties(dest: &str, path: &str, interface: &str) -> Option<Vec
     }
 }
 
-/// Calls a zero-argument method and returns its reply rendered as
-/// gdbus-like text, for parsers written against `gdbus call` output.
+/// Calls a zero-argument method on the session bus and returns its reply
+/// rendered as gdbus-like text, for parsers written against `gdbus call`
+/// output.
 pub fn call_method_printed(dest: &str, path: &str, interface: &str, method: &str) -> Option<String> {
+    call_method_printed_on_bus(DBUS_BUS_SESSION, dest, path, interface, method)
+}
+
+/// Same on an explicit bus (1 = the system bus, used by bluetooth).
+pub fn call_method_printed_on_bus(
+    bus: std::ffi::c_int,
+    dest: &str,
+    path: &str,
+    interface: &str,
+    method: &str,
+) -> Option<String> {
     let api = dbus_api()?;
     unsafe {
-        let connection = (api.bus_get)(DBUS_BUS_SESSION, std::ptr::null_mut());
+        let connection = (api.bus_get)(bus, std::ptr::null_mut());
         if connection.is_null() {
             return None;
         }
