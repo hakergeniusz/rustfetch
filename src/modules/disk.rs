@@ -26,13 +26,13 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     // fastfetch's default calcType FREE: used = blocks - free (not just
     // non-root-reserved available), and the percentage is over total.
     let used = fs.f_blocks.saturating_sub(fs.f_bfree) as u64 * frsize;
-    let pct = util::percent(used, total).unwrap_or(0);
+    let pct = used as f64 * 100.0 / total as f64;
 
     let mut value = format!(
         "{} / {} ({})",
         util::fmt_bytes(used),
         util::fmt_bytes(total),
-        colorize_percent(pct, instance.color)
+        colorize_percent(pct, 50, 80, instance.color)
     );
     if let Some(fstype) = root_filesystem() {
         value.push_str(&format!(" - {fstype}"));

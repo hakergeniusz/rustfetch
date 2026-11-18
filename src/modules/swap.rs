@@ -23,7 +23,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     }
 
     let used = total.saturating_sub(free);
-    let pct = util::percent(used, total).unwrap_or(0);
+    let pct = used as f64 * 100.0 / total as f64;
 
     vec![Row::new(
         "Swap",
@@ -31,7 +31,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             "{} / {} ({})",
             util::fmt_bytes(used * 1024),
             util::fmt_bytes(total * 1024),
-            colorize_percent(pct, instance.color)
+            colorize_percent(pct, 50, 80, instance.color)
         ),
     )]
 }

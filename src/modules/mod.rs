@@ -253,20 +253,31 @@ pub fn list_modules() {
     }
 }
 
-/// Percent values colored like fastfetch: green when usage is low, yellow in
-/// the middle band, red when high. Plain text without colors.
-pub fn colorize_percent(pct: u64, color: bool) -> String {
-    let code = if pct < 25 {
-        "32"
-    } else if pct < 75 {
+/// ffPercentAppendNum: the number is formatted like the global
+/// percentNdigits=0 default and colored by the module's own green/yellow
+/// thresholds, compared before rounding. Modules where a high value is good
+/// (battery, physicaldisk) set green > yellow, which inverts the bands.
+pub fn colorize_percent(pct: f64, green: u8, yellow: u8, color: bool) -> String {
+    let text = format!("{pct:.0}");
+    let code = if green <= yellow {
+        if pct > yellow as f64 {
+            "91"
+        } else if pct > green as f64 {
+            "93"
+        } else {
+            "32"
+        }
+    } else if pct < yellow as f64 {
+        "91"
+    } else if pct < green as f64 {
         "93"
     } else {
-        "91"
+        "32"
     };
     if color {
-        format!("\x1b[{code}m{pct}%\x1b[m")
+        format!("\x1b[{code}m{text}%\x1b[m")
     } else {
-        format!("{pct}%")
+        format!("{text}%")
     }
 }
 
