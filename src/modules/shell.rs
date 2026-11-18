@@ -1,45 +1,149 @@
-//! `shell` module: $SHELL name and version (version spawns `shell --version`
-//! like fastfetch does, only for shells known to support the flag).
+//! `shell` module: the shell from the parent process chain (fastfetch's
+//! getShellInfo), falling back to $SHELL. Versions come from the shell
+//! binary's own embedded version string where possible (zsh, bash), so no
+//! process is spawned on common setups.
 
-use crate::{instance::Instance, modules::Row};
+use crate::{instance::Instance, modules::Row, util};
 
-const VERSIONABLE: &[&str] = &[
-    "bash", "zsh", "fish", "nu", "nushell", "dash", "ksh", "csh", "tcsh", "elvish", "xonsh", "oil",
-    "osh", "pwsh",
+/// fastfetch's wrapper processes between terminal and shell that must not be
+/// taken for the shell itself.
+const WRAPPERS: &[&str] = &[
+    "sh", "sudo", "su", "strace", "gdb", "lldb", "lldb-mi", "login", "ltrace", "perf",
+    "guake-wrapped", "time", "clifm", "valgrind", "fastfetch", "flashfetch", "rustfetch",
+    "mise", "mise-shim", "atuin", "proot", "script", "run-parts",
 ];
 
-fn shell_version(path: &str) -> Option<String> {
+/// comm and ppid from /proc/<pid>/stat; comm may contain spaces, so both
+/// ends are located and ppid is parsed after the closing paren.
+fn process_basic_info(pid: u32) -> Option<(String, u32)> {
+    let stat = util::read_file(&format!("/proc/{pid}/stat"))?;
+    let open = stat.find('(')?;
+    let close = stat.rfind(')')?;
+    let comm = stat[open + 1..close].to_string();
+    let ppid = stat[close + 1..].split_whitespace().nth(1)?.parse().ok()?;
+    Some((comm, ppid))
+}
+
+fn is_wrapper(comm: &str) -> bool {
+    WRAPPERS.contains(&comm)
+        || comm.contains("debug")
+        || comm.contains("command-not-")
+        || comm.ends_with(".sh")
+}
+
+/// fastfetch's pretty-name specials (setShellInfoDetails).
+fn pretty_name(comm: &str, exe_name: Option<&str>) -> String {
+    match comm {
+        "pwsh" => "PowerShell".to_string(),
+        "nu" => "nushell".to_string(),
+        "oil.ovm" => "Oils".to_string(),
+        "busybox" => "ash".to_string(),
+        _ => match exe_name {
+            Some(exe_name) => exe_name.to_string(),
+            None => comm.to_string(),
+        },
+    }
+}
+
+/// The shell process on the parent chain, with its exe path when readable.
+fn detect_shell() -> Option<(String, Option<String>)> {
+    let user_shell = std::env::var("SHELL").ok()?;
+    let user_shell_name = user_shell.rsplit('/').next().unwrap_or("").to_string();
+
+    let mut pid = std::process::id();
+    while pid > 1 {
+        let Ok((comm, ppid)) = process_basic_info(pid) else {
+            break;
+        };
+        if comm == user_shell_name || !is_wrapper(&comm) {
+            let exe = std::fs::read_link(format!("/proc/{pid}/exe"))
+                .ok()
+                .map(|path| path.to_string_lossy().into_owned());
+            let exe_name = exe
+                .as_ref()
+                .and_then(|path| path.rsplit('/').next().map(str::to_string));
+            let name = pretty_name(&comm, exe_name.filter(|exe| exe.starts_with(&comm)).as_deref());
+            return Some((name, exe));
+        }
+        pid = ppid;
+    }
+    Some((pretty_name(&user_shell_name, Some(&user_shell)), Some(user_shell)))
+}
+
+/// ffBinaryExtractStrings: scan the binary's NUL-separated strings and let
+/// `extract` pull the version out of the first matching one.
+fn binary_version(path: &str, min_len: usize, extract: impl Fn(&str) -> Option<String>) -> Option<String> {
+    let data = std::fs::read(path).ok()?;
+    data.split(|&b| b == 0)
+        .filter_map(|chunk| std::str::from_utf8(chunk).ok())
+        .find_map(|line| (line.len() >= min_len).then(|| extract(line)).flatten())
+}
+
+fn extract_zsh_version(line: &str) -> Option<String> {
+    let rest = line.strip_prefix("zsh-")?;
+    let end = rest.find('-')?;
+    Some(rest[..end].to_string())
+}
+
+fn extract_bash_version(line: &str) -> Option<String> {
+    let rest = line.strip_prefix("@(#)Bash version ")?;
+    let end = rest.find('(')?;
+    Some(rest[..end].to_string())
+}
+
+/// getExeVersionGeneral: `--version` output's last space-separated token.
+fn version_spawn_last(path: &str) -> Option<String> {
     let output = std::process::Command::new(path).arg("--version").output().ok()?;
     if !output.status.success() {
         return None;
     }
-    let first = crate::util::first_line(&String::from_utf8_lossy(&output.stdout)).to_string();
+    let first = util::first_line(&String::from_utf8_lossy(&output.stdout)).trim().to_string();
+    first.split_whitespace().next_back().map(str::to_string)
+}
 
-    // bash and fish print "... version X.Y.Z", zsh/nu print "name X.Y.Z ..."
-    if let Some((_, after)) = first.split_once("version") {
-        let token = after.split_whitespace().next()?;
-        Some(token.trim_end_matches(',').to_string())
-    } else {
-        Some(first.split_whitespace().nth(1)?.to_string())
+/// Per-shell version resolution, mirroring fastfetch's dispatch.
+fn shell_version(name: &str, exe: Option<&str>) -> Option<String> {
+    match (name, exe) {
+        ("zsh", Some(exe)) => binary_version(exe, "zsh-0.0-0".len(), extract_zsh_version)
+            .or_else(|| version_spawn_last(exe)),
+        ("bash", Some(exe)) => binary_version(exe, "@(#)Bash version 0.0.0(0) release GNU".len(), extract_bash_version)
+            .or_else(|| version_spawn_last(exe)),
+        _ => None,
     }
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Ok(shell) = std::env::var("SHELL") else {
-        return Vec::new();
-    };
-    let Some(name) = shell.rsplit('/').next().map(str::to_string) else {
+    let Some((name, exe)) = detect_shell() else {
         return Vec::new();
     };
 
-    let value = if VERSIONABLE.contains(&name.as_str()) {
-        match shell_version(&shell) {
-            Some(version) => format!("{name} {version}"),
-            None => name,
-        }
-    } else {
-        name
+    let value = match shell_version(&name, exe.as_deref()) {
+        Some(version) => format!("{name} {version}"),
+        None => name,
     };
-
     vec![Row::new("Shell", value)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_bash_version, extract_zsh_version, is_wrapper};
+
+    #[test]
+    fn extracts_embedded_versions() {
+        assert_eq!(extract_zsh_version("zsh-5.9.2"), Some("5.9.2".to_string()));
+        assert_eq!(extract_zsh_version("zsh-5.9.2-dev-something"), Some("5.9.2".to_string()));
+        assert_eq!(extract_zsh_version("unrelated string"), None);
+
+        assert_eq!(extract_bash_version("@(#)Bash version 5.2.26(1)-release GNU"), Some("5.2.26".to_string()));
+        assert_eq!(extract_bash_version("no marker here"), None);
+    }
+
+    #[test]
+    fn wrappers_are_skipped() {
+        assert!(is_wrapper("sudo"));
+        assert!(is_wrapper("ld-debug-wrapper"));
+        assert!(is_wrapper("run-script.sh"));
+        assert!(!is_wrapper("zsh"));
+        assert!(!is_wrapper("fish"));
+    }
 }
