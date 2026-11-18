@@ -127,7 +127,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             let key = if index == 0 {
                 "Camera".to_string()
             } else {
-                format!("Camera ({index})")
+                format!("Camera {index}")
             };
             let mut value = name.clone();
             if !colorspace.is_empty() {

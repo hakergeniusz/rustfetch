@@ -78,7 +78,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             let key = if index == 0 {
                 "Gamepad".to_string()
             } else {
-                format!("Gamepad ({index})")
+                format!("Gamepad {index}")
             };
 
             let mut value = name.clone();

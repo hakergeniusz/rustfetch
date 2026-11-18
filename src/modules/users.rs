@@ -198,7 +198,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             let key = if index == 0 {
                 "Users".to_string()
             } else {
-                format!("Users ({index})")
+                format!("Users {index}")
             };
             let mut value = user.name.clone();
             if !user.host.is_empty() {
