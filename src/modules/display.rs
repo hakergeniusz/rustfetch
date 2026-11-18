@@ -282,6 +282,12 @@ fn rows_from_edid(edids: &[(String, Edid)]) -> Vec<Row> {
     rows
 }
 
+/// The number of displays the display server reports; the brightness module
+/// uses it to decide whether DDC/CI probing is worth it.
+pub(crate) fn display_count() -> usize {
+    mutter_displays().map_or(0, |displays| displays.len())
+}
+
 pub fn run(_instance: &Instance) -> Vec<Row> {
     let edids = edids_by_connector();
 

@@ -3,6 +3,7 @@
 pub mod battery;
 pub mod bios;
 pub mod board;
+pub mod brightness;
 pub mod r#break;
 pub mod colors;
 pub mod cpu;
@@ -114,6 +115,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "shell", doc: "user shell and version", run: shell::run },
     ModuleDef { name: "editor", doc: "$VISUAL or $EDITOR and its version", run: editor::run },
     ModuleDef { name: "display", doc: "monitors: resolution, size, refresh rate", run: display::run },
+    ModuleDef { name: "brightness", doc: "monitor brightness by backlight or DDC/CI", run: brightness::run },
     ModuleDef { name: "de", doc: "desktop environment", run: de::run },
     ModuleDef { name: "wm", doc: "window manager", run: wm::run },
     ModuleDef { name: "wmtheme", doc: "window manager theme", run: wmtheme::run },
