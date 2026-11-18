@@ -421,12 +421,23 @@ fn render_value(api: &DbusApi, iter: &mut DBusMessageIter, out: &mut String) {
     }
 }
 
-/// org.freedesktop.DBus.Properties.GetAll: every property of one interface,
-/// each value rendered gdbus-like with the outer variant unwrapped.
+/// org.freedesktop.DBus.Properties.GetAll on the session bus: every
+/// property of one interface, each value rendered gdbus-like with the outer
+/// variant unwrapped.
 pub fn get_all_properties(dest: &str, path: &str, interface: &str) -> Option<Vec<(String, String)>> {
+    get_all_properties_on_bus(DBUS_BUS_SESSION, dest, path, interface)
+}
+
+/// Same on an explicit bus (1 = the system bus, used by bluetoothradio).
+pub fn get_all_properties_on_bus(
+    bus: std::ffi::c_int,
+    dest: &str,
+    path: &str,
+    interface: &str,
+) -> Option<Vec<(String, String)>> {
     let api = dbus_api()?;
     unsafe {
-        let connection = (api.bus_get)(DBUS_BUS_SESSION, std::ptr::null_mut());
+        let connection = (api.bus_get)(bus, std::ptr::null_mut());
         if connection.is_null() {
             return None;
         }
