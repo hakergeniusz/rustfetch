@@ -12,6 +12,7 @@ pub mod cursor;
 pub mod datetime;
 pub mod de;
 pub mod disk;
+pub mod diskio;
 pub mod display;
 pub mod editor;
 pub mod dns;
@@ -136,6 +137,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "swap", doc: "swap usage", run: swap::run },
     ModuleDef { name: "disk", doc: "root filesystem usage", run: disk::run },
     ModuleDef { name: "physicaldisk", doc: "physical storage devices", run: physicaldisk::run },
+    ModuleDef { name: "diskio", doc: "physical disk read/write rates", run: diskio::run },
     ModuleDef { name: "localip", doc: "lan addresses of network interfaces", run: localip::run },
     ModuleDef { name: "dns", doc: "dns servers from resolv.conf", run: dns::run },
     ModuleDef { name: "datetime", doc: "local date and time", run: datetime::run },
@@ -322,6 +324,9 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
     }
     if names.contains(&"netio") {
         netio::prepare();
+    }
+    if names.contains(&"diskio") {
+        diskio::prepare();
     }
 
     let results: Vec<Vec<Row>> = std::thread::scope(|scope| {
