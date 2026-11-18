@@ -209,7 +209,10 @@ pub fn data_dirs() -> Vec<std::path::PathBuf> {
 
 /// ffSizeAppendNum with fastfetch's defaults (IEC prefixes, 2 digits with
 /// trailing zeros kept, at most YiB): divide until below the base, then
-/// format like glibc %.*f.
+/// format via yyjson's fixed precision, which rounds the exact decimal
+/// expansion half away from zero (`mod >= p10 / 2`) — unlike Rust's
+/// ties-to-even `{:.2}` (glibc %.*f matches Rust here, but sizes go
+/// through ffStrbufAppendDouble).
 pub fn fmt_bytes(bytes: u64) -> String {
     const UNITS: [&str; 9] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
 
@@ -222,7 +225,12 @@ pub fn fmt_bytes(bytes: u64) -> String {
     if counter == 0 {
         return format!("{bytes} B");
     }
-    format!("{size:.2} {}", UNITS[counter])
+    // scaled stays below 102400, so the multiply, truncation and the
+    // half-way compare are exact for every dyadic byte count.
+    let scaled = size * 100.0;
+    let truncated = scaled.trunc();
+    let units = truncated as u64 + if scaled - truncated >= 0.5 { 1 } else { 0 };
+    format!("{}.{:02} {}", units / 100, units % 100, UNITS[counter])
 }
 
 /// Unquotes a gdbus-rendered string, undoing the \' and \\ escapes the
@@ -346,6 +354,19 @@ mod tests {
         assert_eq!(fmt_bytes(1024 * 1024 * 999), "999.00 MiB");
         assert_eq!(fmt_bytes(1024 * 1024 * 1024 * 58), "58.00 GiB");
         assert_eq!(fmt_bytes(1024 * 1024 * 1024 * 11 + 125 * 1024 * 1024), "11.12 GiB");
+    }
+
+    #[test]
+    fn fmt_bytes_ties_round_half_up_like_yyjson() {
+        // 14.625 GiB exactly: Rust {:.2} would print 14.62 (ties-to-even),
+        // yyjson rounds the exact tail up.
+        assert_eq!(fmt_bytes(117 * (1 << 27)), "14.63 GiB");
+        // 1.125 KiB exactly: even would be 1.12.
+        assert_eq!(fmt_bytes(1152), "1.13 KiB");
+        // 14.875: both rules agree on 14.88.
+        assert_eq!(fmt_bytes(119 * (1 << 27)), "14.88 GiB");
+        // 999.995 MiB carries over.
+        assert_eq!(fmt_bytes(999 * (1 << 20) + 1023 * 1024), "1000.00 MiB");
     }
 
     #[test]
