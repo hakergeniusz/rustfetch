@@ -58,6 +58,7 @@ pub mod terminalfont;
 pub mod terminalsize;
 pub mod theme;
 pub mod tpm;
+pub mod version;
 pub mod title;
 pub mod uptime;
 pub mod users;
@@ -135,6 +136,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "uptime", doc: "time since boot", run: uptime::run },
     ModuleDef { name: "users", doc: "users logged in with their login time", run: users::run },
     ModuleDef { name: "tpm", doc: "tpm version", run: tpm::run },
+    ModuleDef { name: "version", doc: "binary version and architecture", run: version::run },
     ModuleDef { name: "loadavg", doc: "load averages of the last 1, 5 and 15 minutes", run: loadavg::run },
     ModuleDef { name: "keyboard", doc: "keyboard devices", run: keyboard::run },
     ModuleDef { name: "lm", doc: "login manager", run: lm::run },
