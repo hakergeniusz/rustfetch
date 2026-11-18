@@ -46,6 +46,7 @@ pub mod terminaltheme;
 pub mod top;
 pub mod mouse;
 pub mod netio;
+pub mod opencl;
 pub mod os;
 pub mod packages;
 pub mod physicaldisk;
@@ -127,6 +128,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "title", doc: "user@host", run: title::run },
     ModuleDef { name: "separator", doc: "dashed separator line", run: separator::run },
     ModuleDef { name: "os", doc: "operating system name and architecture", run: os::run },
+    ModuleDef { name: "opencl", doc: "opencl platform version", run: opencl::run },
     ModuleDef { name: "host", doc: "device model name", run: host::run },
     ModuleDef { name: "bios", doc: "firmware version and release date", run: bios::run },
     ModuleDef { name: "bluetooth", doc: "connected bluetooth devices", run: bluetooth::run },

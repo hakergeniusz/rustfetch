@@ -105,7 +105,7 @@ fn entrypoint_show_type(entrypoint: c_int) -> u8 {
 }
 
 /// ffLibraryLoadSingle: plain path first, then ".N" suffixes downwards.
-fn load_library(name: &str, max_version: i32) -> Option<*mut c_void> {
+pub(crate) fn load_library(name: &str, max_version: i32) -> Option<*mut c_void> {
     let plain = CString::new(format!("lib{name}.so")).ok()?;
     let handle = unsafe { libc::dlopen(plain.as_ptr(), libc::RTLD_LAZY | libc::RTLD_NODELETE) };
     if !handle.is_null() {
@@ -121,7 +121,7 @@ fn load_library(name: &str, max_version: i32) -> Option<*mut c_void> {
     None
 }
 
-fn load_symbol(handle: *mut c_void, name: &str) -> Option<*mut c_void> {
+pub(crate) fn load_symbol(handle: *mut c_void, name: &str) -> Option<*mut c_void> {
     let symbol = CString::new(name).ok()?;
     let pointer = unsafe { libc::dlsym(handle, symbol.as_ptr()) };
     (!pointer.is_null()).then_some(pointer)
