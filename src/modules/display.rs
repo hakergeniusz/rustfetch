@@ -1,5 +1,5 @@
 //! `display` module: monitors. Primary source is GNOME's mutter display
-//! config over D-Bus (via `gdbus call`, like fastfetch's displayserver
+//! config over D-Bus (read in-process like fastfetch's displayserver
 //! backend); sizes and the no-D-Bus fallback come from DRM EDID blobs,
 //! a port of fastfetch's `edidHelper.c` (MIT).
 
@@ -159,23 +159,12 @@ struct MutterDisplay {
 }
 
 fn mutter_displays() -> Option<Vec<MutterDisplay>> {
-    let output = std::process::Command::new("gdbus")
-        .args([
-            "call",
-            "--session",
-            "--dest",
-            "org.gnome.Mutter.DisplayConfig",
-            "--object-path",
-            "/org/gnome/Mutter/DisplayConfig",
-            "--method",
-            "org.gnome.Mutter.DisplayConfig.GetCurrentState",
-        ])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
+    let text = std::borrow::Cow::from(crate::dbus::call_method_printed(
+        "org.gnome.Mutter.DisplayConfig",
+        "/org/gnome/Mutter/DisplayConfig",
+        "org.gnome.Mutter.DisplayConfig",
+        "GetCurrentState",
+    )?);
 
     let mut displays = Vec::new();
     let mut cursor = 0usize;

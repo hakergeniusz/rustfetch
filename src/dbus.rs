@@ -9,8 +9,18 @@ const DBUS_BUS_SESSION: c_int = 0;
 const DBUS_TYPE_STRING: c_int = b's' as _;
 const DBUS_TYPE_OBJECT_PATH: c_int = b'o' as _;
 const DBUS_TYPE_BYTE: c_int = b'y' as _;
+const DBUS_TYPE_BOOLEAN: c_int = b'b' as _;
+const DBUS_TYPE_INT16: c_int = b'n' as _;
+const DBUS_TYPE_UINT16: c_int = b'q' as _;
+const DBUS_TYPE_INT32: c_int = b'i' as _;
+const DBUS_TYPE_UINT32: c_int = b'u' as _;
+const DBUS_TYPE_INT64: c_int = b'x' as _;
+const DBUS_TYPE_UINT64: c_int = b't' as _;
+const DBUS_TYPE_DOUBLE: c_int = b'd' as _;
 const DBUS_TYPE_VARIANT: c_int = b'v' as _;
 const DBUS_TYPE_ARRAY: c_int = b'a' as _;
+const DBUS_TYPE_STRUCT: c_int = b'r' as _;
+const DBUS_TYPE_DICT_ENTRY: c_int = b'e' as _;
 const DBUS_TYPE_INVALID: c_int = 0;
 const PROCESSING_TIMEOUT_MS: c_int = 2500;
 
@@ -216,19 +226,238 @@ pub fn get_property_string(dest: &str, path: &str, interface: &str, property: &s
 
         let reply = (api.send_with_reply_and_block)(connection, message, PROCESSING_TIMEOUT_MS, std::ptr::null_mut());
         (api.message_unref)(message);
-        if reply.is_null() {
-            return None;
-        }
+        send_and_parse(api, reply, |api, iter| get_string(api, iter))
+    }
+}
 
+/// Sends an already-built message and parses the reply's first value.
+unsafe fn send_and_parse<T>(
+    api: &DbusApi,
+    reply: *mut DBusMessage,
+    parse: impl Fn(&DbusApi, &mut DBusMessageIter) -> Option<T>,
+) -> Option<T> {
+    if reply.is_null() {
+        return None;
+    }
+    unsafe {
         let mut root = DBusMessageIter::zeroed();
         let ok = (api.iter_init)(reply, root.as_mut_ptr());
         let parsed = if ok == 0 {
             None
         } else {
             let mut root = root.assume_init();
-            get_string(api, &mut root)
+            parse(api, &mut root)
         };
         (api.message_unref)(reply);
         parsed
+    }
+}
+
+/// Recurses into a container, returning a fresh iterator.
+fn recurse(api: &DbusApi, iter: &mut DBusMessageIter) -> DBusMessageIter {
+    unsafe {
+        let mut sub = DBusMessageIter::zeroed();
+        (api.recurse)(iter, sub.as_mut_ptr());
+        sub.assume_init()
+    }
+}
+
+/// Renders one basic (non-container) value, g_variant_print-style without
+/// type annotations. Returns false for non-basic types.
+fn render_basic(api: &DbusApi, iter: &mut DBusMessageIter, arg_type: c_int, out: &mut String) -> bool {
+    unsafe {
+    match arg_type {
+        DBUS_TYPE_STRING | DBUS_TYPE_OBJECT_PATH => {
+            let mut value: *const c_char = std::ptr::null();
+            (api.get_basic)(iter, (&mut value as *mut *const c_char).cast());
+            if value.is_null() {
+                return false;
+            }
+            let value = CStr::from_ptr(value).to_string_lossy();
+            out.push('\'');
+            for c in value.chars() {
+                if c == '\'' || c == '\\' {
+                    out.push('\\');
+                }
+                out.push(c);
+            }
+            out.push('\'');
+            true
+        },
+        DBUS_TYPE_BYTE => {
+            let mut value: u8 = 0;
+            (api.get_basic)(iter, (&mut value as *mut u8).cast());
+            out.push_str(&value.to_string());
+            true
+        },
+        DBUS_TYPE_BOOLEAN => {
+            let mut value: u32 = 0;
+            (api.get_basic)(iter, (&mut value as *mut u32).cast());
+            out.push_str(if value != 0 { "true" } else { "false" });
+            true
+        },
+        DBUS_TYPE_INT16 => {
+            let mut value: i16 = 0;
+            (api.get_basic)(iter, (&mut value as *mut i16).cast());
+            out.push_str(&value.to_string());
+            true
+        },
+        DBUS_TYPE_UINT16 => {
+            let mut value: u16 = 0;
+            (api.get_basic)(iter, (&mut value as *mut u16).cast());
+            out.push_str(&value.to_string());
+            true
+        },
+        DBUS_TYPE_INT32 => {
+            let mut value: i32 = 0;
+            (api.get_basic)(iter, (&mut value as *mut i32).cast());
+            out.push_str(&value.to_string());
+            true
+        },
+        DBUS_TYPE_UINT32 => {
+            let mut value: u32 = 0;
+            (api.get_basic)(iter, (&mut value as *mut u32).cast());
+            out.push_str(&value.to_string());
+            true
+        },
+        DBUS_TYPE_INT64 => {
+            let mut value: i64 = 0;
+            (api.get_basic)(iter, (&mut value as *mut i64).cast());
+            out.push_str(&value.to_string());
+            true
+        },
+        DBUS_TYPE_UINT64 => {
+            let mut value: u64 = 0;
+            (api.get_basic)(iter, (&mut value as *mut u64).cast());
+            out.push_str(&value.to_string());
+            true
+        },
+        DBUS_TYPE_DOUBLE => {
+            let mut value: f64 = 0.0;
+            (api.get_basic)(iter, (&mut value as *mut f64).cast());
+            let text = value.to_string();
+            out.push_str(&text);
+            // g_variant_print always keeps a decimal point ("1.0" not "1")
+            if !text.contains('.') && !text.contains('e') {
+                out.push_str(".0");
+            }
+            true
+        },
+        _ => false,
+    }
+    }
+}
+
+/// Renders a reply value as gdbus-like text (unannotated g_variant_print):
+/// strings quoted, variants wrapped in <>, dicts {...}, arrays [...], tuples
+/// (...), all joined with ", ".
+fn render_value(api: &DbusApi, iter: &mut DBusMessageIter, out: &mut String) {
+    let arg_type = unsafe { (api.get_arg_type)(iter) };
+
+    if render_basic(api, iter, arg_type, out) {
+        return;
+    }
+
+    match arg_type {
+        DBUS_TYPE_VARIANT => {
+            let mut sub = recurse(api, iter);
+            out.push('<');
+            render_value(api, &mut sub, out);
+            out.push('>');
+        },
+        DBUS_TYPE_ARRAY => {
+            let mut sub = recurse(api, iter);
+            let mut is_dict = false;
+            let mut items: Vec<String> = Vec::new();
+            loop {
+                let sub_type = unsafe { (api.get_arg_type)(&mut sub) };
+                if sub_type == DBUS_TYPE_INVALID {
+                    break;
+                }
+                if sub_type == DBUS_TYPE_DICT_ENTRY {
+                    is_dict = true;
+                    let mut entry = recurse(api, &mut sub);
+                    let mut item = String::new();
+                    render_value(api, &mut entry, &mut item);
+                    if unsafe { (api.next)(&mut entry) } != 0 {
+                        item.push_str(": ");
+                        render_value(api, &mut entry, &mut item);
+                    }
+                    items.push(item);
+                } else {
+                    let mut item = String::new();
+                    render_value(api, &mut sub, &mut item);
+                    items.push(item);
+                }
+                if unsafe { (api.next)(&mut sub) } == 0 {
+                    break;
+                }
+            }
+            let (open, close) = if is_dict { ('{', '}') } else { ('[', ']') };
+            out.push(open);
+            out.push_str(&items.join(", "));
+            out.push(close);
+        },
+        DBUS_TYPE_STRUCT | DBUS_TYPE_DICT_ENTRY => {
+            let mut sub = recurse(api, iter);
+            let mut items: Vec<String> = Vec::new();
+            loop {
+                let sub_type = unsafe { (api.get_arg_type)(&mut sub) };
+                if sub_type == DBUS_TYPE_INVALID {
+                    break;
+                }
+                let mut item = String::new();
+                render_value(api, &mut sub, &mut item);
+                items.push(item);
+                if unsafe { (api.next)(&mut sub) } == 0 {
+                    break;
+                }
+            }
+            out.push('(');
+            out.push_str(&items.join(", "));
+            out.push(')');
+        },
+        _ => {},
+    }
+}
+
+/// Calls a zero-argument method and returns its reply rendered as
+/// gdbus-like text, for parsers written against `gdbus call` output.
+pub fn call_method_printed(dest: &str, path: &str, interface: &str, method: &str) -> Option<String> {
+    let api = dbus_api()?;
+    unsafe {
+        let connection = (api.bus_get)(DBUS_BUS_SESSION, std::ptr::null_mut());
+        if connection.is_null() {
+            return None;
+        }
+
+        let (cdest, cpath) = (CString::new(dest).ok()?, CString::new(path).ok()?);
+        let cinterface = CString::new(interface).ok()?;
+        let cmethod = CString::new(method).ok()?;
+        let message = (api.new_method_call)(cdest.as_ptr(), cpath.as_ptr(), cinterface.as_ptr(), cmethod.as_ptr());
+        if message.is_null() {
+            return None;
+        }
+
+        let reply = (api.send_with_reply_and_block)(connection, message, PROCESSING_TIMEOUT_MS, std::ptr::null_mut());
+        (api.message_unref)(message);
+        send_and_parse(api, reply, |api, root| {
+            // gdbus wraps the argument list in parens; do the same so parsers
+            // written against its output keep working.
+            let mut parts: Vec<String> = Vec::new();
+            loop {
+                let arg_type = (api.get_arg_type)(root);
+                if arg_type == DBUS_TYPE_INVALID {
+                    break;
+                }
+                let mut item = String::new();
+                render_value(api, root, &mut item);
+                parts.push(item);
+                if (api.next)(root) == 0 {
+                    break;
+                }
+            }
+            (!parts.is_empty()).then(|| format!("({})", parts.join(", ")))
+        })
     }
 }
