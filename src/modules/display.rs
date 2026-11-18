@@ -12,12 +12,17 @@ const DTD_START: usize = 0x36;
 const DTD_END: usize = 0x7E;
 const DTD_STRIDE: usize = 0x12;
 
-struct Edid {
-    width: u32,
-    height: u32,
-    refresh: f64,
-    name: Option<String>,
-    physical_mm: (u32, u32),
+pub(crate) struct Edid {
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) refresh: f64,
+    pub(crate) name: Option<String>,
+    pub(crate) physical_mm: (u32, u32),
+    /// ffEdidGetHdrCompatible: a CTA-861 extension advertises HDR metadata.
+    pub(crate) hdr: bool,
+    /// Basic Display Parameters (bytes 21/22): the kernel exposes these as
+    /// the connector's mm sizes, which is what wl_output reports.
+    pub(crate) bdp_mm: (u32, u32),
 }
 
 fn parse_edid(data: &[u8]) -> Option<Edid> {
@@ -33,7 +38,34 @@ fn parse_edid(data: &[u8]) -> Option<Edid> {
         refresh: refresh.unwrap_or(0.0),
         name: monitor_name(data),
         physical_mm: physical_size(data),
+        hdr: hdr_compatible(data),
+        bdp_mm: (u32::from(data[21]) * 10, u32::from(data[22]) * 10),
     })
+}
+
+/// Port of ffEdidGetHdrCompatible: any CTA-861 extension block (>= 256
+/// bytes of EDID) with an HDR Static or Dynamic Metadata Data Block.
+pub(crate) fn hdr_compatible(data: &[u8]) -> bool {
+    if data.len() < 256 {
+        return false;
+    }
+    let mut base = 128;
+    while base + 128 <= data.len() {
+        let cta = &data[base..base + 128];
+        if cta[0] == 0x02 && cta[1] >= 0x03 && cta[2] > 4 {
+            let end = (cta[2] as usize).min(127);
+            let mut i = 4;
+            while i + 1 < end {
+                let blk_len = (cta[i] & 0x1f) as usize;
+                if blk_len > 0 && (cta[i] & 0xe0) >> 5 == 0x07 && matches!(cta[i + 1], 6 | 7) {
+                    return true;
+                }
+                i += blk_len + 1;
+            }
+        }
+        base += 128;
+    }
+    false
 }
 
 /// Preferred detailed timing descriptor: active pixels and refresh rate.
@@ -135,7 +167,7 @@ fn read_edid(connector: &Path) -> Option<Edid> {
 }
 
 /// EDIDs keyed by connector name without the `cardN-` prefix (e.g. "DP-1").
-fn edids_by_connector() -> Vec<(String, Edid)> {
+pub(crate) fn edids_by_connector() -> Vec<(String, Edid)> {
     connectors()
         .into_iter()
         .filter_map(|connector| {
@@ -150,15 +182,19 @@ fn edids_by_connector() -> Vec<(String, Edid)> {
 /// One active display from mutter: `('DP-1', 'ACR', 'XV271U M3', 'serial')`
 /// header plus the mode carrying `{'is-current': <true>}`, whose name is
 /// "WxH@refresh".
-struct MutterDisplay {
-    connector: String,
-    model: String,
-    width: u32,
-    height: u32,
-    refresh: f64,
+pub(crate) struct MutterDisplay {
+    pub(crate) connector: String,
+    pub(crate) model: String,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) refresh: f64,
+    /// The monitor properties dict: 'color-mode' (2 = BT2100, HDR active).
+    pub(crate) color_mode: Option<u32>,
+    /// 'supported-color-modes' lists 2 (BT2100).
+    pub(crate) hdr_supported: bool,
 }
 
-fn mutter_displays() -> Option<Vec<MutterDisplay>> {
+pub(crate) fn mutter_displays() -> Option<Vec<MutterDisplay>> {
     let text = std::borrow::Cow::from(crate::dbus::call_method_printed(
         "org.gnome.Mutter.DisplayConfig",
         "/org/gnome/Mutter/DisplayConfig",
@@ -199,6 +235,8 @@ fn mutter_displays() -> Option<Vec<MutterDisplay>> {
                 width,
                 height,
                 refresh,
+                color_mode: property_u32(region, "'color-mode': <"),
+                hdr_supported: supported_bt2100(region),
             });
         }
 
@@ -209,6 +247,27 @@ fn mutter_displays() -> Option<Vec<MutterDisplay>> {
     }
 
     (!displays.is_empty()).then_some(displays)
+}
+
+/// The uint32 payload of a `'key': <N>` property in the rendered dict.
+fn property_u32(region: &str, key: &str) -> Option<u32> {
+    let start = region.find(key)? + key.len();
+    let end = region[start..].find('>')? + start;
+    region[start..end].parse().ok()
+}
+
+/// Whether 'supported-color-modes' lists 2 (BT2100).
+fn supported_bt2100(region: &str) -> bool {
+    const KEY: &str = "'supported-color-modes': <[";
+    region
+        .find(KEY)
+        .and_then(|start| {
+            let start = start + KEY.len();
+            region[start..].find("]>").map(|end| {
+                region[start..start + end].split(", ").any(|mode| mode == "2")
+            })
+        })
+        .unwrap_or(false)
 }
 
 /// The mode name ("2560x1440@179.877") of the tuple flagged is-current.
@@ -296,3 +355,4 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         None => rows_from_edid(&edids),
     }
 }
+

@@ -36,6 +36,7 @@ pub mod locale;
 pub mod localip;
 pub mod media;
 pub mod memory;
+pub mod monitor;
 pub mod mouse;
 pub mod netio;
 pub mod os;
@@ -154,6 +155,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "gamepad", doc: "gamepad devices and battery", run: gamepad::run },
     ModuleDef { name: "mouse", doc: "mouse devices", run: mouse::run },
     ModuleDef { name: "memory", doc: "ram usage", run: memory::run },
+    ModuleDef { name: "monitor", doc: "same as display, different default output", run: monitor::run },
     ModuleDef { name: "swap", doc: "swap usage", run: swap::run },
     ModuleDef { name: "disk", doc: "root filesystem usage", run: disk::run },
     ModuleDef { name: "physicaldisk", doc: "physical storage devices", run: physicaldisk::run },
