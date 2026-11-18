@@ -2,8 +2,10 @@
 
 pub mod battery;
 pub mod bios;
+pub mod bluetooth;
 pub mod board;
 pub mod brightness;
+pub mod camera;
 pub mod r#break;
 pub mod colors;
 pub mod cpu;
@@ -17,6 +19,7 @@ pub mod display;
 pub mod editor;
 pub mod dns;
 pub mod font;
+pub mod gamepad;
 pub mod gpu;
 pub mod gtk;
 pub mod host;
@@ -109,6 +112,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "os", doc: "operating system name and architecture", run: os::run },
     ModuleDef { name: "host", doc: "device model name", run: host::run },
     ModuleDef { name: "bios", doc: "firmware version and release date", run: bios::run },
+    ModuleDef { name: "bluetooth", doc: "connected bluetooth devices", run: bluetooth::run },
     ModuleDef { name: "board", doc: "motherboard name and version", run: board::run },
     ModuleDef { name: "kernel", doc: "kernel name and release", run: kernel::run },
     ModuleDef { name: "initsystem", doc: "pid 1 name and version", run: initsystem::run },
@@ -134,6 +138,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "cpu", doc: "cpu model, core count and frequency", run: cpu::run },
     ModuleDef { name: "cpuusage", doc: "average cpu usage over the last 200ms", run: cpuusage::run },
     ModuleDef { name: "gpu", doc: "gpu vendor and model", run: gpu::run },
+    ModuleDef { name: "gamepad", doc: "gamepad devices and battery", run: gamepad::run },
     ModuleDef { name: "memory", doc: "ram usage", run: memory::run },
     ModuleDef { name: "swap", doc: "swap usage", run: swap::run },
     ModuleDef { name: "disk", doc: "root filesystem usage", run: disk::run },
@@ -146,6 +151,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "locale", doc: "system locale", run: locale::run },
     ModuleDef { name: "battery", doc: "battery charge and status", run: battery::run },
     ModuleDef { name: "poweradapter", doc: "power adapter wattage", run: poweradapter::run },
+    ModuleDef { name: "camera", doc: "video capture devices", run: camera::run },
     ModuleDef { name: "wallpaper", doc: "file name of the current wallpaper", run: wallpaper::run },
     ModuleDef { name: "media", doc: "currently playing song and its progress", run: media::run },
     ModuleDef { name: "break", doc: "an empty line", run: r#break::run },
