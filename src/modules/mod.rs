@@ -16,6 +16,7 @@ pub mod gpu;
 pub mod gtk;
 pub mod host;
 pub mod icons;
+pub mod initsystem;
 pub mod kernel;
 pub mod lm;
 pub mod loadavg;
@@ -104,6 +105,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "bios", doc: "firmware version and release date", run: bios::run },
     ModuleDef { name: "board", doc: "motherboard name and version", run: board::run },
     ModuleDef { name: "kernel", doc: "kernel name and release", run: kernel::run },
+    ModuleDef { name: "initsystem", doc: "pid 1 name and version", run: initsystem::run },
     ModuleDef { name: "uptime", doc: "time since boot", run: uptime::run },
     ModuleDef { name: "loadavg", doc: "load averages of the last 1, 5 and 15 minutes", run: loadavg::run },
     ModuleDef { name: "lm", doc: "login manager", run: lm::run },
