@@ -116,10 +116,7 @@ fn fill_session(user: &mut User, session_path: &std::path::Path) {
     if remote_host.is_empty() {
         user.host = "localhost".to_string();
     } else {
-        user.host = remote_host
-            .trim_start_matches('[')
-            .trim_end_matches(']')
-            .to_string();
+        user.host = remote_host.trim_start_matches('[').trim_end_matches(']').to_string();
     }
     let _ = tty;
 }
@@ -136,12 +133,8 @@ fn login_time_str(msec: u64) -> String {
             return String::new();
         }
         let mut buffer = [0u8; 64];
-        let len = libc::strftime(
-            buffer.as_mut_ptr().cast(),
-            buffer.len(),
-            c"%F %T".as_ptr().cast(),
-            &tm,
-        );
+        let len =
+            libc::strftime(buffer.as_mut_ptr().cast(), buffer.len(), c"%F %T".as_ptr().cast(), &tm);
         String::from_utf8_lossy(&buffer[..len]).into_owned()
     }
 }
@@ -189,7 +182,6 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    
     users
         .iter()
         .enumerate()

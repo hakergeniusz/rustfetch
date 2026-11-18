@@ -77,7 +77,11 @@ fn url_basename(url: &str) -> String {
 
 /// getBusProperties: one player bus; None when it has no playable media.
 fn get_bus_properties(bus_name: &str) -> Option<Media> {
-    let props = dbus::get_all_properties(bus_name, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player")?;
+    let props = dbus::get_all_properties(
+        bus_name,
+        "/org/mpris/MediaPlayer2",
+        "org.mpris.MediaPlayer2.Player",
+    )?;
 
     let mut media = Media {
         song: String::new(),
@@ -119,11 +123,21 @@ fn get_bus_properties(bus_name: &str) -> Option<Media> {
     media.player = if media.player_id.starts_with("musikcube.instance") {
         "musikcube".to_string()
     } else {
-        dbus::get_property_string(bus_name, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2", "Identity")
-            .or_else(|| {
-                dbus::get_property_string(bus_name, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2", "DesktopEntry")
-            })
-            .unwrap_or_else(|| media.player_id.clone())
+        dbus::get_property_string(
+            bus_name,
+            "/org/mpris/MediaPlayer2",
+            "org.mpris.MediaPlayer2",
+            "Identity",
+        )
+        .or_else(|| {
+            dbus::get_property_string(
+                bus_name,
+                "/org/mpris/MediaPlayer2",
+                "org.mpris.MediaPlayer2",
+                "DesktopEntry",
+            )
+        })
+        .unwrap_or_else(|| media.player_id.clone())
     };
 
     Some(media)
@@ -265,7 +279,14 @@ fn append_progress(out: &mut String, media: &Media) {
             s_len % 60
         );
     } else {
-        let _ = write!(out, "{:02}:{:02} / {:02}:{:02}", s_pos / 60, s_pos % 60, s_len / 60, s_len % 60);
+        let _ = write!(
+            out,
+            "{:02}:{:02} / {:02}:{:02}",
+            s_pos / 60,
+            s_pos % 60,
+            s_len / 60,
+            s_len % 60
+        );
     }
 }
 
@@ -328,10 +349,7 @@ mod tests {
 
     #[test]
     fn splits_rendered_containers() {
-        assert_eq!(
-            util::split_top_level("'a', 'b, c', 'd'"),
-            ["'a'", "'b, c'", "'d'"]
-        );
+        assert_eq!(util::split_top_level("'a', 'b, c', 'd'"), ["'a'", "'b, c'", "'d'"]);
         assert_eq!(
             util::split_top_level("'k': <'v'>, 'k2': <['x', 'y']>"),
             ["'k': <'v'>", "'k2': <['x', 'y']>"]

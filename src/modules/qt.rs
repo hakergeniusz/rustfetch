@@ -47,10 +47,10 @@ fn detect_plasma_file(path: &std::path::Path, result: &mut QtResult) -> bool {
             Category::Kde if result.widget_style.is_none() => {
                 result.widget_style =
                     util::parse_prop_line(line, "widgetStyle =").map(str::to_string);
-            }
+            },
             Category::Icons if result.icons.is_none() => {
                 result.icons = util::parse_prop_line(line, "Theme =").map(str::to_string);
-            }
+            },
             Category::General => {
                 if result.color_scheme.is_none() {
                     result.color_scheme =
@@ -63,8 +63,8 @@ fn detect_plasma_file(path: &std::path::Path, result: &mut QtResult) -> bool {
                 if result.font.is_none() {
                     result.font = util::parse_prop_line(line, "Font =").map(str::to_string);
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
     true

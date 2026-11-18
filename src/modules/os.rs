@@ -22,7 +22,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                 format!("{name} {arch}")
             };
             vec![Row::new("OS", value)]
-        }
+        },
         None => Vec::new(),
     }
 }

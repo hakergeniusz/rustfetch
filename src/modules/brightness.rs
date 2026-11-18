@@ -136,7 +136,8 @@ fn edid_name(edid: &[u8; 128]) -> String {
     // Vendor + model: three letters from the PNP id bits and the model hex.
     let vendor: [char; 3] = [
         ((((edid[8] >> 2) & 0x1F) as u16) + b'A' as u16 - 1) as u8 as char,
-        ((((((edid[8] & 0x3) as u16) << 3) | (((edid[9] & 0xE0) as u16) >> 5)) + b'A' as u16 - 1) as u8) as char,
+        ((((((edid[8] & 0x3) as u16) << 3) | (((edid[9] & 0xE0) as u16) >> 5)) + b'A' as u16 - 1)
+            as u8) as char,
         ((((edid[9] & 0x1F) as u16) + b'A' as u16 - 1) as u8) as char,
     ];
     let model = edid[10] as u32 + ((edid[11] as u32) << 8);
@@ -164,8 +165,8 @@ fn detect_with_backlight(result: &mut Vec<Brightness>) {
         else {
             continue;
         };
-        let Some(max) =
-            util::read_trimmed_in(&entry.path(), "max_brightness").and_then(|v| v.parse::<f64>().ok())
+        let Some(max) = util::read_trimmed_in(&entry.path(), "max_brightness")
+            .and_then(|v| v.parse::<f64>().ok())
         else {
             continue;
         };
@@ -192,14 +193,21 @@ fn detect_with_backlight(result: &mut Vec<Brightness>) {
                     } else if connector.starts_with("card")
                         && connector.chars().nth(4).is_some_and(|c| c.is_ascii_digit())
                     {
-                        connector.split_once('-').map_or(connector.clone(), |(_, rest)| rest.to_string())
+                        connector
+                            .split_once('-')
+                            .map_or(connector.clone(), |(_, rest)| rest.to_string())
                     } else {
                         connector
                     }
                 },
             };
         }
-        result.push(Brightness { name, current, max, builtin: true });
+        result.push(Brightness {
+            name,
+            current,
+            max,
+            builtin: true,
+        });
     }
 }
 
@@ -243,8 +251,11 @@ fn save_cache(devices: &[i32]) {
     let Some(path) = cache_path() else {
         return;
     };
-    let content =
-        format!("{} {}", devices.len(), devices.iter().map(|dev| dev.to_string()).collect::<Vec<_>>().join(" "));
+    let content = format!(
+        "{} {}",
+        devices.len(),
+        devices.iter().map(|dev| dev.to_string()).collect::<Vec<_>>().join(" ")
+    );
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -288,7 +299,12 @@ unsafe fn probe_bus(bus: i32, result: &mut Vec<Brightness>) -> bool {
         let name = unsafe { read_edid(fd) }
             .map(|edid| edid_name(&edid))
             .unwrap_or_else(|| format!("I2C-{bus}"));
-        Some(Brightness { name, current: current as f64, max: max as f64, builtin: false })
+        Some(Brightness {
+            name,
+            current: current as f64,
+            max: max as f64,
+            builtin: false,
+        })
     })();
     unsafe { libc::close(fd) };
     match probe {
@@ -343,7 +359,6 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    
     result
         .iter()
         .map(|display| {
@@ -354,7 +369,11 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                 format!(
                     "{} [{}]",
                     colorize_percent(pct, 100, 100, _instance.color),
-                    if display.builtin { "Built-in" } else { "External" }
+                    if display.builtin {
+                        "Built-in"
+                    } else {
+                        "External"
+                    }
                 ),
             )
         })

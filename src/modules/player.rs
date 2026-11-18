@@ -5,7 +5,7 @@
 
 use crate::{
     instance::Instance,
-    modules::{media, Row},
+    modules::{Row, media},
 };
 
 pub fn run(_instance: &Instance) -> Vec<Row> {

@@ -34,7 +34,6 @@ struct Device {
     le: bool,
 }
 
-
 /// connectedDevices: /sys/class/bluetooth entries whose name contains a ':'
 /// are connected devices (hci0:1 style names).
 fn connected_devices() -> u32 {
@@ -49,10 +48,7 @@ fn connected_devices() -> u32 {
 
 /// One property of Device1 or Battery1.
 fn apply_property(device: &mut Device, key: &str, value: &str) -> bool {
-    let value = value
-        .strip_prefix('<')
-        .and_then(|s| s.strip_suffix('>'))
-        .unwrap_or(value);
+    let value = value.strip_prefix('<').and_then(|s| s.strip_suffix('>')).unwrap_or(value);
     match key {
         // Address, Icon and RSSI exist on the wire but the default print
         // doesn't show them.
@@ -137,7 +133,6 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    
     devices
         .iter()
         .enumerate()

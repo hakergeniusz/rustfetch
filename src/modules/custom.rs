@@ -178,10 +178,8 @@ fn append_color(value: &str, out: &mut String, colors: Option<crate::instance::L
         }
         match rest[read] {
             b'@' => {
-                let digits: String = value[read + 1..]
-                    .chars()
-                    .take_while(|c| c.is_ascii_digit())
-                    .collect();
+                let digits: String =
+                    value[read + 1..].chars().take_while(|c| c.is_ascii_digit()).collect();
                 match digits.parse::<u32>() {
                     Ok(code) if !digits.is_empty() && code <= 255 => {
                         out.push_str("38;5;");
@@ -195,10 +193,8 @@ fn append_color(value: &str, out: &mut String, colors: Option<crate::instance::L
                 }
             },
             b'#' => {
-                let hex: String = value[read + 1..]
-                    .chars()
-                    .take_while(|c| c.is_ascii_hexdigit())
-                    .collect();
+                let hex: String =
+                    value[read + 1..].chars().take_while(|c| c.is_ascii_hexdigit()).collect();
                 let rgb = match hex.len() {
                     6 => u32::from_str_radix(&hex, 16).unwrap_or(0),
                     3 => {

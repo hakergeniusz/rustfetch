@@ -72,19 +72,22 @@ fn detect() -> Option<(String, String)> {
     if type_.is_empty() {
         // Available on Asahi Linux: a big-endian u32 under the smbios node.
         let mut vendor = String::new();
-        if let Ok(bytes) = std::fs::read("/sys/firmware/devicetree/base/smbios/smbios/chassis/chassis-type")
+        if let Ok(bytes) =
+            std::fs::read("/sys/firmware/devicetree/base/smbios/smbios/chassis/chassis-type")
             && bytes.len() == 4
         {
             let chassis_type = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
             if let Some(name) = chassis_type_to_string(chassis_type) {
                 type_ = name.to_string();
             }
-            if let Some(manufacturer) =
-                util::read_trimmed("/sys/firmware/devicetree/base/smbios/smbios/chassis/manufacturer")
-            {
+            if let Some(manufacturer) = util::read_trimmed(
+                "/sys/firmware/devicetree/base/smbios/smbios/chassis/manufacturer",
+            ) {
                 vendor = manufacturer.trim_end_matches('\0').trim_end().to_string();
             }
-        } else if let Some(devtype) = util::read_trimmed("/sys/firmware/devicetree/base/chassis-type") {
+        } else if let Some(devtype) =
+            util::read_trimmed("/sys/firmware/devicetree/base/chassis-type")
+        {
             let devtype = devtype.trim_end_matches('\0');
             let mut chars = devtype.chars();
             if let Some(first) = chars.next() {

@@ -31,7 +31,11 @@ fn extract_systemd_version(line: &str) -> Option<String> {
 fn version_spawn(name: &str, exe: &str) -> Option<String> {
     let (program, extract): (&str, VersionExtractor) = match name {
         "systemd" => (
-            if exe.ends_with("/systemd") { exe } else { "systemctl" },
+            if exe.ends_with("/systemd") {
+                exe
+            } else {
+                "systemctl"
+            },
             // "systemd 255 (255.5-1.arch)..." → text between parens
             Box::new(|output: &str| {
                 let start = output.find('(')? + 1;
@@ -40,7 +44,11 @@ fn version_spawn(name: &str, exe: &str) -> Option<String> {
             }),
         ),
         "dinit" => (
-            if exe.ends_with("/dinit") { exe } else { "dinit" },
+            if exe.ends_with("/dinit") {
+                exe
+            } else {
+                "dinit"
+            },
             // "Dinit version 0.18.0." → last space-separated token
             Box::new(|output: &str| {
                 let line = util::first_line(output).trim();
@@ -49,7 +57,11 @@ fn version_spawn(name: &str, exe: &str) -> Option<String> {
             }),
         ),
         "shepherd" => (
-            if exe.ends_with("/shepherd") { exe } else { "shepherd" },
+            if exe.ends_with("/shepherd") {
+                exe
+            } else {
+                "shepherd"
+            },
             // The first line may lack the version; then use the next one.
             Box::new(|output: &str| {
                 let line = if output.starts_with("shepherd") {
@@ -89,14 +101,16 @@ fn detect() -> Option<(String, Option<String>)> {
     let exe = exe.unwrap_or_default();
 
     let version = match name.as_str() {
-        "systemd" => {
-            if exe.is_empty() {
-                None
-            } else {
-                util::binary_extract_strings(&exe, "systemd 0.0 running in x".len(), extract_systemd_version)
-            }
-            .or_else(|| version_spawn(&name, &exe))
-        },
+        "systemd" => if exe.is_empty() {
+            None
+        } else {
+            util::binary_extract_strings(
+                &exe,
+                "systemd 0.0 running in x".len(),
+                extract_systemd_version,
+            )
+        }
+        .or_else(|| version_spawn(&name, &exe)),
         "dinit" | "shepherd" => version_spawn(&name, &exe),
         _ => None,
     };

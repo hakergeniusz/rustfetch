@@ -93,8 +93,8 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     // managers in fastfetch's alphabetical print order
     add(count_prefixed_lines("/var/lib/dpkg/status", "Package: "), "dpkg");
 
-    let flatpak_system = flatpak_app_packages("/var/lib/flatpak")
-        + flatpak_runtime_packages("/var/lib/flatpak");
+    let flatpak_system =
+        flatpak_app_packages("/var/lib/flatpak") + flatpak_runtime_packages("/var/lib/flatpak");
     let flatpak_user = std::env::var("HOME")
         .map(|home| {
             flatpak_app_packages(&format!("{home}/.local/share/flatpak"))

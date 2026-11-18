@@ -30,7 +30,6 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    
     devices
         .iter()
         .enumerate()

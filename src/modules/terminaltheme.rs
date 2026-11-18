@@ -16,8 +16,8 @@ struct Color {
 
 /// The dark threshold of ffDetectTerminalTheme.
 fn set_dark(color: &mut Color) {
-    color.dark = u32::from(color.r) * 299 + u32::from(color.g) * 587 + u32::from(color.b) * 114
-        < 128_000;
+    color.dark =
+        u32::from(color.r) * 299 + u32::from(color.g) * 587 + u32::from(color.b) * 114 < 128_000;
 }
 
 /// detectByEnv's fgbgToColor table.
@@ -41,7 +41,12 @@ fn color_from_palette(num: u32) -> Color {
         15 => (255, 255, 255),
         _ => (0, 0, 0),
     };
-    let mut color = Color { r, g, b, dark: false };
+    let mut color = Color {
+        r,
+        g,
+        b,
+        dark: false,
+    };
     set_dark(&mut color);
     color
 }
@@ -114,7 +119,11 @@ fn detect_by_escape() -> Option<(Color, Color)> {
             if libc::tcsetattr(fd, libc::TCSAFLUSH, &new_term) == 0 {
                 let mut written = 0usize;
                 while written < request.len() {
-                    let n = libc::write(fd, request[written..].as_ptr().cast(), request.len() - written);
+                    let n = libc::write(
+                        fd,
+                        request[written..].as_ptr().cast(),
+                        request.len() - written,
+                    );
                     if n <= 0 {
                         break;
                     }
@@ -142,8 +151,18 @@ fn detect_by_escape() -> Option<(Color, Color)> {
     scale(&mut fg);
     scale(&mut bg);
     let (mut fg, mut bg) = (
-        Color { r: fg.0, g: fg.1, b: fg.2, dark: false },
-        Color { r: bg.0, g: bg.1, b: bg.2, dark: false },
+        Color {
+            r: fg.0,
+            g: fg.1,
+            b: fg.2,
+            dark: false,
+        },
+        Color {
+            r: bg.0,
+            g: bg.1,
+            b: bg.2,
+            dark: false,
+        },
     );
     set_dark(&mut fg);
     set_dark(&mut bg);
@@ -155,7 +174,11 @@ fn detect_by_escape() -> Option<(Color, Color)> {
 fn read_response(fd: i32) -> Option<(Rgb, Rgb)> {
     let mut buffer = Vec::with_capacity(1024);
     loop {
-        let mut poll_fd = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+        let mut poll_fd = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
         if unsafe { libc::poll(&mut poll_fd, 1, 1000) } <= 0 {
             return None;
         }
@@ -194,7 +217,12 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     // The default print keys the [Dark]/[Light] tag off the background only.
     let value = format!(
         "#{:02X}{:02X}{:02X} (FG) - #{:02X}{:02X}{:02X} (BG) [{}]",
-        fg.r, fg.g, fg.b, bg.r, bg.g, bg.b,
+        fg.r,
+        fg.g,
+        fg.b,
+        bg.r,
+        bg.g,
+        bg.b,
         if bg.dark { "Dark" } else { "Light" }
     );
     vec![Row::new("Terminal Theme", value)]

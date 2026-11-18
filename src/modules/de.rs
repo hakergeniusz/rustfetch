@@ -34,8 +34,12 @@ fn de_version(name: &str) -> Option<String> {
     // fastfetch's getGnomeByDbus: "GNOME Shell 51.1" -> "51.1" without
     // paying for a gnome-shell process.
     if matches!(name, "GNOME" | "GNOME Classic")
-        && let Some(version) =
-            crate::dbus::get_property_string("org.gnome.Shell", "/org/gnome/Shell", "org.gnome.Shell", "ShellVersion")
+        && let Some(version) = crate::dbus::get_property_string(
+            "org.gnome.Shell",
+            "/org/gnome/Shell",
+            "org.gnome.Shell",
+            "ShellVersion",
+        )
     {
         return Some(version);
     }

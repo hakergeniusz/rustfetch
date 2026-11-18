@@ -106,13 +106,15 @@ fn detect_radio(hci: &str) -> Radio {
         lmp_version: i32::MIN,
         vendor: "Unknown".to_string(),
     };
-    let props = dbus::get_all_properties_on_bus(1, "org.bluez", &format!("/org/bluez/{hci}"), "org.bluez.Adapter1");
+    let props = dbus::get_all_properties_on_bus(
+        1,
+        "org.bluez",
+        &format!("/org/bluez/{hci}"),
+        "org.bluez.Adapter1",
+    );
     if let Some(props) = props {
         for (key, value) in props {
-            let value = value
-                .strip_prefix('<')
-                .and_then(|s| s.strip_suffix('>'))
-                .unwrap_or(&value);
+            let value = value.strip_prefix('<').and_then(|s| s.strip_suffix('>')).unwrap_or(&value);
             // The rendered keys carry their quotes; trim before matching.
             match key.trim_matches('\'') {
                 "Alias" => radio.name = util::string_value(value),
@@ -161,7 +163,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     }
 
     // The key is name-based, like fastfetch's "%s (%s)".
-    
+
     enabled
         .iter()
         .map(|radio| {
@@ -186,4 +188,3 @@ mod tests {
         assert_eq!(super::vendor_name(9999), "Unknown");
     }
 }
-

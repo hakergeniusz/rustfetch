@@ -11,7 +11,11 @@ fn detect() -> Option<String> {
         return None;
     }
     let major = util::read_trimmed("/sys/class/tpm/tpm0/tpm_version_major")?;
-    let version = if major == "2" { "2.0".to_string() } else { major };
+    let version = if major == "2" {
+        "2.0".to_string()
+    } else {
+        major
+    };
     Some(version)
 }
 

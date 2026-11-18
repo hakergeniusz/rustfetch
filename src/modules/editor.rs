@@ -131,18 +131,12 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
 mod tests {
     #[test]
     fn extracts_embedded_versions() {
-        assert_eq!(
-            super::extract_nvim_version("NVIM v0.11.3"),
-            Some("0.11.3".to_string())
-        );
+        assert_eq!(super::extract_nvim_version("NVIM v0.11.3"), Some("0.11.3".to_string()));
         assert_eq!(
             super::extract_vim_version("VIM - Vi IMproved 9.1 (2024 Jan 2)"),
             Some("9.1".to_string())
         );
-        assert_eq!(
-            super::extract_nano_version("GNU nano 8.4"),
-            Some("8.4".to_string())
-        );
+        assert_eq!(super::extract_nano_version("GNU nano 8.4"), Some("8.4".to_string()));
         assert_eq!(super::extract_vim_version("no marker"), None);
     }
 

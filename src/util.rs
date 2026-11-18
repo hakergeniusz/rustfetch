@@ -356,11 +356,26 @@ mod tests {
 
     #[test]
     fn parse_prop_line_matches_loosely() {
-        assert_eq!(parse_prop_line("gtk-theme-name = Adwaita", "gtk-theme-name ="), Some("Adwaita"));
-        assert_eq!(parse_prop_line("  GTK-Theme-Name=Adwaita-dark", "gtk-theme-name ="), Some("Adwaita-dark"));
-        assert_eq!(parse_prop_line("gtk-font-name = \"Cantarell 11\"", "gtk-font-name ="), Some("Cantarell 11"));
-        assert_eq!(parse_prop_line("gtk-font-name = 'Cantarell 11'", "gtk-font-name ="), Some("Cantarell 11"));
-        assert_eq!(parse_prop_line("gtk-theme-name =  spaced   ", "gtk-theme-name ="), Some("spaced"));
+        assert_eq!(
+            parse_prop_line("gtk-theme-name = Adwaita", "gtk-theme-name ="),
+            Some("Adwaita")
+        );
+        assert_eq!(
+            parse_prop_line("  GTK-Theme-Name=Adwaita-dark", "gtk-theme-name ="),
+            Some("Adwaita-dark")
+        );
+        assert_eq!(
+            parse_prop_line("gtk-font-name = \"Cantarell 11\"", "gtk-font-name ="),
+            Some("Cantarell 11")
+        );
+        assert_eq!(
+            parse_prop_line("gtk-font-name = 'Cantarell 11'", "gtk-font-name ="),
+            Some("Cantarell 11")
+        );
+        assert_eq!(
+            parse_prop_line("gtk-theme-name =  spaced   ", "gtk-theme-name ="),
+            Some("spaced")
+        );
         assert_eq!(parse_prop_line("Inherits=Breeze", "Inherits ="), Some("Breeze"));
         assert_eq!(parse_prop_line("Xcursor.theme:  Adwaita", "Xcursor.theme :"), Some("Adwaita"));
         assert_eq!(parse_prop_line("other-key = x", "gtk-theme-name ="), None);
@@ -379,7 +394,13 @@ mod tests {
 
         let mut theme = None;
         let mut icons = None;
-        parse_prop_file(&path, &mut [("gtk-theme-name =", &mut theme), ("gtk-icon-theme-name =", &mut icons)]);
+        parse_prop_file(
+            &path,
+            &mut [
+                ("gtk-theme-name =", &mut theme),
+                ("gtk-icon-theme-name =", &mut icons),
+            ],
+        );
         assert_eq!(theme.as_deref(), Some("Last"));
         assert_eq!(icons.as_deref(), Some("Icons"));
 

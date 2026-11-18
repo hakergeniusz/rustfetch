@@ -127,10 +127,7 @@ pub fn load(cli: &Cli, instance: &Instance) -> (Option<Logo>, LogoColors) {
         } else if let Ok(art) = std::fs::read_to_string(source) {
             let (lines, width) = parse_art(&art, logo_data::UNKNOWN.colors);
             let def = &logo_data::UNKNOWN;
-            return (
-                Some(Logo { lines, width }),
-                logo_colors(def),
-            );
+            return (Some(Logo { lines, width }), logo_colors(def));
         } else {
             eprintln!("rustfetch: unknown logo or unreadable file: {source}");
             return (None, logo_colors(detected_def(instance)));
@@ -200,4 +197,3 @@ mod tests {
         assert_eq!(normalize("Linux Mint"), normalize("linuxmint"));
     }
 }
-

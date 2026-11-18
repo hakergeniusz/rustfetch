@@ -24,8 +24,12 @@ fn main() {
     // structure selection bypasses; fastfetch refuses it up front (481).
     if cli.modules.iter().any(|module| module.eq_ignore_ascii_case("command")) {
         eprintln!("Error: module `command` is not supported with `--structure`");
-        eprintln!("       Its options can only be read from the JSON config, which `--structure` bypasses.");
-        eprintln!("       Add it to the config instead, e.g. `{{ \"modules\": [ {{ \"type\": \"command\", \"text\": \"uname -r\" }} ] }}`");
+        eprintln!(
+            "       Its options can only be read from the JSON config, which `--structure` bypasses."
+        );
+        eprintln!(
+            "       Add it to the config instead, e.g. `{{ \"modules\": [ {{ \"type\": \"command\", \"text\": \"uname -r\" }} ] }}`"
+        );
         std::process::exit(481);
     }
 

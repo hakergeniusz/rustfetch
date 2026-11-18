@@ -3,7 +3,7 @@
 //! to a dconf client from libdconf. Loaded lazily once and shared by the
 //! GTK/Qt-adjacent modules that previously ran `gsettings list-recursively`.
 
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::sync::OnceLock;
 
 type GVariant = c_void;
@@ -57,12 +57,15 @@ type GetInt32Fn = unsafe extern "C" fn(*mut GVariant) -> i32;
 type UnrefFn = unsafe extern "C" fn(*mut GVariant);
 type FreeFn = unsafe extern "C" fn(*mut c_void);
 
-type LookupFn = unsafe extern "C" fn(*mut GSettingsSchemaSource, *const c_char, c_int) -> *mut GSettingsSchema;
+type LookupFn =
+    unsafe extern "C" fn(*mut GSettingsSchemaSource, *const c_char, c_int) -> *mut GSettingsSchema;
 type SchemaSourceGetDefaultFn = unsafe extern "C" fn() -> *mut GSettingsSchemaSource;
 type HasKeyFn = unsafe extern "C" fn(*mut GSettingsSchema, *const c_char) -> c_int;
-type NewFullFn = unsafe extern "C" fn(*mut GSettingsSchema, *mut c_void, *const c_char) -> *mut GSettings;
+type NewFullFn =
+    unsafe extern "C" fn(*mut GSettingsSchema, *mut c_void, *const c_char) -> *mut GSettings;
 type GSettingsGetFn = unsafe extern "C" fn(*mut GSettings, *const c_char) -> *mut GVariant;
-type ReadFullFn = unsafe extern "C" fn(*mut DConfClient, *const c_char, c_int, *mut *mut GError) -> *mut GVariant;
+type ReadFullFn =
+    unsafe extern "C" fn(*mut DConfClient, *const c_char, c_int, *mut *mut GError) -> *mut GVariant;
 type ClientNewFn = unsafe extern "C" fn() -> *mut DConfClient;
 
 /// Function-pointer bundle for libgio; the schema source is fetched once.
@@ -252,8 +255,16 @@ fn get_gsettings(schema_with_path: &str, key: &str) -> Option<String> {
         }
 
         let variant = (api.get_value)(settings, ckey.as_ptr());
-        let variant = if variant.is_null() { (api.get_user_value)(settings, ckey.as_ptr()) } else { variant };
-        let variant = if variant.is_null() { (api.get_default_value)(settings, ckey.as_ptr()) } else { variant };
+        let variant = if variant.is_null() {
+            (api.get_user_value)(settings, ckey.as_ptr())
+        } else {
+            variant
+        };
+        let variant = if variant.is_null() {
+            (api.get_default_value)(settings, ckey.as_ptr())
+        } else {
+            variant
+        };
         variant_string(variant, &api.variants)
     }
 }
@@ -275,7 +286,12 @@ fn get_dconf(schema_with_path: &str, key: &str) -> Option<String> {
             variant
         };
         let variant = if variant.is_null() {
-            (api.read_full)(api.client, ckey.as_ptr(), DCONF_READ_DEFAULT_VALUE, std::ptr::null_mut())
+            (api.read_full)(
+                api.client,
+                ckey.as_ptr(),
+                DCONF_READ_DEFAULT_VALUE,
+                std::ptr::null_mut(),
+            )
         } else {
             variant
         };
@@ -294,10 +310,18 @@ mod tests {
 
     #[test]
     fn split_schema_takes_the_first_colon() {
-        assert_eq!(split_schema("org.gnome.desktop.interface"), ("org.gnome.desktop.interface", None));
         assert_eq!(
-            split_schema("org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/legacy/profiles:/:uuid/"),
-            ("org.gnome.Terminal.Legacy.Profile", Some("/org/gnome/terminal/legacy/profiles:/:uuid/"))
+            split_schema("org.gnome.desktop.interface"),
+            ("org.gnome.desktop.interface", None)
+        );
+        assert_eq!(
+            split_schema(
+                "org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/legacy/profiles:/:uuid/"
+            ),
+            (
+                "org.gnome.Terminal.Legacy.Profile",
+                Some("/org/gnome/terminal/legacy/profiles:/:uuid/")
+            )
         );
     }
 }

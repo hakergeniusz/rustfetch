@@ -89,11 +89,7 @@ mod tests {
         // 00000000 destination marks the default route; first field is iface
         let line = "enp3s0\t00000000\tC0A812FE\t0003\t0\t0\t0\t00000000\t0\t\t0";
         let mut fields = line.split_whitespace();
-        let (iface, destination, _) = (
-            fields.next(),
-            fields.next(),
-            fields.next(),
-        );
+        let (iface, destination, _) = (fields.next(), fields.next(), fields.next());
         assert_eq!(destination, Some("00000000"));
         assert_eq!(iface, Some("enp3s0"));
     }

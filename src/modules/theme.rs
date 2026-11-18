@@ -22,7 +22,7 @@ fn qt_theme(qt: &super::qt::QtResult) -> Option<String> {
             } else {
                 format!("{style} ({pretty})")
             }
-        }
+        },
         (Some(style), None) => style.clone(),
         (None, Some(scheme)) => scheme.clone(),
         (None, None) => unreachable!(),

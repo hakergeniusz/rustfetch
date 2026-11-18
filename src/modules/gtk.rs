@@ -36,10 +36,7 @@ impl GtkVersions {
 /// Reads one key from a GSettings schema (or "schema:path" relocatable
 /// form), unquoting string values, memoized per (schema, key).
 pub fn get(instance: &Instance, schema: &str, key: &str) -> Option<String> {
-    let mut cache = instance
-        .gnome_settings
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut cache = instance.gnome_settings.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let cache_key = format!("{schema}\x1f{key}");
     if let Some(value) = cache.get(&cache_key) {
         return value.clone();
@@ -72,28 +69,28 @@ pub fn parse_gtk(gtk2: Option<&str>, gtk3: Option<&str>, gtk4: Option<&str>) -> 
             } else {
                 Some(format!("{a} [GTK2], {b} [GTK3], {c} [GTK4]"))
             }
-        }
+        },
         (Some(a), Some(b), None) => {
             if eq(a, b) {
                 Some(format!("{b} [GTK2/3]"))
             } else {
                 Some(format!("{a} [GTK2], {b} [GTK3]"))
             }
-        }
+        },
         (Some(a), None, Some(c)) => {
             if eq(a, c) {
                 Some(format!("{c} [GTK2/4]"))
             } else {
                 Some(format!("{a} [GTK2], {c} [GTK4]"))
             }
-        }
+        },
         (None, Some(b), Some(c)) => {
             if eq(b, c) {
                 Some(format!("{c} [GTK3/4]"))
             } else {
                 Some(format!("{b} [GTK3], {c} [GTK4]"))
             }
-        }
+        },
         (Some(a), None, None) => Some(format!("{a} [GTK2]")),
         (None, Some(b), None) => Some(format!("{b} [GTK3]")),
         (None, None, Some(c)) => Some(format!("{c} [GTK4]")),
@@ -195,8 +192,14 @@ mod tests {
     #[test]
     fn parse_gtk_groups_equal_versions() {
         assert_eq!(parse_gtk(Some("A"), Some("A"), Some("A")), Some("A [GTK2/3/4]".to_string()));
-        assert_eq!(parse_gtk(Some("A"), Some("A"), Some("B")), Some("A [GTK2/3], B [GTK4]".to_string()));
-        assert_eq!(parse_gtk(Some("A"), Some("B"), Some("B")), Some("A [GTK2], B [GTK3/4]".to_string()));
+        assert_eq!(
+            parse_gtk(Some("A"), Some("A"), Some("B")),
+            Some("A [GTK2/3], B [GTK4]".to_string())
+        );
+        assert_eq!(
+            parse_gtk(Some("A"), Some("B"), Some("B")),
+            Some("A [GTK2], B [GTK3/4]".to_string())
+        );
         assert_eq!(
             parse_gtk(Some("A"), Some("B"), Some("C")),
             Some("A [GTK2], B [GTK3], C [GTK4]".to_string())

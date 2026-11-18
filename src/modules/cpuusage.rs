@@ -117,7 +117,10 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         sum += (*in_use2 - *in_use1) as f64 / (*total2 - *total1) as f64 * 100.0;
     }
     let avg = sum / times2.len() as f64;
-    vec![Row::new("CPU Usage", colorize_percent(avg, 50, 80, _instance.color))]
+    vec![Row::new(
+        "CPU Usage",
+        colorize_percent(avg, 50, 80, _instance.color),
+    )]
 }
 
 #[cfg(test)]

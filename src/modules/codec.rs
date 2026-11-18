@@ -4,7 +4,7 @@
 //! codec types and the entrypoints decide decoder vs encoder. The VDPAU
 //! fallback needs a live X11 display and is not ported.
 
-use std::ffi::{c_int, c_void, CString};
+use std::ffi::{CString, c_int, c_void};
 
 use crate::{instance::Instance, modules::Row};
 
@@ -82,15 +82,15 @@ fn va_profile_to_type(profile: c_int) -> CodecType {
         19..=22 => 1 << 13,
         // The HEVC family (Main, Main10, Main12, 422, 444, SCC variants).
         17 | 18 | 23..=31 | 34 => 1 << 12,
-        32 | 33 | 39 => 1 << 14, // AV1Profile0..2
-        37 | 38 => 1 << 15,      // VVCMain10 / VVCMultilayerMain10
-        11 => 1 << 2,            // H263Baseline
-        12 => 1 << 3,            // JPEGBaseline
-        0 | 1 => 1 << 5,         // MPEG2Simple / MPEG2Main
-        2..=4 => 1 << 6,     // MPEG4 Simple / AdvancedSimple / Main
+        32 | 33 | 39 => 1 << 14,                      // AV1Profile0..2
+        37 | 38 => 1 << 15,                           // VVCMain10 / VVCMultilayerMain10
+        11 => 1 << 2,                                 // H263Baseline
+        12 => 1 << 3,                                 // JPEGBaseline
+        0 | 1 => 1 << 5,                              // MPEG2Simple / MPEG2Main
+        2..=4 => 1 << 6,                              // MPEG4 Simple / AdvancedSimple / Main
         5 | 6 | 7 | 13 | 15 | 16 | 36 | 40 => 1 << 7, // H264 family
-        8..=10 => 1 << 10,   // VC1Simple / Main / Advanced
-        14 => 1 << 11,           // VP8Version0_3
+        8..=10 => 1 << 10,                            // VC1Simple / Main / Advanced
+        14 => 1 << 11,                                // VP8Version0_3
         _ => 0,
     })
 }
@@ -155,29 +155,33 @@ impl VaApi {
             Some(Self {
                 _libva: libva,
                 _libva_drm: libva_drm,
-                va_initialize: std::mem::transmute::<*mut c_void, VaInitializeFn>(load_symbol(libva, "vaInitialize")?),
-                va_terminate: std::mem::transmute::<*mut c_void, VaTerminateFn>(load_symbol(libva, "vaTerminate")?),
-                va_max_num_profiles: std::mem::transmute::<*mut c_void, VaMaxNumFn>(load_symbol(libva, "vaMaxNumProfiles")?),
-                va_max_num_entrypoints: std::mem::transmute::<*mut c_void, VaMaxNumFn>(load_symbol(
+                va_initialize: std::mem::transmute::<*mut c_void, VaInitializeFn>(load_symbol(
                     libva,
-                    "vaMaxNumEntrypoints",
+                    "vaInitialize",
                 )?),
-                va_query_config_profiles: std::mem::transmute::<*mut c_void, VaQueryProfilesFn>(load_symbol(
+                va_terminate: std::mem::transmute::<*mut c_void, VaTerminateFn>(load_symbol(
                     libva,
-                    "vaQueryConfigProfiles",
+                    "vaTerminate",
                 )?),
-                va_query_config_entrypoints: std::mem::transmute::<*mut c_void, VaQueryEntrypointsFn>(load_symbol(
+                va_max_num_profiles: std::mem::transmute::<*mut c_void, VaMaxNumFn>(load_symbol(
                     libva,
-                    "vaQueryConfigEntrypoints",
+                    "vaMaxNumProfiles",
                 )?),
-                va_get_config_attributes: std::mem::transmute::<*mut c_void, VaGetAttributesFn>(load_symbol(
-                    libva,
-                    "vaGetConfigAttributes",
-                )?),
-                va_get_display_drm: std::mem::transmute::<*mut c_void, VaGetDisplayDrmFn>(load_symbol(
-                    libva_drm,
-                    "vaGetDisplayDRM",
-                )?),
+                va_max_num_entrypoints: std::mem::transmute::<*mut c_void, VaMaxNumFn>(
+                    load_symbol(libva, "vaMaxNumEntrypoints")?,
+                ),
+                va_query_config_profiles: std::mem::transmute::<*mut c_void, VaQueryProfilesFn>(
+                    load_symbol(libva, "vaQueryConfigProfiles")?,
+                ),
+                va_query_config_entrypoints: std::mem::transmute::<*mut c_void, VaQueryEntrypointsFn>(
+                    load_symbol(libva, "vaQueryConfigEntrypoints")?,
+                ),
+                va_get_config_attributes: std::mem::transmute::<*mut c_void, VaGetAttributesFn>(
+                    load_symbol(libva, "vaGetConfigAttributes")?,
+                ),
+                va_get_display_drm: std::mem::transmute::<*mut c_void, VaGetDisplayDrmFn>(
+                    load_symbol(libva_drm, "vaGetDisplayDRM")?,
+                ),
             })
         }
     }
@@ -361,4 +365,3 @@ mod tests {
         assert_eq!(names, ["H.264", "AV1"]);
     }
 }
-

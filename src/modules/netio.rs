@@ -37,7 +37,7 @@ fn default_route_ifname() -> Option<String> {
 }
 
 unsafe fn default_route_ifname_impl() -> Option<String> {
-    use libc::{RTA_GATEWAY, RTA_OIF, RTA_PRIORITY, RT_SCOPE_HOST, RTN_LOCAL};
+    use libc::{RT_SCOPE_HOST, RTA_GATEWAY, RTA_OIF, RTA_PRIORITY, RTN_LOCAL};
 
     #[repr(C)]
     #[derive(Clone, Copy)]
@@ -53,21 +53,33 @@ unsafe fn default_route_ifname_impl() -> Option<String> {
         rtm_flags: libc::c_uint,
     }
 
-    let sock_fd = unsafe { libc::socket(libc::AF_NETLINK, libc::SOCK_RAW | libc::SOCK_CLOEXEC, libc::NETLINK_ROUTE) };
+    let sock_fd = unsafe {
+        libc::socket(libc::AF_NETLINK, libc::SOCK_RAW | libc::SOCK_CLOEXEC, libc::NETLINK_ROUTE)
+    };
     if sock_fd < 0 {
         return None;
     }
 
     let mut bind_addr: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
     bind_addr.nl_family = libc::AF_NETLINK as u16;
-    if unsafe { libc::bind(sock_fd, (&bind_addr as *const libc::sockaddr_nl).cast(), std::mem::size_of::<libc::sockaddr_nl>() as u32) } < 0 {
+    if unsafe {
+        libc::bind(
+            sock_fd,
+            (&bind_addr as *const libc::sockaddr_nl).cast(),
+            std::mem::size_of::<libc::sockaddr_nl>() as u32,
+        )
+    } < 0
+    {
         unsafe { libc::close(sock_fd) };
         return None;
     }
 
     let mut port_addr: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
     let mut port_len = std::mem::size_of::<libc::sockaddr_nl>() as u32;
-    let pid = if unsafe { libc::getsockname(sock_fd, (&mut port_addr as *mut libc::sockaddr_nl).cast(), &mut port_len) } < 0 {
+    let pid = if unsafe {
+        libc::getsockname(sock_fd, (&mut port_addr as *mut libc::sockaddr_nl).cast(), &mut port_len)
+    } < 0
+    {
         unsafe { libc::close(sock_fd) };
         return None;
     } else {
@@ -129,7 +141,10 @@ unsafe fn default_route_ifname_impl() -> Option<String> {
 
     // Dump replies are multi-part; a receive timeout guards against a
     // missing NLMSG_DONE.
-    let timeout = libc::timeval { tv_sec: 1, tv_usec: 0 };
+    let timeout = libc::timeval {
+        tv_sec: 1,
+        tv_usec: 0,
+    };
     unsafe {
         libc::setsockopt(
             sock_fd,
@@ -146,7 +161,14 @@ unsafe fn default_route_ifname_impl() -> Option<String> {
 
     loop {
         let received = unsafe {
-            libc::recvfrom(sock_fd, buffer.as_mut_ptr().cast(), buffer.len(), 0, std::ptr::null_mut(), std::ptr::null_mut())
+            libc::recvfrom(
+                sock_fd,
+                buffer.as_mut_ptr().cast(),
+                buffer.len(),
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
         };
         if received <= 0 {
             break;
@@ -157,7 +179,8 @@ unsafe fn default_route_ifname_impl() -> Option<String> {
         let mut offset = 0usize;
         let mut done = false;
         while offset + std::mem::size_of::<libc::nlmsghdr>() <= received {
-            let nlh = unsafe { buffer.as_ptr().add(offset).cast::<libc::nlmsghdr>().read_unaligned() };
+            let nlh =
+                unsafe { buffer.as_ptr().add(offset).cast::<libc::nlmsghdr>().read_unaligned() };
             if nlh.nlmsg_len < std::mem::size_of::<libc::nlmsghdr>() as u32
                 || offset + nlh.nlmsg_len as usize > received
             {
@@ -176,7 +199,13 @@ unsafe fn default_route_ifname_impl() -> Option<String> {
                 continue;
             }
 
-            let rtm = unsafe { buffer.as_ptr().add(offset + std::mem::size_of::<libc::nlmsghdr>()).cast::<RtMsg>().read_unaligned() };
+            let rtm = unsafe {
+                buffer
+                    .as_ptr()
+                    .add(offset + std::mem::size_of::<libc::nlmsghdr>())
+                    .cast::<RtMsg>()
+                    .read_unaligned()
+            };
             if rtm.rtm_family != libc::AF_INET as u8
                 || rtm.rtm_dst_len != 0
                 || rtm.rtm_scope == RT_SCOPE_HOST
@@ -186,15 +215,24 @@ unsafe fn default_route_ifname_impl() -> Option<String> {
                 continue;
             }
 
-            let attrs_start = offset + std::mem::size_of::<libc::nlmsghdr>() + std::mem::size_of::<RtMsg>();
-            let attrs_len = nlh.nlmsg_len as usize - std::mem::size_of::<libc::nlmsghdr>() - std::mem::size_of::<RtMsg>();
+            let attrs_start =
+                offset + std::mem::size_of::<libc::nlmsghdr>() + std::mem::size_of::<RtMsg>();
+            let attrs_len = nlh.nlmsg_len as usize
+                - std::mem::size_of::<libc::nlmsghdr>()
+                - std::mem::size_of::<RtMsg>();
 
             let mut ifindex = 0u32;
             let mut metric = 0u32;
             let mut skip_route = false;
             let mut attr_offset = 0usize;
             while attr_offset + std::mem::size_of::<libc::rtattr>() <= attrs_len {
-                let rta = unsafe { buffer.as_ptr().add(attrs_start + attr_offset).cast::<libc::rtattr>().read_unaligned() };
+                let rta = unsafe {
+                    buffer
+                        .as_ptr()
+                        .add(attrs_start + attr_offset)
+                        .cast::<libc::rtattr>()
+                        .read_unaligned()
+                };
                 if (rta.rta_len as usize) < std::mem::size_of::<libc::rtattr>()
                     || attr_offset + rta.rta_len as usize > attrs_len
                 {
@@ -202,7 +240,11 @@ unsafe fn default_route_ifname_impl() -> Option<String> {
                 }
                 if (rta.rta_len as usize - std::mem::size_of::<libc::rtattr>()) >= 4 {
                     let data = unsafe {
-                        buffer.as_ptr().add(attrs_start + attr_offset + std::mem::size_of::<libc::rtattr>()).cast::<u32>().read_unaligned()
+                        buffer
+                            .as_ptr()
+                            .add(attrs_start + attr_offset + std::mem::size_of::<libc::rtattr>())
+                            .cast::<u32>()
+                            .read_unaligned()
                     };
                     match rta.rta_type {
                         RTA_OIF => ifindex = data,
@@ -365,11 +407,15 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     }
 
     counters2.sort_by(|a, b| a.name.cmp(&b.name));
-    
+
     counters2
         .iter()
         .map(|inf| {
-            let name = if inf.name.is_empty() { "unknown".to_string() } else { inf.name.clone() };
+            let name = if inf.name.is_empty() {
+                "unknown".to_string()
+            } else {
+                inf.name.clone()
+            };
             Row::new(
                 &format!("Network I/O ({name})"),
                 format!(

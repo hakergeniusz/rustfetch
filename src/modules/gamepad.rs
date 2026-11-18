@@ -24,10 +24,10 @@ fn battery_percent(device_path: &Path) -> u8 {
         // Level name (tested with an NS Pro controller)
         if let Some(level) = util::read_trimmed_in(&supply.path(), "capacity_level") {
             let pct = match level.chars().next() {
-                Some('C') => 1, // Critical
-                Some('L') => 25, // Low
-                Some('N') => 50, // Normal
-                Some('H') => 75, // High
+                Some('C') => 1,   // Critical
+                Some('L') => 25,  // Low
+                Some('N') => 50,  // Normal
+                Some('H') => 75,  // High
                 Some('F') => 100, // Full
                 _ => 0,
             };
@@ -46,12 +46,7 @@ fn detect() -> Vec<(String, u8)> {
     let mut devices = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !name.starts_with("js")
-            || name
-                .chars()
-                .nth(2)
-                .is_none_or(|c| !c.is_ascii_digit())
-        {
+        if !name.starts_with("js") || name.chars().nth(2).is_none_or(|c| !c.is_ascii_digit()) {
             continue;
         }
         let Some(device_name) = util::read_trimmed_in(&entry.path(), "device/name") else {
@@ -69,7 +64,6 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    
     devices
         .iter()
         .enumerate()

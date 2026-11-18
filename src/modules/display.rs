@@ -263,9 +263,9 @@ fn supported_bt2100(region: &str) -> bool {
         .find(KEY)
         .and_then(|start| {
             let start = start + KEY.len();
-            region[start..].find("]>").map(|end| {
-                region[start..start + end].split(", ").any(|mode| mode == "2")
-            })
+            region[start..]
+                .find("]>")
+                .map(|end| region[start..start + end].split(", ").any(|mode| mode == "2"))
         })
         .unwrap_or(false)
 }
@@ -355,4 +355,3 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         None => rows_from_edid(&edids),
     }
 }
-

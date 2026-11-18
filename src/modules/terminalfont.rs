@@ -10,10 +10,13 @@ use crate::{instance::Instance, modules::Row, util};
 fn pretty(name: &str, size: Option<&str>) -> String {
     match size {
         Some(size) if !size.is_empty() => {
-            let suffix =
-                if size.ends_with("pt") || size.ends_with("px") { "" } else { "pt" };
+            let suffix = if size.ends_with("pt") || size.ends_with("px") {
+                ""
+            } else {
+                "pt"
+            };
             format!("{name} ({size}{suffix})")
-        }
+        },
         _ => name.to_string(),
     }
 }
@@ -28,9 +31,11 @@ fn pango_font(value: &str) -> String {
 fn xft_font(pattern: &str) -> String {
     let head = pattern.split(':').next().unwrap_or(pattern).trim();
     let (family, mut size) = match head.rsplit_once('-') {
-        Some((family, tail)) if !tail.is_empty() && tail.chars().all(|c| c.is_ascii_digit() || c == '.') => {
+        Some((family, tail))
+            if !tail.is_empty() && tail.chars().all(|c| c.is_ascii_digit() || c == '.') =>
+        {
             (family.trim().to_string(), Some(tail.to_string()))
-        }
+        },
         _ => (head.to_string(), None),
     };
     for pair in pattern.split(':').skip(1) {
@@ -53,7 +58,10 @@ pub fn qt_font(data: &str) -> String {
     // the style is the LAST field, split into words when alphabetic
     let style = data.rsplit(',').next().unwrap_or("").trim();
     let styles = if style.chars().next().is_some_and(|c| c.is_alphabetic()) && style != "Regular" {
-        format!(", {}", style.split(' ').filter(|s| !s.is_empty()).collect::<Vec<_>>().join(", "))
+        format!(
+            ", {}",
+            style.split(' ').filter(|s| !s.is_empty()).collect::<Vec<_>>().join(", ")
+        )
     } else {
         String::new()
     };
@@ -108,7 +116,10 @@ fn detect_konsole(instance: &Instance, rc_file: &str) -> Option<String> {
     }
     for dir in util::data_dirs() {
         let mut font = None;
-        util::parse_prop_file(&dir.join(format!("konsole/{profile}")), &mut [("Font =", &mut font)]);
+        util::parse_prop_file(
+            &dir.join(format!("konsole/{profile}")),
+            &mut [("Font =", &mut font)],
+        );
         if let Some(font) = font {
             return Some(qt_font(&font));
         }
@@ -171,7 +182,11 @@ fn detect_alacritty() -> Option<String> {
     let mut size = None;
     let mut found = false;
 
-    for relative in ["alacritty/alacritty.toml", "alacritty.toml", ".alacritty.toml"] {
+    for relative in [
+        "alacritty/alacritty.toml",
+        "alacritty.toml",
+        ".alacritty.toml",
+    ] {
         for dir in util::config_dirs() {
             util::parse_prop_file(
                 &dir.join(relative),
@@ -277,12 +292,18 @@ fn detect_xterm() -> Option<String> {
     let mut size = None;
     util::parse_prop_file(
         &home.join(".Xresources"),
-        &mut [("xterm*faceName:", &mut font), ("xterm*faceSize:", &mut size)],
+        &mut [
+            ("xterm*faceName:", &mut font),
+            ("xterm*faceSize:", &mut size),
+        ],
     );
     if font.is_none() {
         util::parse_prop_file(
             &home.join(".Xresources"),
-            &mut [("xterm.vt100.faceName:", &mut font), ("xterm.vt100.faceSize:", &mut size)],
+            &mut [
+                ("xterm.vt100.faceName:", &mut font),
+                ("xterm.vt100.faceSize:", &mut size),
+            ],
         );
     }
     Some(pretty(
@@ -321,7 +342,8 @@ fn detect_urxvt() -> Option<String> {
 
 fn detect_warp() -> Option<String> {
     for dir in util::config_dirs() {
-        let Ok(content) = std::fs::read_to_string(dir.join("warp-terminal/user_preferences.json")) else {
+        let Ok(content) = std::fs::read_to_string(dir.join("warp-terminal/user_preferences.json"))
+        else {
             continue;
         };
         let extract = |key: &str| -> Option<String> {
@@ -343,7 +365,8 @@ fn detect_warp() -> Option<String> {
 fn detect_cosmic_term() -> Option<String> {
     let home = std::env::var_os("HOME")?;
     let base = std::path::PathBuf::from(home).join(".config/cosmic/com.system76.CosmicTerm/v1");
-    let font = util::read_trimmed_in(&base, "font_name").unwrap_or_else(|| "Noto Sans Mono".to_string());
+    let font =
+        util::read_trimmed_in(&base, "font_name").unwrap_or_else(|| "Noto Sans Mono".to_string());
     let size = match util::read_trimmed_in(&base, "font_size") {
         Some(size) => format!("{size}px"),
         None => "14px".to_string(),
@@ -376,12 +399,15 @@ fn detect_deepin() -> Option<String> {
             let mut lines = content.lines();
             while let Some(line) = lines.next() {
                 if line.trim() == header {
-                    return lines.next().and_then(|line| util::parse_prop_line(line, "value=").map(str::to_string));
+                    return lines.next().and_then(|line| {
+                        util::parse_prop_line(line, "value=").map(str::to_string)
+                    });
                 }
             }
             None
         };
-        let font = section_value("[basic.interface.font]").unwrap_or_else(|| "Noto Sans Mono".to_string());
+        let font =
+            section_value("[basic.interface.font]").unwrap_or_else(|| "Noto Sans Mono".to_string());
         let size = section_value("[basic.interface.font_size]").unwrap_or_else(|| "11".to_string());
         return Some(pretty(&font, Some(&size)));
     }
@@ -427,13 +453,20 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     } else if name == "foot" {
         detect_foot()
     } else if name == "qterminal" {
-        detect_font_size_pair("qterminal.org/qterminal.ini", "fontFamily=", "fontSize=", "monospace", "12")
+        detect_font_size_pair(
+            "qterminal.org/qterminal.ini",
+            "fontFamily=",
+            "fontSize=",
+            "monospace",
+            "12",
+        )
     } else if name == "xterm" {
         detect_xterm()
     } else if name == "rxvt" || name == "urxvt" || name == "urxvtd" {
         detect_urxvt()
     } else if name.starts_with("terminator") {
-        let (use_system, font) = parse_prop_file_config_2("terminator/config", "use_system_font =", "font =");
+        let (use_system, font) =
+            parse_prop_file_config_2("terminator/config", "use_system_font =", "font =");
         match use_system.as_deref() {
             Some("True") | Some("true") | None => system_monospace(instance),
             _ => Some(pango_font(&font.unwrap_or_else(|| "Mono 10".to_string()))),
@@ -443,11 +476,18 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     } else if name.starts_with("termite") {
         parse_prop_file_config("termite/config", "font =").map(|font| pango_font(&font))
     } else if name.starts_with("lxterminal") {
-        parse_prop_file_config("lxterminal/lxterminal.conf", "fontname =").map(|font| pango_font(&font))
+        parse_prop_file_config("lxterminal/lxterminal.conf", "fontname =")
+            .map(|font| pango_font(&font))
     } else if name.starts_with("weston-terminal") {
         detect_font_size_pair("weston.ini", "font=", "font-size=", "DejaVu Sans Mono", "14")
     } else if name == "kmscon" {
-        detect_font_size_pair("kmscon/kmscon.conf", "font-name=", "font-size=", "Hack Nerd Font", "18")
+        detect_font_size_pair(
+            "kmscon/kmscon.conf",
+            "font-name=",
+            "font-size=",
+            "Hack Nerd Font",
+            "18",
+        )
     } else if name.starts_with("deepin-terminal") {
         detect_deepin()
     } else if name.starts_with("cosmic-term") {

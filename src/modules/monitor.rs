@@ -4,7 +4,7 @@
 
 use crate::{
     instance::Instance,
-    modules::{display, Row},
+    modules::{Row, display},
 };
 
 /// %g of the refresh rate rounded to three decimals (monitor.c).
@@ -20,7 +20,13 @@ fn format_refresh(refresh: f64) -> String {
     text
 }
 
-fn format_value(width: u32, height: u32, refresh: f64, physical_mm: (u32, u32), hdr: bool) -> String {
+fn format_value(
+    width: u32,
+    height: u32,
+    refresh: f64,
+    physical_mm: (u32, u32),
+    hdr: bool,
+) -> String {
     let mut value = format!("{width}x{height} px");
     if refresh > 0.0 {
         value.push_str(&format!(" @ {} Hz", format_refresh(refresh)));
@@ -54,9 +60,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             displays
                 .iter()
                 .map(|display| {
-                    let edid = edids
-                        .iter()
-                        .find(|(connector, _)| *connector == display.connector);
+                    let edid = edids.iter().find(|(connector, _)| *connector == display.connector);
                     // mutterApplyMonitorProperties: color-mode 2 (BT2100) is
                     // HDR enabled and wins over everything; with an EDID the
                     // status is already resolved, only a missing one leaves
@@ -68,8 +72,13 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                     // On GNOME the physical size reaches fastfetch through
                     // wl_output, i.e. the kernel's BDP-based connector mm.
                     let physical_mm = edid.map_or((0, 0), |(_, edid)| edid.bdp_mm);
-                    let value =
-                        format_value(display.width, display.height, display.refresh, physical_mm, hdr);
+                    let value = format_value(
+                        display.width,
+                        display.height,
+                        display.refresh,
+                        physical_mm,
+                        hdr,
+                    );
                     let name = edid
                         .and_then(|(_, edid)| edid.name.clone())
                         .unwrap_or_else(|| display.model.clone());
@@ -80,13 +89,8 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         None => display::edids_by_connector()
             .iter()
             .map(|(_, edid)| {
-                let value = format_value(
-                    edid.width,
-                    edid.height,
-                    edid.refresh,
-                    edid.physical_mm,
-                    edid.hdr,
-                );
+                let value =
+                    format_value(edid.width, edid.height, edid.refresh, edid.physical_mm, edid.hdr);
                 let name = edid.name.clone().unwrap_or_default();
                 row(&name, value)
             })
@@ -105,10 +109,7 @@ mod tests {
             super::format_value(2560, 1440, 179.877, (600, 340), true),
             "2560x1440 px @ 179.877 Hz - 600x340 mm (27.15 inches, 108.18 ppi) [HDR Compatible]"
         );
-        assert_eq!(
-            super::format_value(1920, 1080, 0.0, (0, 0), false),
-            "1920x1080 px"
-        );
+        assert_eq!(super::format_value(1920, 1080, 0.0, (0, 0), false), "1920x1080 px");
     }
 
     #[test]

@@ -261,9 +261,51 @@ mod tests {
     #[test]
     fn sorts_by_cpu_desc_then_pid_asc() {
         let mut results = [
-            (Snapshot { name: "b".into(), cpu_time_ms: 0, mem_bytes: 0, bytes_read: 0, bytes_written: 0, start_time: 1, threads: 0, pid: 20 }, 5.0, 0, 0),
-            (Snapshot { name: "a".into(), cpu_time_ms: 0, mem_bytes: 0, bytes_read: 0, bytes_written: 0, start_time: 1, threads: 0, pid: 10 }, 10.0, 0, 0),
-            (Snapshot { name: "c".into(), cpu_time_ms: 0, mem_bytes: 0, bytes_read: 0, bytes_written: 0, start_time: 1, threads: 0, pid: 2 }, 10.0, 0, 0),
+            (
+                Snapshot {
+                    name: "b".into(),
+                    cpu_time_ms: 0,
+                    mem_bytes: 0,
+                    bytes_read: 0,
+                    bytes_written: 0,
+                    start_time: 1,
+                    threads: 0,
+                    pid: 20,
+                },
+                5.0,
+                0,
+                0,
+            ),
+            (
+                Snapshot {
+                    name: "a".into(),
+                    cpu_time_ms: 0,
+                    mem_bytes: 0,
+                    bytes_read: 0,
+                    bytes_written: 0,
+                    start_time: 1,
+                    threads: 0,
+                    pid: 10,
+                },
+                10.0,
+                0,
+                0,
+            ),
+            (
+                Snapshot {
+                    name: "c".into(),
+                    cpu_time_ms: 0,
+                    mem_bytes: 0,
+                    bytes_read: 0,
+                    bytes_written: 0,
+                    start_time: 1,
+                    threads: 0,
+                    pid: 2,
+                },
+                10.0,
+                0,
+                0,
+            ),
         ];
         results.sort_by(|(a, a_cpu, _, _), (b, b_cpu, _, _)| {
             let order = if b_cpu < a_cpu {
@@ -275,10 +317,6 @@ mod tests {
             };
             order.then(a.pid.cmp(&b.pid))
         });
-        assert_eq!(
-            results.iter().map(|(s, _, _, _)| s.pid).collect::<Vec<_>>(),
-            [2, 10, 20]
-        );
+        assert_eq!(results.iter().map(|(s, _, _, _)| s.pid).collect::<Vec<_>>(), [2, 10, 20]);
     }
 }
-

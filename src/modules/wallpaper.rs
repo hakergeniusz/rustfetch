@@ -43,14 +43,15 @@ fn from_lxqt() -> Option<String> {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
-    let value = from_settings_daemon(instance)
-        .or_else(from_kde)
-        .or_else(from_lxqt)
-        .map(|wallpaper| {
-            // picture-uri is often a file:// URL
-            let wallpaper = wallpaper.strip_prefix("file://").unwrap_or(&wallpaper);
-            wallpaper.rsplit('/').next().unwrap_or(wallpaper).to_string()
-        });
+    let value =
+        from_settings_daemon(instance)
+            .or_else(from_kde)
+            .or_else(from_lxqt)
+            .map(|wallpaper| {
+                // picture-uri is often a file:// URL
+                let wallpaper = wallpaper.strip_prefix("file://").unwrap_or(&wallpaper);
+                wallpaper.rsplit('/').next().unwrap_or(wallpaper).to_string()
+            });
 
     value.map(|value| vec![Row::new("Wallpaper", value)]).unwrap_or_default()
 }

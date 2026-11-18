@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::{
     instance::Instance,
-    modules::{colorize_percent, Row},
+    modules::{Row, colorize_percent},
     util,
 };
 
@@ -48,10 +48,7 @@ fn is_uuid(name: &str) -> bool {
 }
 
 fn read_u64(path: &Path) -> Option<u64> {
-    util::read_file(path.to_str()?)?
-        .trim()
-        .parse()
-        .ok()
+    util::read_file(path.to_str()?)?.trim().parse().ok()
 }
 
 /// The first profile directory present under allocation/<type>/.
@@ -142,7 +139,11 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 allocated += allocation.total * allocation.copies;
             }
             let total = volume.total_size;
-            let used_pct = if total > 0 { used as f64 / total as f64 * 100.0 } else { 0.0 };
+            let used_pct = if total > 0 {
+                used as f64 / total as f64 * 100.0
+            } else {
+                0.0
+            };
             let allocated_pct = if total > 0 {
                 allocated as f64 / total as f64 * 100.0
             } else {
@@ -192,9 +193,21 @@ mod tests {
     #[test]
     fn totals_multiply_by_copies() {
         let allocations = [
-            super::Allocation { total: 426283892736, used: 346880049152, copies: 1 },
-            super::Allocation { total: 11811160064, used: 8458993664, copies: 2 },
-            super::Allocation { total: 8388608, used: 65536, copies: 2 },
+            super::Allocation {
+                total: 426283892736,
+                used: 346880049152,
+                copies: 1,
+            },
+            super::Allocation {
+                total: 11811160064,
+                used: 8458993664,
+                copies: 2,
+            },
+            super::Allocation {
+                total: 8388608,
+                used: 65536,
+                copies: 2,
+            },
         ];
         let mut used = 0;
         let mut allocated = 0;

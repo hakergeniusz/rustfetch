@@ -246,8 +246,9 @@ fn detect() -> Option<Vec<Device>> {
             continue;
         }
         let mut device = device;
-        device.ecc =
-            total_widths[index] > 0 && data_widths[index] > 0 && total_widths[index] > data_widths[index];
+        device.ecc = total_widths[index] > 0
+            && data_widths[index] > 0
+            && total_widths[index] > data_widths[index];
         if device.type_.is_empty() {
             device.type_ = "Unknown".to_string();
         }
@@ -318,8 +319,14 @@ mod tests {
             parse_header("E:MEMORY_DEVICE_0_SIZE=4294967296"),
             Some((0, "SIZE", "4294967296"))
         );
-        assert_eq!(parse_header("E:MEMORY_DEVICE_12_SPEED_MTS=3200"), Some((12, "SPEED_MTS", "3200")));
-        assert_eq!(parse_header("E:MEMORY_DEVICE_0_SPEED_MTS=3200"), Some((0, "SPEED_MTS", "3200")));
+        assert_eq!(
+            parse_header("E:MEMORY_DEVICE_12_SPEED_MTS=3200"),
+            Some((12, "SPEED_MTS", "3200"))
+        );
+        assert_eq!(
+            parse_header("E:MEMORY_DEVICE_0_SPEED_MTS=3200"),
+            Some((0, "SPEED_MTS", "3200"))
+        );
         assert_eq!(parse_header("E:OTHER=1"), None);
         assert_eq!(parse_header("E:MEMORY_DEVICE_300_SIZE=1"), None);
     }

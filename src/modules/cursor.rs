@@ -24,11 +24,7 @@ fn from_desktop_config(de: &str) -> Option<Detected> {
         return None;
     }
     let theme = values[0].clone().unwrap_or_else(|| default_theme.to_string());
-    let size = values[1]
-        .clone()
-        .unwrap_or_else(|| default_size.to_string())
-        .parse()
-        .ok();
+    let size = values[1].clone().unwrap_or_else(|| default_size.to_string()).parse().ok();
     Some(Detected { theme, size })
 }
 
@@ -66,7 +62,10 @@ fn from_files() -> Option<Detected> {
         let home = std::path::PathBuf::from(home);
 
         let mut inherits = None;
-        util::parse_prop_file(&home.join(".icons/default/index.theme"), &mut [("Inherits =", &mut inherits)]);
+        util::parse_prop_file(
+            &home.join(".icons/default/index.theme"),
+            &mut [("Inherits =", &mut inherits)],
+        );
         if let Some(theme) = inherits {
             return Some(Detected { theme, size: None });
         }
@@ -75,7 +74,10 @@ fn from_files() -> Option<Detected> {
         let mut size = None;
         util::parse_prop_file(
             &home.join(".Xresources"),
-            &mut [("Xcursor.theme :", &mut theme), ("Xcursor.size :", &mut size)],
+            &mut [
+                ("Xcursor.theme :", &mut theme),
+                ("Xcursor.size :", &mut size),
+            ],
         );
         if let Some(theme) = theme {
             return Some(Detected {
@@ -87,7 +89,10 @@ fn from_files() -> Option<Detected> {
 
     for dir in util::data_dirs() {
         let mut inherits = None;
-        util::parse_prop_file(&dir.join("icons/default/index.theme"), &mut [("Inherits =", &mut inherits)]);
+        util::parse_prop_file(
+            &dir.join("icons/default/index.theme"),
+            &mut [("Inherits =", &mut inherits)],
+        );
         if let Some(theme) = inherits {
             return Some(Detected { theme, size: None });
         }

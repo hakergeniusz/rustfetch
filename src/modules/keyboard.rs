@@ -63,7 +63,6 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    
     devices
         .iter()
         .enumerate()
@@ -107,9 +106,6 @@ B: EV=120013
 B: KEY=c 0 0 40000000
 
 ";
-        assert_eq!(
-            super::detect_of(devices),
-            ["AT Translated Set 2 keyboard", "Real Keyboard"]
-        );
+        assert_eq!(super::detect_of(devices), ["AT Translated Set 2 keyboard", "Real Keyboard"]);
     }
 }

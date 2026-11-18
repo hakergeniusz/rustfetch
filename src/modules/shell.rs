@@ -8,9 +8,29 @@ use crate::{instance::Instance, modules::Row, util};
 /// fastfetch's wrapper processes between terminal and shell that must not be
 /// taken for the shell itself.
 const WRAPPERS: &[&str] = &[
-    "sh", "sudo", "su", "strace", "gdb", "lldb", "lldb-mi", "login", "ltrace", "perf",
-    "guake-wrapped", "time", "clifm", "valgrind", "fastfetch", "flashfetch", "rustfetch",
-    "mise", "mise-shim", "atuin", "proot", "script", "run-parts",
+    "sh",
+    "sudo",
+    "su",
+    "strace",
+    "gdb",
+    "lldb",
+    "lldb-mi",
+    "login",
+    "ltrace",
+    "perf",
+    "guake-wrapped",
+    "time",
+    "clifm",
+    "valgrind",
+    "fastfetch",
+    "flashfetch",
+    "rustfetch",
+    "mise",
+    "mise-shim",
+    "atuin",
+    "proot",
+    "script",
+    "run-parts",
 ];
 
 /// comm and ppid from /proc/<pid>/stat; comm may contain spaces, so both
@@ -60,9 +80,8 @@ fn detect_shell() -> Option<(String, Option<String>)> {
             let exe = std::fs::read_link(format!("/proc/{pid}/exe"))
                 .ok()
                 .map(|path| path.to_string_lossy().into_owned());
-            let exe_name = exe
-                .as_ref()
-                .and_then(|path| path.rsplit('/').next().map(str::to_string));
+            let exe_name =
+                exe.as_ref().and_then(|path| path.rsplit('/').next().map(str::to_string));
             let name = pretty_name(&comm, exe_name.filter(|exe| exe.starts_with(&comm)).as_deref());
             return Some((name, exe));
         }
@@ -100,10 +119,12 @@ fn shell_version(name: &str, exe: Option<&str>) -> Option<String> {
             util::binary_extract_strings(exe, "zsh-0.0-0".len(), extract_zsh_version)
                 .or_else(|| version_spawn_last(exe))
         },
-        ("bash", Some(exe)) => {
-            util::binary_extract_strings(exe, "@(#)Bash version 0.0.0(0) release GNU".len(), extract_bash_version)
-                .or_else(|| version_spawn_last(exe))
-        },
+        ("bash", Some(exe)) => util::binary_extract_strings(
+            exe,
+            "@(#)Bash version 0.0.0(0) release GNU".len(),
+            extract_bash_version,
+        )
+        .or_else(|| version_spawn_last(exe)),
         _ => None,
     }
 }
@@ -132,7 +153,10 @@ mod tests {
         assert_eq!(extract_zsh_version("zsh-5.9.2"), None);
         assert_eq!(extract_zsh_version("unrelated string"), None);
 
-        assert_eq!(extract_bash_version("@(#)Bash version 5.2.26(1)-release GNU"), Some("5.2.26".to_string()));
+        assert_eq!(
+            extract_bash_version("@(#)Bash version 5.2.26(1)-release GNU"),
+            Some("5.2.26".to_string())
+        );
         assert_eq!(extract_bash_version("no marker here"), None);
     }
 

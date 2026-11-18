@@ -11,12 +11,8 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             return Vec::new();
         }
         let mut buffer = [0u8; 32];
-        let len = libc::strftime(
-            buffer.as_mut_ptr().cast(),
-            buffer.len(),
-            c"%F %T".as_ptr().cast(),
-            &tm,
-        );
+        let len =
+            libc::strftime(buffer.as_mut_ptr().cast(), buffer.len(), c"%F %T".as_ptr().cast(), &tm);
         if len == 0 {
             return Vec::new();
         }

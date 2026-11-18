@@ -31,10 +31,15 @@ fn parse_leading_u64(text: &str) -> Option<u64> {
 
 /// ffCPUCacheAddItem: equal size+type caches accumulate into one entry.
 fn add_item(caches: &mut Vec<CacheEntry>, type_: CacheType, size: u64) {
-    if let Some(entry) = caches.iter_mut().find(|entry| entry.type_ == type_ && entry.size == size) {
+    if let Some(entry) = caches.iter_mut().find(|entry| entry.type_ == type_ && entry.size == size)
+    {
         entry.num += 1;
     } else {
-        caches.push(CacheEntry { type_, size, num: 1 });
+        caches.push(CacheEntry {
+            type_,
+            size,
+            num: 1,
+        });
     }
 }
 

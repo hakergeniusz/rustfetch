@@ -39,8 +39,7 @@ fn device_name(device_dir: &Path, dev_name: &str) -> String {
         && let Some((devid, nsid)) = rest.split_once('n')
         && let (Ok(devid), Ok(nsid)) = (devid.parse::<u32>(), nsid.parse::<u32>())
     {
-        let multi_ns = nsid > 1
-            || device_dir.join(format!("nvme{devid}n2")).exists();
+        let multi_ns = nsid > 1 || device_dir.join(format!("nvme{devid}n2")).exists();
         if multi_ns {
             return format!("{name} - {nsid}");
         }
@@ -153,11 +152,15 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     }
 
     counters2.sort_by(|a, b| a.name.cmp(&b.name));
-    
+
     counters2
         .iter()
         .map(|dev| {
-            let key_name = if dev.name.is_empty() { dev.dev_path.clone() } else { dev.name.clone() };
+            let key_name = if dev.name.is_empty() {
+                dev.dev_path.clone()
+            } else {
+                dev.name.clone()
+            };
             Row::new(
                 &format!("Disk I/O ({key_name})"),
                 format!(

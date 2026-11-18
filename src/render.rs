@@ -175,10 +175,7 @@ mod tests {
         );
         assert_eq!(row_line(&row, Some("36"), false), "BTRFS: 1 GiB");
         // logos with a single palette color color no key
-        assert_eq!(
-            row_line(&row, None, true),
-            "\x1b[m\x1b[1mBTRFS\x1b[m: \x1b[m1 GiB"
-        );
+        assert_eq!(row_line(&row, None, true), "\x1b[m\x1b[1mBTRFS\x1b[m: \x1b[m1 GiB");
     }
 
     #[test]

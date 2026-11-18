@@ -118,7 +118,6 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    
     cameras
         .iter()
         .enumerate()

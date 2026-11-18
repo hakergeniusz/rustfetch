@@ -84,7 +84,7 @@ fn gpu_type(card: &Card, name: &str) -> Option<&'static str> {
                 .iter()
                 .any(|prefix| lowered.starts_with(prefix))
                 .then_some("Discrete")
-        }
+        },
         // 0000:00:02.0 is reserved for Intel integrated graphics
         "8086" => match card.addr.as_deref() {
             Some(addr) if addr.ends_with("00:02.0") => Some("Integrated"),
@@ -204,7 +204,10 @@ fn describe(card: &Card, block: Option<&str>) -> (String, String) {
         }
     }
 
-    (format!("{} {}", card.vendor, card.device), format!("{} {}", card.vendor, card.device))
+    (
+        format!("{} {}", card.vendor, card.device),
+        format!("{} {}", card.vendor, card.device),
+    )
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
