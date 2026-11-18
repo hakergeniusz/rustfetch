@@ -37,6 +37,7 @@ pub mod localip;
 pub mod media;
 pub mod memory;
 pub mod monitor;
+pub mod terminaltheme;
 pub mod mouse;
 pub mod netio;
 pub mod os;
@@ -156,6 +157,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "mouse", doc: "mouse devices", run: mouse::run },
     ModuleDef { name: "memory", doc: "ram usage", run: memory::run },
     ModuleDef { name: "monitor", doc: "same as display, different default output", run: monitor::run },
+    ModuleDef { name: "terminaltheme", doc: "terminal fg/bg colors", run: terminaltheme::run },
     ModuleDef { name: "swap", doc: "swap usage", run: swap::run },
     ModuleDef { name: "disk", doc: "root filesystem usage", run: disk::run },
     ModuleDef { name: "physicaldisk", doc: "physical storage devices", run: physicaldisk::run },
@@ -328,16 +330,13 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
     let names: Vec<&str> = if selected.is_empty() {
         preset_from_fastfetch_config().unwrap_or_else(|| DEFAULT_PRESET.to_vec())
     } else {
-        let unknown: Vec<&str> = selected
+        // Unknown names are skipped like fastfetch's structure parser: the
+        // token becomes a hidden error row and the rest still runs.
+        selected
             .iter()
-            .filter(|name| REGISTRY.iter().all(|module| module.name != name.as_str()))
+            .filter(|name| REGISTRY.iter().any(|module| module.name == name.as_str()))
             .map(String::as_str)
-            .collect();
-        if !unknown.is_empty() {
-            eprintln!("rustfetch: unknown module(s): {}", unknown.join(", "));
-            std::process::exit(2);
-        }
-        selected.iter().map(String::as_str).collect()
+            .collect()
     };
 
     // The rate modules sample counters twice; start the clock before the
