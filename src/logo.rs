@@ -117,7 +117,7 @@ pub fn load(cli: &Cli, instance: &Instance) -> (Option<Logo>, LogoColors) {
     let mut small = false;
     if let Some(source) = &cli.logo {
         if source == "none" {
-            return (None, logo_colors(&detected_def(instance)));
+            return (None, logo_colors(detected_def(instance)));
         }
         // `-l small`: the small variant of the detected distro logo.
         if source == "small" {
@@ -133,7 +133,7 @@ pub fn load(cli: &Cli, instance: &Instance) -> (Option<Logo>, LogoColors) {
             );
         } else {
             eprintln!("rustfetch: unknown logo or unreadable file: {source}");
-            return (None, logo_colors(&detected_def(instance)));
+            return (None, logo_colors(detected_def(instance)));
         }
     }
 
