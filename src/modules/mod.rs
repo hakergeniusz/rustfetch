@@ -20,6 +20,7 @@ pub mod lm;
 pub mod loadavg;
 pub mod locale;
 pub mod localip;
+pub mod media;
 pub mod memory;
 pub mod os;
 pub mod packages;
@@ -130,6 +131,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "battery", doc: "battery charge and status", run: battery::run },
     ModuleDef { name: "poweradapter", doc: "power adapter wattage", run: poweradapter::run },
     ModuleDef { name: "wallpaper", doc: "file name of the current wallpaper", run: wallpaper::run },
+    ModuleDef { name: "media", doc: "currently playing song and its progress", run: media::run },
     ModuleDef { name: "break", doc: "an empty line", run: r#break::run },
     ModuleDef { name: "colors", doc: "terminal color palette", run: colors::run },
 ];
@@ -262,7 +264,7 @@ pub fn colorize_percent(pct: u64, color: bool) -> String {
         "91"
     };
     if color {
-        format!("\x1b[{code}m{pct}%\x1b[0m")
+        format!("\x1b[{code}m{pct}%\x1b[m")
     } else {
         format!("{pct}%")
     }
