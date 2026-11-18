@@ -10,6 +10,7 @@ pub mod camera;
 pub mod r#break;
 pub mod chassis;
 pub mod codec;
+pub mod command;
 pub mod colors;
 pub mod custom;
 pub mod cpu;
@@ -186,6 +187,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "media", doc: "currently playing song and its progress", run: media::run },
     ModuleDef { name: "player", doc: "active media player name", run: player::run },
     ModuleDef { name: "break", doc: "an empty line", run: r#break::run },
+    ModuleDef { name: "command", doc: "output of a config command", run: command::run },
     ModuleDef { name: "custom", doc: "custom text from a config format string", run: custom::run },
     ModuleDef { name: "colors", doc: "terminal color palette", run: colors::run },
 ];
@@ -229,10 +231,16 @@ pub const DEFAULT_PRESET: &[&str] = &[
 /// "modules" array takes over the default preset. Unknown module names are
 /// skipped (this port covers a subset of fastfetch's modules).
 /// One dispatch unit from the module list: a registry module or a
-/// config-supplied custom text row.
+/// config-supplied custom text / shell command row.
 pub enum PresetJob {
     Module(&'static ModuleDef),
     Custom(String),
+    Command {
+        text: String,
+        shell: String,
+        param: Option<String>,
+        split_lines: bool,
+    },
 }
 
 fn module_job(name: &str) -> Option<PresetJob> {
@@ -243,8 +251,14 @@ fn module_job(name: &str) -> Option<PresetJob> {
 }
 
 fn preset_from_fastfetch_config() -> Option<Vec<PresetJob>> {
-    let mut config = std::path::PathBuf::from(std::env::var_os("HOME")?);
-    config.push(".config/fastfetch/config.jsonc");
+    // fastfetch resolves the config dir via XDG_CONFIG_HOME, falling back
+    // to $HOME/.config.
+    let home = std::env::var_os("HOME")?;
+    let mut config = match std::env::var_os("XDG_CONFIG_HOME") {
+        Some(dir) if !dir.is_empty() => std::path::PathBuf::from(dir),
+        _ => std::path::PathBuf::from(home).join(".config"),
+    };
+    config.push("fastfetch/config.jsonc");
     preset_from_fastfetch_config_content(&util::read_file(config.to_str()?)?)
 }
 
@@ -339,6 +353,18 @@ fn preset_from_fastfetch_config_content(content: &str) -> Option<Vec<PresetJob>>
                     // A custom without a format still prints its empty row.
                     let format = json_string_field(&object, "format").unwrap_or_default();
                     jobs.push(PresetJob::Custom(format));
+                } else if type_.eq_ignore_ascii_case("command") {
+                    // fastfetch's defaults: /bin/sh -c, splitLines off.
+                    jobs.push(PresetJob::Command {
+                        text: json_string_field(&object, "text").unwrap_or_default(),
+                        shell: json_string_field(&object, "shell")
+                            .unwrap_or_else(|| "/bin/sh".to_string()),
+                        param: match json_string_field(&object, "param") {
+                            Some(param) => Some(param),
+                            None => Some("-c".to_string()),
+                        },
+                        split_lines: json_bool_field(&object, "splitLines").unwrap_or(false),
+                    });
                 } else if let Some(job) = module_job(&type_) {
                     jobs.push(job);
                 }
@@ -375,6 +401,20 @@ fn read_json_string(chars: &[char], start: usize) -> (String, usize) {
         }
     }
     (out, i)
+}
+
+/// Finds `"name": true/false` inside a JSON object's text.
+fn json_bool_field(object: &str, name: &str) -> Option<bool> {
+    let needle = format!("\"{name}\"");
+    let pos = object.find(&needle)? + needle.len();
+    let rest = object[pos..].trim_start().strip_prefix(':')?.trim_start();
+    if rest.starts_with("true") {
+        Some(true)
+    } else if rest.starts_with("false") {
+        Some(false)
+    } else {
+        None
+    }
 }
 
 /// Finds `"name": "value"` inside a JSON object's text.
@@ -474,6 +514,14 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
                 PresetJob::Custom(text) => {
                     scope.spawn(move || custom::render_rows(text, instance))
                 },
+                PresetJob::Command {
+                    text,
+                    shell,
+                    param,
+                    split_lines,
+                } => scope.spawn(move || {
+                    command::run_text(text, &shell, param.as_deref(), *split_lines, instance)
+                }),
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -492,6 +540,7 @@ mod preset_tests {
             .map(|job| match job {
                 PresetJob::Module(module) => module.name.to_string(),
                 PresetJob::Custom(text) => format!("custom:{text}"),
+                PresetJob::Command { text, .. } => format!("command:{text}"),
             })
             .collect()
     }
@@ -545,5 +594,27 @@ mod preset_tests {
             panic!("custom object should parse");
         };
         assert_eq!(job_names(&jobs), ["custom:"]);
+    }
+
+    #[test]
+    fn command_job_carries_options() {
+        let config = r#"{"modules": [{"type": "command", "text": "echo hi", "splitLines": true}]}"#;
+        let Some(jobs) = super::preset_from_fastfetch_config_content(config) else {
+            panic!("command object should parse");
+        };
+        match &jobs[0] {
+            PresetJob::Command {
+                text,
+                shell,
+                param,
+                split_lines,
+            } => {
+                assert_eq!(text, "echo hi");
+                assert_eq!(shell, "/bin/sh");
+                assert_eq!(param.as_deref(), Some("-c"));
+                assert!(split_lines);
+            },
+            _other => panic!("expected command job"),
+        }
     }
 }
