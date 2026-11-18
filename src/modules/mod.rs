@@ -7,6 +7,7 @@ pub mod brightness;
 pub mod r#break;
 pub mod colors;
 pub mod cpu;
+pub mod cpuusage;
 pub mod cursor;
 pub mod datetime;
 pub mod de;
@@ -129,6 +130,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "terminalfont", doc: "terminal font", run: terminalfont::run },
     ModuleDef { name: "terminalsize", doc: "terminal dimensions in cells and pixels", run: terminalsize::run },
     ModuleDef { name: "cpu", doc: "cpu model, core count and frequency", run: cpu::run },
+    ModuleDef { name: "cpuusage", doc: "average cpu usage over the last 200ms", run: cpuusage::run },
     ModuleDef { name: "gpu", doc: "gpu vendor and model", run: gpu::run },
     ModuleDef { name: "memory", doc: "ram usage", run: memory::run },
     ModuleDef { name: "swap", doc: "swap usage", run: swap::run },
@@ -311,6 +313,13 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
         }
         selected.iter().map(String::as_str).collect()
     };
+
+    // The rate modules sample counters twice; start the clock before the
+    // parallel detection runs, like fastfetch's ffPrepare* during option
+    // parsing.
+    if names.contains(&"cpuusage") {
+        cpuusage::prepare();
+    }
 
     let results: Vec<Vec<Row>> = std::thread::scope(|scope| {
         REGISTRY
