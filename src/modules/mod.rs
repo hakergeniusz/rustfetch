@@ -57,6 +57,7 @@ pub mod publicip;
 pub mod qt;
 pub mod separator;
 pub mod shell;
+pub mod sound;
 pub mod swap;
 pub mod terminal;
 pub mod terminalfont;
@@ -430,6 +431,11 @@ pub const REGISTRY: &[ModuleDef] = &[
         name: "wifi",
         doc: "wireless interface state via nl80211 and wireless ioctls",
         run: wifi::run,
+    },
+    ModuleDef {
+        name: "sound",
+        doc: "output devices and volume from the sound server or ALSA",
+        run: sound::run,
     },
     ModuleDef {
         name: "datetime",
