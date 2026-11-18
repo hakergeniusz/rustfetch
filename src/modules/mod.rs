@@ -3,12 +3,15 @@
 pub mod battery;
 pub mod bios;
 pub mod bluetooth;
+pub mod bluetoothradio;
 pub mod board;
 pub mod brightness;
 pub mod camera;
 pub mod r#break;
+pub mod chassis;
 pub mod colors;
 pub mod cpu;
+pub mod cpucache;
 pub mod cpuusage;
 pub mod cursor;
 pub mod datetime;
@@ -26,12 +29,14 @@ pub mod host;
 pub mod icons;
 pub mod initsystem;
 pub mod kernel;
+pub mod keyboard;
 pub mod lm;
 pub mod loadavg;
 pub mod locale;
 pub mod localip;
 pub mod media;
 pub mod memory;
+pub mod mouse;
 pub mod netio;
 pub mod os;
 pub mod packages;
@@ -46,8 +51,10 @@ pub mod terminal;
 pub mod terminalfont;
 pub mod terminalsize;
 pub mod theme;
+pub mod tpm;
 pub mod title;
 pub mod uptime;
+pub mod users;
 pub mod wallpaper;
 pub mod wm;
 pub mod wmtheme;
@@ -113,11 +120,16 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "host", doc: "device model name", run: host::run },
     ModuleDef { name: "bios", doc: "firmware version and release date", run: bios::run },
     ModuleDef { name: "bluetooth", doc: "connected bluetooth devices", run: bluetooth::run },
+    ModuleDef { name: "bluetoothradio", doc: "bluetooth adapters and their versions", run: bluetoothradio::run },
     ModuleDef { name: "board", doc: "motherboard name and version", run: board::run },
+    ModuleDef { name: "chassis", doc: "smbios chassis type and version", run: chassis::run },
     ModuleDef { name: "kernel", doc: "kernel name and release", run: kernel::run },
     ModuleDef { name: "initsystem", doc: "pid 1 name and version", run: initsystem::run },
     ModuleDef { name: "uptime", doc: "time since boot", run: uptime::run },
+    ModuleDef { name: "users", doc: "users logged in with their login time", run: users::run },
+    ModuleDef { name: "tpm", doc: "tpm version", run: tpm::run },
     ModuleDef { name: "loadavg", doc: "load averages of the last 1, 5 and 15 minutes", run: loadavg::run },
+    ModuleDef { name: "keyboard", doc: "keyboard devices", run: keyboard::run },
     ModuleDef { name: "lm", doc: "login manager", run: lm::run },
     ModuleDef { name: "processes", doc: "number of running processes", run: processes::run },
     ModuleDef { name: "packages", doc: "installed packages by package manager", run: packages::run },
@@ -136,9 +148,11 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "terminalfont", doc: "terminal font", run: terminalfont::run },
     ModuleDef { name: "terminalsize", doc: "terminal dimensions in cells and pixels", run: terminalsize::run },
     ModuleDef { name: "cpu", doc: "cpu model, core count and frequency", run: cpu::run },
+    ModuleDef { name: "cpucache", doc: "cpu cache levels grouped by size", run: cpucache::run },
     ModuleDef { name: "cpuusage", doc: "average cpu usage over the last 200ms", run: cpuusage::run },
     ModuleDef { name: "gpu", doc: "gpu vendor and model", run: gpu::run },
     ModuleDef { name: "gamepad", doc: "gamepad devices and battery", run: gamepad::run },
+    ModuleDef { name: "mouse", doc: "mouse devices", run: mouse::run },
     ModuleDef { name: "memory", doc: "ram usage", run: memory::run },
     ModuleDef { name: "swap", doc: "swap usage", run: swap::run },
     ModuleDef { name: "disk", doc: "root filesystem usage", run: disk::run },
