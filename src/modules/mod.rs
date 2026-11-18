@@ -12,6 +12,8 @@ pub mod datetime;
 pub mod de;
 pub mod disk;
 pub mod display;
+pub mod editor;
+pub mod dns;
 pub mod font;
 pub mod gpu;
 pub mod gtk;
