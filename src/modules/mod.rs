@@ -11,6 +11,7 @@ pub mod r#break;
 pub mod chassis;
 pub mod codec;
 pub mod colors;
+pub mod custom;
 pub mod cpu;
 pub mod cpucache;
 pub mod cpuusage;
@@ -185,6 +186,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "media", doc: "currently playing song and its progress", run: media::run },
     ModuleDef { name: "player", doc: "active media player name", run: player::run },
     ModuleDef { name: "break", doc: "an empty line", run: r#break::run },
+    ModuleDef { name: "custom", doc: "custom text from a config format string", run: custom::run },
     ModuleDef { name: "colors", doc: "terminal color palette", run: colors::run },
 ];
 
@@ -226,14 +228,31 @@ pub const DEFAULT_PRESET: &[&str] = &[
 /// fastfetch preset compatibility: a ~/.config/fastfetch/config.jsonc with a
 /// "modules" array takes over the default preset. Unknown module names are
 /// skipped (this port covers a subset of fastfetch's modules).
-fn preset_from_fastfetch_config() -> Option<Vec<&'static str>> {
+/// One dispatch unit from the module list: a registry module or a
+/// config-supplied custom text row.
+pub enum PresetJob {
+    Module(&'static ModuleDef),
+    Custom(String),
+}
+
+fn module_job(name: &str) -> Option<PresetJob> {
+    REGISTRY
+        .iter()
+        .find(|module| module.name.eq_ignore_ascii_case(name))
+        .map(PresetJob::Module)
+}
+
+fn preset_from_fastfetch_config() -> Option<Vec<PresetJob>> {
     let mut config = std::path::PathBuf::from(std::env::var_os("HOME")?);
     config.push(".config/fastfetch/config.jsonc");
     preset_from_fastfetch_config_content(&util::read_file(config.to_str()?)?)
 }
 
 /// Parses the "modules" array out of a fastfetch config's JSONC content.
-fn preset_from_fastfetch_config_content(content: &str) -> Option<Vec<&'static str>> {
+/// Array items are module name strings or objects; custom objects carry
+/// their format text through, other objects run their type's module with
+/// the options dropped.
+fn preset_from_fastfetch_config_content(content: &str) -> Option<Vec<PresetJob>> {
     // strip comments, then take the array following "modules"
     let mut cleaned = String::with_capacity(content.len());
     let mut in_string = false;
@@ -286,17 +305,90 @@ fn preset_from_fastfetch_config_content(content: &str) -> Option<Vec<&'static st
         .map(|(_, i)| i + start)?;
     let array = &rest[start + 1..depth_end];
 
-    let names: Vec<&'static str> = array
-        .split(',')
-        .filter_map(|item| {
-            let name = item.trim().trim_matches('"');
-            REGISTRY
-                .iter()
-                .find(|module| module.name == name)
-                .map(|module| module.name)
-        })
-        .collect();
-    (!names.is_empty()).then_some(names)
+    let chars: Vec<char> = array.chars().collect();
+    let mut jobs = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            ',' | ' ' | '\n' | '\t' | '\r' => i += 1,
+            '"' => {
+                let (name, next) = read_json_string(&chars, i);
+                i = next;
+                if let Some(job) = module_job(&name) {
+                    jobs.push(job);
+                }
+            },
+            '{' => {
+                // Object item: {"type": "custom", "format": "..."} or
+                // {"type": "<module>", ...} with the options dropped.
+                let depth_end = chars[i..]
+                    .iter()
+                    .scan(0i32, |depth, &c| {
+                        *depth += match c {
+                            '{' => 1,
+                            '}' => -1,
+                            _ => 0,
+                        };
+                        Some(*depth)
+                    })
+                    .position(|depth| depth == 0)
+                    .map(|offset| i + offset)?;
+                let object: String = chars[i..=depth_end].iter().collect();
+                let type_ = json_string_field(&object, "type").unwrap_or_default();
+                if type_.eq_ignore_ascii_case("custom") {
+                    // A custom without a format still prints its empty row.
+                    let format = json_string_field(&object, "format").unwrap_or_default();
+                    jobs.push(PresetJob::Custom(format));
+                } else if let Some(job) = module_job(&type_) {
+                    jobs.push(job);
+                }
+                i = depth_end + 1;
+            },
+            _ => i += 1,
+        }
+    }
+    (!jobs.is_empty()).then_some(jobs)
+}
+
+/// Reads a JSON string starting at the opening quote; \escapes decode.
+fn read_json_string(chars: &[char], start: usize) -> (String, usize) {
+    let mut out = String::new();
+    let mut i = start + 1;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' if i + 1 < chars.len() => {
+                out.push(match chars[i + 1] {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    'b' => '\u{8}',
+                    'f' => '\u{c}',
+                    other => other,
+                });
+                i += 2;
+            },
+            '"' => return (out, i + 1),
+            c => {
+                out.push(c);
+                i += 1;
+            },
+        }
+    }
+    (out, i)
+}
+
+/// Finds `"name": "value"` inside a JSON object's text.
+fn json_string_field(object: &str, name: &str) -> Option<String> {
+    let needle = format!("\"{name}\"");
+    let pos = object.find(&needle)? + needle.len();
+    let rest = object[pos..].trim_start();
+    let rest = rest.strip_prefix(':')?.trim_start();
+    let chars: Vec<char> = rest.chars().collect();
+    if chars.first() != Some(&'"') {
+        return None;
+    }
+    let (value, _) = read_json_string(&chars, 0);
+    Some(value)
 }
 
 pub fn list_modules() {
@@ -333,55 +425,55 @@ pub fn colorize_percent(pct: f64, green: u8, yellow: u8, color: bool) -> String 
     }
 }
 
-/// Runs the selected modules (or the default preset) in registry order.
+/// Runs the selected modules (or the default preset) in structure order.
 ///
 /// Modules are independent of each other, so each one runs in its own
 /// scoped thread: the slow data sources (gdbus, gsettings, process scans)
-/// overlap instead of adding up. Rows are still emitted in registry order.
+/// overlap instead of adding up. Rows are emitted in structure order.
 pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
-    let names: Vec<&str> = if selected.is_empty() {
-        preset_from_fastfetch_config().unwrap_or_else(|| DEFAULT_PRESET.to_vec())
+    let jobs: Vec<PresetJob> = if selected.is_empty() {
+        preset_from_fastfetch_config().unwrap_or_else(|| {
+            DEFAULT_PRESET
+                .iter()
+                .filter_map(|name| module_job(name))
+                .collect()
+        })
     } else {
         // Unknown names are skipped like fastfetch's structure parser: the
         // token becomes a hidden error row and the rest still runs. Module
         // names match case-insensitively (ffStrEqualsIgnCase).
-        selected
-            .iter()
-            .filter_map(|name| {
-                REGISTRY
-                    .iter()
-                    .find(|module| module.name.eq_ignore_ascii_case(name.as_str()))
-                    .map(|module| module.name)
-            })
-            .collect()
+        selected.iter().filter_map(|name| module_job(name)).collect()
+    };
+
+    let wants = |name: &str| {
+        jobs.iter().any(|job| matches!(job, PresetJob::Module(module) if module.name == name))
     };
 
     // The rate modules sample counters twice; start the clock before the
     // parallel detection runs, like fastfetch's ffPrepare* during option
     // parsing.
-    if names.contains(&"top") {
+    if wants("top") {
         top::prepare();
     }
-    if names.contains(&"cpuusage") {
+    if wants("cpuusage") {
         cpuusage::prepare();
     }
-    if names.contains(&"netio") {
+    if wants("netio") {
         netio::prepare();
     }
-    if names.contains(&"diskio") {
+    if wants("diskio") {
         diskio::prepare();
     }
 
     let results: Vec<Vec<Row>> = std::thread::scope(|scope| {
         // Structure order wins: `-s b:os:a` prints rows in exactly that
         // order, like fastfetch's structure loop. Duplicates allowed.
-        names
-            .iter()
-            .filter_map(|name| {
-                REGISTRY
-                    .iter()
-                    .find(|module| module.name == *name)
-                    .map(|module| scope.spawn(move || (module.run)(instance)))
+        jobs.iter()
+            .map(|job| match job {
+                PresetJob::Module(module) => scope.spawn(move || (module.run)(instance)),
+                PresetJob::Custom(text) => {
+                    scope.spawn(move || custom::render_rows(text, instance))
+                },
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -393,6 +485,17 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
 
 #[cfg(test)]
 mod preset_tests {
+    use super::PresetJob;
+
+    fn job_names(jobs: &[PresetJob]) -> Vec<String> {
+        jobs.iter()
+            .map(|job| match job {
+                PresetJob::Module(module) => module.name.to_string(),
+                PresetJob::Custom(text) => format!("custom:{text}"),
+            })
+            .collect()
+    }
+
     #[test]
     fn fastfetch_config_preset_parses() {
         let config = r#"
@@ -407,18 +510,40 @@ mod preset_tests {
         // comments inside the array too
         "os", "host",
         "break",
+        {"type": "custom", "format": "hello {#red}world"},
+        {"type": "os", "key": "ignored"},
         "colors",
     ],
 }
 "#;
-        let Some(names) = super::preset_from_fastfetch_config_content(config) else {
+        let Some(jobs) = super::preset_from_fastfetch_config_content(config) else {
             panic!("config with modules array should parse");
         };
-        assert_eq!(names, ["title", "separator", "os", "host", "break", "colors"]);
-
         assert_eq!(
-            super::preset_from_fastfetch_config_content("{\"other\": []}"),
-            None
+            job_names(&jobs),
+            [
+                "title",
+                "separator",
+                "os",
+                "host",
+                "break",
+                "custom:hello {#red}world",
+                "os",
+                "colors",
+            ]
         );
+
+        assert!(
+            super::preset_from_fastfetch_config_content("{\"other\": []}").is_none()
+        );
+    }
+
+    #[test]
+    fn custom_without_format_still_prints() {
+        let config = r#"{"modules": [{"type": "custom"}]}"#;
+        let Some(jobs) = super::preset_from_fastfetch_config_content(config) else {
+            panic!("custom object should parse");
+        };
+        assert_eq!(job_names(&jobs), ["custom:"]);
     }
 }
