@@ -39,6 +39,7 @@ pub mod lm;
 pub mod loadavg;
 pub mod locale;
 pub mod localip;
+pub mod logo;
 pub mod media;
 pub mod memory;
 pub mod monitor;
@@ -507,6 +508,11 @@ pub const REGISTRY: &[ModuleDef] = &[
         name: "colors",
         doc: "terminal color palette",
         run: colors::run,
+    },
+    ModuleDef {
+        name: "logo",
+        doc: "the logo itself, supported in JSON config only",
+        run: logo::run,
     },
 ];
 
