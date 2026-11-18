@@ -343,11 +343,16 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
         preset_from_fastfetch_config().unwrap_or_else(|| DEFAULT_PRESET.to_vec())
     } else {
         // Unknown names are skipped like fastfetch's structure parser: the
-        // token becomes a hidden error row and the rest still runs.
+        // token becomes a hidden error row and the rest still runs. Module
+        // names match case-insensitively (ffStrEqualsIgnCase).
         selected
             .iter()
-            .filter(|name| REGISTRY.iter().any(|module| module.name == name.as_str()))
-            .map(String::as_str)
+            .filter_map(|name| {
+                REGISTRY
+                    .iter()
+                    .find(|module| module.name.eq_ignore_ascii_case(name.as_str()))
+                    .map(|module| module.name)
+            })
             .collect()
     };
 
@@ -368,10 +373,16 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
     }
 
     let results: Vec<Vec<Row>> = std::thread::scope(|scope| {
-        REGISTRY
+        // Structure order wins: `-s b:os:a` prints rows in exactly that
+        // order, like fastfetch's structure loop. Duplicates allowed.
+        names
             .iter()
-            .filter(|module| names.contains(&module.name))
-            .map(|module| scope.spawn(move || (module.run)(instance)))
+            .filter_map(|name| {
+                REGISTRY
+                    .iter()
+                    .find(|module| module.name == *name)
+                    .map(|module| scope.spawn(move || (module.run)(instance)))
+            })
             .collect::<Vec<_>>()
             .into_iter()
             .map(|handle| handle.join().unwrap_or_default())

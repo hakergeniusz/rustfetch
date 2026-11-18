@@ -1,52 +1,42 @@
 //! Two-column terminal renderer: logo on the left, info rows on the right.
+//! Replicates fastfetch's exact escape sequence emission: one global reset
+//! (ffStart), logo lines built as bold + per-segment colors + reset, keys
+//! as reset + bold + key color + key + reset + ": " + reset, and a final
+//! reset after the logo's remaining lines (ffLogoPrintRemaining).
 
 use std::io::{BufWriter, Write};
 
 use crate::{cli::Cli, instance::Instance, logo::Logo, modules::Kind, modules::Row};
 
-/// ANSI color parameter used for keys when the logo defines none.
-const FALLBACK_ACCENT: &str = "34";
-
-/// Keys are colored with the logo's key color if it defines one, else its
-/// first art color, else bold blue.
-fn accent_color(logo: &Option<Logo>) -> &'static str {
-    logo.as_ref()
-        .and_then(|logo| logo.def.color_keys.or(logo.def.colors.first().copied()))
-        .filter(|color| *color != "39")
-        .unwrap_or(FALLBACK_ACCENT)
-}
-
-/// The title row uses the logo's dedicated title color when set.
-fn title_color(logo: &Option<Logo>) -> &'static str {
-    logo.as_ref()
-        .and_then(|logo| logo.def.color_title.or(logo.def.colors.first().copied()))
-        .filter(|color| *color != "39")
-        .unwrap_or(FALLBACK_ACCENT)
-}
-
-/// Serializes parsed logo lines to strings, tracking visible widths separately.
+/// Serializes parsed logo lines to strings, tracking visible widths
+/// separately. Every segment emits its color — including empty ones from
+/// `$N` markers at line starts (fastfetch prints the carried color and
+/// then the marker's own escape) — wrapped in bold/reset like
+/// logoLineCacheBuild. Blank lines print nothing, width-zero like
+/// upstream's logoLineCachePush(nullptr, 0).
 fn colorize(logo: &Logo, color: bool) -> Vec<(String, usize)> {
     logo.lines
         .iter()
         .map(|line| {
+            let width = line.iter().map(|seg| seg.text.chars().count()).sum();
+            if width == 0 {
+                return (String::new(), 0);
+            }
             let mut out = String::new();
-            let mut current = "";
+            if color {
+                out.push_str("\x1b[1m");
+            }
             for seg in line {
-                if seg.text.is_empty() {
-                    continue;
-                }
-                if color && seg.color != current {
+                if color {
                     out.push_str("\x1b[");
                     out.push_str(seg.color);
                     out.push('m');
-                    current = seg.color;
                 }
                 out.push_str(&seg.text);
             }
-            if color && !out.is_empty() {
-                out.push_str("\x1b[0m");
+            if color {
+                out.push_str("\x1b[m");
             }
-            let width = line.iter().map(|seg| seg.text.chars().count()).sum();
             (out, width)
         })
         .collect()
@@ -54,18 +44,27 @@ fn colorize(logo: &Logo, color: bool) -> Vec<(String, usize)> {
 
 /// Renders a single info row; `Kind::Raw` values are printed verbatim because
 /// modules embed their own escapes there.
-fn row_line(row: &Row, accent: &str, title: &str, color: bool) -> String {
+fn row_line(row: &Row, key_color: Option<&str>, color: bool) -> String {
     match (&row.key, row.kind) {
         (Some(key), Kind::Value) => {
             if color {
-                format!("\x1b[1;{accent}m{key}:\x1b[0m {}", row.value)
+                let mut out = String::from("\x1b[m\x1b[1m");
+                if let Some(code) = key_color {
+                    out.push_str(&format!("\x1b[{code}m"));
+                }
+                out.push_str(key);
+                out.push_str("\x1b[m: \x1b[m");
+                out.push_str(&row.value);
+                out
             } else {
                 format!("{key}: {}", row.value)
             }
         },
+        // Keyless styled rows (title, colors): the module owns the value's
+        // escapes; the renderer only adds ffPrintLogoAndKey's trailing reset.
         (None, Kind::Value) => {
             if color {
-                format!("\x1b[1;{title}m{}\x1b[0m", row.value)
+                format!("\x1b[m{}", row.value)
             } else {
                 row.value.clone()
             }
@@ -79,10 +78,15 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) 
     // which every writer below gates on instance.color.
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
-    let accent = accent_color(logo);
-    let title = title_color(logo);
+    let color = instance.color;
+    if color {
+        // ffStart resets everything before printing starts.
+        let _ = write!(out, "\x1b[m");
+    }
+
+    let key_color = instance.logo_colors.get().and_then(|colors| colors.key);
     let logo_lines: Vec<(String, usize)> =
-        logo.as_ref().map(|logo| colorize(logo, instance.color)).unwrap_or_default();
+        logo.as_ref().map(|logo| colorize(logo, color)).unwrap_or_default();
 
     // fastfetch's padding model: defaults are 0 left / 4 right; --padding N
     // sets both sides. The key column sits at logo width + left + right.
@@ -108,10 +112,15 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) 
         }
 
         if i < rows.len() {
-            let _ = writeln!(out, "{}", row_line(&rows[i], accent, title, instance.color));
+            let _ = writeln!(out, "{}", row_line(&rows[i], key_color, color));
         } else {
             let _ = writeln!(out);
         }
+    }
+    if color && logo.is_some() {
+        // ffLogoPrintRemaining ends the logo block with a reset even when
+        // every logo line was already consumed by a row.
+        let _ = write!(out, "\x1b[m");
     }
     let _ = out.flush();
 }
@@ -151,4 +160,41 @@ pub fn print_json(rows: &[Row]) {
     }
     out.push(']');
     println!("{out}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn key_rows_match_fastfetch_escape_layout() {
+        let row = Row::new("BTRFS", "1 GiB");
+        assert_eq!(
+            row_line(&row, Some("36"), true),
+            "\x1b[m\x1b[1m\x1b[36mBTRFS\x1b[m: \x1b[m1 GiB"
+        );
+        assert_eq!(row_line(&row, Some("36"), false), "BTRFS: 1 GiB");
+        // logos with a single palette color color no key
+        assert_eq!(
+            row_line(&row, None, true),
+            "\x1b[m\x1b[1mBTRFS\x1b[m: \x1b[m1 GiB"
+        );
+    }
+
+    #[test]
+    fn keyless_rows_only_add_the_trailing_reset_of_the_key_writer() {
+        let row = Row::bare("\x1b[1m\x1b[36muser\x1b[m@\x1b[1m\x1b[36mhost\x1b[m");
+        assert_eq!(
+            row_line(&row, Some("36"), true),
+            "\x1b[m\x1b[1m\x1b[36muser\x1b[m@\x1b[1m\x1b[36mhost\x1b[m"
+        );
+        assert_eq!(row_line(&row, Some("36"), false), row.value);
+    }
+
+    #[test]
+    fn raw_rows_pass_through() {
+        let row = Row::raw("---");
+        assert_eq!(row_line(&row, Some("36"), true), "---");
+        assert_eq!(row_line(&row, Some("36"), false), "---");
+    }
 }

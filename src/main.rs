@@ -15,8 +15,9 @@ use clap::Parser;
 fn main() {
     let mut cli = cli::Cli::parse();
     if let Some(structure) = &cli.structure {
+        // The structure string is colon-separated; empty tokens vanish.
         cli.modules
-            .extend(structure.split_whitespace().map(str::to_owned));
+            .extend(structure.split(':').filter(|s| !s.is_empty()).map(str::to_owned));
     }
 
     if cli.list_modules {
@@ -32,7 +33,8 @@ fn main() {
         return;
     }
 
-    let logo = logo::load(&cli, &instance);
+    let (logo, colors) = logo::load(&cli, &instance);
+    let _ = instance.logo_colors.set(colors);
     let rows = modules::collect(&cli.modules, &instance);
     render::print(&logo, &rows, &cli, &instance);
 }

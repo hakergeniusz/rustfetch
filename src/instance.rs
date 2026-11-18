@@ -2,14 +2,26 @@
 
 use std::collections::HashMap;
 use std::io::IsTerminal;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use crate::{cli::Cli, cli::Format, util};
 
+/// The title/key colors fastfetch derives from the logo definition
+/// (colorTitle = colors[0], colorKeys = colors[1]); set even when the
+/// logo itself is hidden with --logo none.
+#[derive(Clone, Copy)]
+pub struct LogoColors {
+    pub title: Option<&'static str>,
+    pub key: Option<&'static str>,
+}
+
 pub struct Instance {
-    /// True when ANSI escape sequences may be printed (interactive tty, colors
-    /// not disabled via `--pipe`, `NO_COLOR` or `TERM=dumb`).
+    /// True when ANSI escape sequences may be printed (interactive tty,
+    /// colors not disabled via `--pipe` or `NO_COLOR`; unlike many tools,
+    /// fastfetch does not honor TERM=dumb).
     pub color: bool,
+    /// Filled in after logo detection, read by the title/colors modules.
+    pub logo_colors: OnceLock<LogoColors>,
     /// `ID=` from /etc/os-release, lowercased.
     pub distro_id: Option<String>,
     /// `ID_LIKE=` entries from /etc/os-release, lowercased.
@@ -24,7 +36,6 @@ impl Instance {
         let color = !cli.pipe
             && cli.format == Format::Standard
             && std::env::var_os("NO_COLOR").is_none()
-            && std::env::var("TERM").is_ok_and(|term| term != "dumb")
             && std::io::stdout().is_terminal();
 
         let mut distro_id = None;
@@ -46,6 +57,7 @@ impl Instance {
             distro_id,
             distro_like,
             gnome_settings: Mutex::new(HashMap::new()),
+            logo_colors: OnceLock::new(),
         }
     }
 }
