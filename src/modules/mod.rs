@@ -520,7 +520,7 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
                     param,
                     split_lines,
                 } => scope.spawn(move || {
-                    command::run_text(text, &shell, param.as_deref(), *split_lines, instance)
+                    command::run_text(text, shell, param.as_deref(), *split_lines, instance)
                 }),
             })
             .collect::<Vec<_>>()
