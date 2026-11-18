@@ -40,6 +40,7 @@ pub mod player;
 pub mod memory;
 pub mod monitor;
 pub mod terminaltheme;
+pub mod top;
 pub mod mouse;
 pub mod netio;
 pub mod os;
@@ -162,6 +163,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "memory", doc: "ram usage", run: memory::run },
     ModuleDef { name: "monitor", doc: "same as display, different default output", run: monitor::run },
     ModuleDef { name: "terminaltheme", doc: "terminal fg/bg colors", run: terminaltheme::run },
+    ModuleDef { name: "top", doc: "processes with the highest cpu/memory/disk usage", run: top::run },
     ModuleDef { name: "swap", doc: "swap usage", run: swap::run },
     ModuleDef { name: "disk", doc: "root filesystem usage", run: disk::run },
     ModuleDef { name: "physicaldisk", doc: "physical storage devices", run: physicaldisk::run },
@@ -348,6 +350,9 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
     // The rate modules sample counters twice; start the clock before the
     // parallel detection runs, like fastfetch's ffPrepare* during option
     // parsing.
+    if names.contains(&"top") {
+        top::prepare();
+    }
     if names.contains(&"cpuusage") {
         cpuusage::prepare();
     }
