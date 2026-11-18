@@ -7,6 +7,7 @@ pub mod r#break;
 pub mod colors;
 pub mod cpu;
 pub mod cursor;
+pub mod datetime;
 pub mod de;
 pub mod disk;
 pub mod display;
@@ -127,6 +128,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "disk", doc: "root filesystem usage", run: disk::run },
     ModuleDef { name: "physicaldisk", doc: "physical storage devices", run: physicaldisk::run },
     ModuleDef { name: "localip", doc: "lan addresses of network interfaces", run: localip::run },
+    ModuleDef { name: "datetime", doc: "local date and time", run: datetime::run },
     ModuleDef { name: "locale", doc: "system locale", run: locale::run },
     ModuleDef { name: "battery", doc: "battery charge and status", run: battery::run },
     ModuleDef { name: "poweradapter", doc: "power adapter wattage", run: poweradapter::run },
