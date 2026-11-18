@@ -279,15 +279,16 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             (vk_destroy_instance)(instance, std::ptr::null());
 
             if max_api == (0, 0, 0) {
-                // No non-CPU device: the instance version with a marker
-                // suffix. 0 means the enumerate call was unavailable;
-                // upstream falls back to "1.0".
+                // No non-CPU device: both the device api version and the
+                // driver stay empty, so the module prints the instance
+                // version plus the " [Software only]" marker. 0 means the
+                // enumerate call was unavailable; upstream falls back to 1.0.
                 let version = if instance_version == 0 {
                     (1, 0, 0)
                 } else {
                     decode_version(instance_version)
                 };
-                Some((version_pretty(version), String::new()))
+                Some((format!("{} [Software only]", version_pretty(version)), String::new()))
             } else {
                 Some((version_pretty(max_api), max_driver))
             }
