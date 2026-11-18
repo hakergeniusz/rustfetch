@@ -71,6 +71,7 @@ pub mod users;
 pub mod version;
 pub mod vulkan;
 pub mod wallpaper;
+pub mod weather;
 pub mod wm;
 pub mod wmtheme;
 
@@ -463,6 +464,11 @@ pub const REGISTRY: &[ModuleDef] = &[
         name: "player",
         doc: "active media player name",
         run: player::run,
+    },
+    ModuleDef {
+        name: "weather",
+        doc: "current weather from wttr.in",
+        run: weather::run,
     },
     ModuleDef {
         name: "break",
