@@ -5,26 +5,27 @@ pub mod bios;
 pub mod bluetooth;
 pub mod bluetoothradio;
 pub mod board;
-pub mod brightness;
-pub mod camera;
+pub mod bootmgr;
 pub mod r#break;
+pub mod brightness;
+pub mod btrfs;
+pub mod camera;
 pub mod chassis;
 pub mod codec;
-pub mod command;
 pub mod colors;
-pub mod custom;
+pub mod command;
 pub mod cpu;
 pub mod cpucache;
 pub mod cpuusage;
 pub mod cursor;
+pub mod custom;
 pub mod datetime;
 pub mod de;
-pub mod btrfs;
 pub mod disk;
 pub mod diskio;
 pub mod display;
-pub mod editor;
 pub mod dns;
+pub mod editor;
 pub mod font;
 pub mod gamepad;
 pub mod gpu;
@@ -39,11 +40,8 @@ pub mod loadavg;
 pub mod locale;
 pub mod localip;
 pub mod media;
-pub mod player;
 pub mod memory;
 pub mod monitor;
-pub mod terminaltheme;
-pub mod top;
 pub mod mouse;
 pub mod netio;
 pub mod opencl;
@@ -52,6 +50,7 @@ pub mod os;
 pub mod packages;
 pub mod physicaldisk;
 pub mod physicalmemory;
+pub mod player;
 pub mod poweradapter;
 pub mod processes;
 pub mod qt;
@@ -61,12 +60,15 @@ pub mod swap;
 pub mod terminal;
 pub mod terminalfont;
 pub mod terminalsize;
+pub mod terminaltheme;
 pub mod theme;
-pub mod tpm;
-pub mod version;
 pub mod title;
+pub mod top;
+pub mod tpm;
 pub mod uptime;
 pub mod users;
+pub mod version;
+pub mod vulkan;
 pub mod wallpaper;
 pub mod wm;
 pub mod wmtheme;
@@ -126,74 +128,356 @@ pub struct ModuleDef {
 /// All modules in fastfetch's ordering; `break` can't use the old macro
 /// because its name is a Rust keyword.
 pub const REGISTRY: &[ModuleDef] = &[
-    ModuleDef { name: "title", doc: "user@host", run: title::run },
-    ModuleDef { name: "separator", doc: "dashed separator line", run: separator::run },
-    ModuleDef { name: "os", doc: "operating system name and architecture", run: os::run },
-    ModuleDef { name: "opencl", doc: "opencl platform version", run: opencl::run },
-    ModuleDef { name: "opengl", doc: "gl version via a headless context", run: opengl::run },
-    ModuleDef { name: "host", doc: "device model name", run: host::run },
-    ModuleDef { name: "bios", doc: "firmware version and release date", run: bios::run },
-    ModuleDef { name: "bluetooth", doc: "connected bluetooth devices", run: bluetooth::run },
-    ModuleDef { name: "bluetoothradio", doc: "bluetooth adapters and their versions", run: bluetoothradio::run },
-    ModuleDef { name: "board", doc: "motherboard name and version", run: board::run },
-    ModuleDef { name: "chassis", doc: "smbios chassis type and version", run: chassis::run },
-    ModuleDef { name: "codec", doc: "hardware video acceleration codecs", run: codec::run },
-    ModuleDef { name: "kernel", doc: "kernel name and release", run: kernel::run },
-    ModuleDef { name: "initsystem", doc: "pid 1 name and version", run: initsystem::run },
-    ModuleDef { name: "uptime", doc: "time since boot", run: uptime::run },
-    ModuleDef { name: "users", doc: "users logged in with their login time", run: users::run },
-    ModuleDef { name: "tpm", doc: "tpm version", run: tpm::run },
-    ModuleDef { name: "version", doc: "binary version and architecture", run: version::run },
-    ModuleDef { name: "loadavg", doc: "load averages of the last 1, 5 and 15 minutes", run: loadavg::run },
-    ModuleDef { name: "keyboard", doc: "keyboard devices", run: keyboard::run },
-    ModuleDef { name: "lm", doc: "login manager", run: lm::run },
-    ModuleDef { name: "processes", doc: "number of running processes", run: processes::run },
-    ModuleDef { name: "packages", doc: "installed packages by package manager", run: packages::run },
-    ModuleDef { name: "shell", doc: "user shell and version", run: shell::run },
-    ModuleDef { name: "editor", doc: "$VISUAL or $EDITOR and its version", run: editor::run },
-    ModuleDef { name: "display", doc: "monitors: resolution, size, refresh rate", run: display::run },
-    ModuleDef { name: "brightness", doc: "monitor brightness by backlight or DDC/CI", run: brightness::run },
-    ModuleDef { name: "de", doc: "desktop environment", run: de::run },
-    ModuleDef { name: "wm", doc: "window manager", run: wm::run },
-    ModuleDef { name: "wmtheme", doc: "window manager theme", run: wmtheme::run },
-    ModuleDef { name: "theme", doc: "gtk theme", run: theme::run },
-    ModuleDef { name: "icons", doc: "icon theme", run: icons::run },
-    ModuleDef { name: "font", doc: "desktop font", run: font::run },
-    ModuleDef { name: "cursor", doc: "cursor theme and size", run: cursor::run },
-    ModuleDef { name: "terminal", doc: "terminal emulator", run: terminal::run },
-    ModuleDef { name: "terminalfont", doc: "terminal font", run: terminalfont::run },
-    ModuleDef { name: "terminalsize", doc: "terminal dimensions in cells and pixels", run: terminalsize::run },
-    ModuleDef { name: "cpu", doc: "cpu model, core count and frequency", run: cpu::run },
-    ModuleDef { name: "cpucache", doc: "cpu cache levels grouped by size", run: cpucache::run },
-    ModuleDef { name: "cpuusage", doc: "average cpu usage over the last 200ms", run: cpuusage::run },
-    ModuleDef { name: "gpu", doc: "gpu vendor and model", run: gpu::run },
-    ModuleDef { name: "gamepad", doc: "gamepad devices and battery", run: gamepad::run },
-    ModuleDef { name: "mouse", doc: "mouse devices", run: mouse::run },
-    ModuleDef { name: "memory", doc: "ram usage", run: memory::run },
-    ModuleDef { name: "monitor", doc: "same as display, different default output", run: monitor::run },
-    ModuleDef { name: "terminaltheme", doc: "terminal fg/bg colors", run: terminaltheme::run },
-    ModuleDef { name: "top", doc: "processes with the highest cpu/memory/disk usage", run: top::run },
-    ModuleDef { name: "swap", doc: "swap usage", run: swap::run },
-    ModuleDef { name: "disk", doc: "root filesystem usage", run: disk::run },
-    ModuleDef { name: "btrfs", doc: "mounted btrfs filesystem usage", run: btrfs::run },
-    ModuleDef { name: "physicaldisk", doc: "physical storage devices", run: physicaldisk::run },
-    ModuleDef { name: "physicalmemory", doc: "dimm modules from the udev database", run: physicalmemory::run },
-    ModuleDef { name: "netio", doc: "default-route interface rx/tx rates", run: netio::run },
-    ModuleDef { name: "diskio", doc: "physical disk read/write rates", run: diskio::run },
-    ModuleDef { name: "localip", doc: "lan addresses of network interfaces", run: localip::run },
-    ModuleDef { name: "dns", doc: "dns servers from resolv.conf", run: dns::run },
-    ModuleDef { name: "datetime", doc: "local date and time", run: datetime::run },
-    ModuleDef { name: "locale", doc: "system locale", run: locale::run },
-    ModuleDef { name: "battery", doc: "battery charge and status", run: battery::run },
-    ModuleDef { name: "poweradapter", doc: "power adapter wattage", run: poweradapter::run },
-    ModuleDef { name: "camera", doc: "video capture devices", run: camera::run },
-    ModuleDef { name: "wallpaper", doc: "file name of the current wallpaper", run: wallpaper::run },
-    ModuleDef { name: "media", doc: "currently playing song and its progress", run: media::run },
-    ModuleDef { name: "player", doc: "active media player name", run: player::run },
-    ModuleDef { name: "break", doc: "an empty line", run: r#break::run },
-    ModuleDef { name: "command", doc: "output of a config command", run: command::run },
-    ModuleDef { name: "custom", doc: "custom text from a config format string", run: custom::run },
-    ModuleDef { name: "colors", doc: "terminal color palette", run: colors::run },
+    ModuleDef {
+        name: "title",
+        doc: "user@host",
+        run: title::run,
+    },
+    ModuleDef {
+        name: "separator",
+        doc: "dashed separator line",
+        run: separator::run,
+    },
+    ModuleDef {
+        name: "os",
+        doc: "operating system name and architecture",
+        run: os::run,
+    },
+    ModuleDef {
+        name: "opencl",
+        doc: "opencl platform version",
+        run: opencl::run,
+    },
+    ModuleDef {
+        name: "opengl",
+        doc: "gl version via a headless context",
+        run: opengl::run,
+    },
+    ModuleDef {
+        name: "vulkan",
+        doc: "vulkan api version and driver",
+        run: vulkan::run,
+    },
+    ModuleDef {
+        name: "host",
+        doc: "device model name",
+        run: host::run,
+    },
+    ModuleDef {
+        name: "bios",
+        doc: "firmware version and release date",
+        run: bios::run,
+    },
+    ModuleDef {
+        name: "bootmgr",
+        doc: "current uefi boot entry",
+        run: bootmgr::run,
+    },
+    ModuleDef {
+        name: "bluetooth",
+        doc: "connected bluetooth devices",
+        run: bluetooth::run,
+    },
+    ModuleDef {
+        name: "bluetoothradio",
+        doc: "bluetooth adapters and their versions",
+        run: bluetoothradio::run,
+    },
+    ModuleDef {
+        name: "board",
+        doc: "motherboard name and version",
+        run: board::run,
+    },
+    ModuleDef {
+        name: "chassis",
+        doc: "smbios chassis type and version",
+        run: chassis::run,
+    },
+    ModuleDef {
+        name: "codec",
+        doc: "hardware video acceleration codecs",
+        run: codec::run,
+    },
+    ModuleDef {
+        name: "kernel",
+        doc: "kernel name and release",
+        run: kernel::run,
+    },
+    ModuleDef {
+        name: "initsystem",
+        doc: "pid 1 name and version",
+        run: initsystem::run,
+    },
+    ModuleDef {
+        name: "uptime",
+        doc: "time since boot",
+        run: uptime::run,
+    },
+    ModuleDef {
+        name: "users",
+        doc: "users logged in with their login time",
+        run: users::run,
+    },
+    ModuleDef {
+        name: "tpm",
+        doc: "tpm version",
+        run: tpm::run,
+    },
+    ModuleDef {
+        name: "version",
+        doc: "binary version and architecture",
+        run: version::run,
+    },
+    ModuleDef {
+        name: "loadavg",
+        doc: "load averages of the last 1, 5 and 15 minutes",
+        run: loadavg::run,
+    },
+    ModuleDef {
+        name: "keyboard",
+        doc: "keyboard devices",
+        run: keyboard::run,
+    },
+    ModuleDef {
+        name: "lm",
+        doc: "login manager",
+        run: lm::run,
+    },
+    ModuleDef {
+        name: "processes",
+        doc: "number of running processes",
+        run: processes::run,
+    },
+    ModuleDef {
+        name: "packages",
+        doc: "installed packages by package manager",
+        run: packages::run,
+    },
+    ModuleDef {
+        name: "shell",
+        doc: "user shell and version",
+        run: shell::run,
+    },
+    ModuleDef {
+        name: "editor",
+        doc: "$VISUAL or $EDITOR and its version",
+        run: editor::run,
+    },
+    ModuleDef {
+        name: "display",
+        doc: "monitors: resolution, size, refresh rate",
+        run: display::run,
+    },
+    ModuleDef {
+        name: "brightness",
+        doc: "monitor brightness by backlight or DDC/CI",
+        run: brightness::run,
+    },
+    ModuleDef {
+        name: "de",
+        doc: "desktop environment",
+        run: de::run,
+    },
+    ModuleDef {
+        name: "wm",
+        doc: "window manager",
+        run: wm::run,
+    },
+    ModuleDef {
+        name: "wmtheme",
+        doc: "window manager theme",
+        run: wmtheme::run,
+    },
+    ModuleDef {
+        name: "theme",
+        doc: "gtk theme",
+        run: theme::run,
+    },
+    ModuleDef {
+        name: "icons",
+        doc: "icon theme",
+        run: icons::run,
+    },
+    ModuleDef {
+        name: "font",
+        doc: "desktop font",
+        run: font::run,
+    },
+    ModuleDef {
+        name: "cursor",
+        doc: "cursor theme and size",
+        run: cursor::run,
+    },
+    ModuleDef {
+        name: "terminal",
+        doc: "terminal emulator",
+        run: terminal::run,
+    },
+    ModuleDef {
+        name: "terminalfont",
+        doc: "terminal font",
+        run: terminalfont::run,
+    },
+    ModuleDef {
+        name: "terminalsize",
+        doc: "terminal dimensions in cells and pixels",
+        run: terminalsize::run,
+    },
+    ModuleDef {
+        name: "cpu",
+        doc: "cpu model, core count and frequency",
+        run: cpu::run,
+    },
+    ModuleDef {
+        name: "cpucache",
+        doc: "cpu cache levels grouped by size",
+        run: cpucache::run,
+    },
+    ModuleDef {
+        name: "cpuusage",
+        doc: "average cpu usage over the last 200ms",
+        run: cpuusage::run,
+    },
+    ModuleDef {
+        name: "gpu",
+        doc: "gpu vendor and model",
+        run: gpu::run,
+    },
+    ModuleDef {
+        name: "gamepad",
+        doc: "gamepad devices and battery",
+        run: gamepad::run,
+    },
+    ModuleDef {
+        name: "mouse",
+        doc: "mouse devices",
+        run: mouse::run,
+    },
+    ModuleDef {
+        name: "memory",
+        doc: "ram usage",
+        run: memory::run,
+    },
+    ModuleDef {
+        name: "monitor",
+        doc: "same as display, different default output",
+        run: monitor::run,
+    },
+    ModuleDef {
+        name: "terminaltheme",
+        doc: "terminal fg/bg colors",
+        run: terminaltheme::run,
+    },
+    ModuleDef {
+        name: "top",
+        doc: "processes with the highest cpu/memory/disk usage",
+        run: top::run,
+    },
+    ModuleDef {
+        name: "swap",
+        doc: "swap usage",
+        run: swap::run,
+    },
+    ModuleDef {
+        name: "disk",
+        doc: "root filesystem usage",
+        run: disk::run,
+    },
+    ModuleDef {
+        name: "btrfs",
+        doc: "mounted btrfs filesystem usage",
+        run: btrfs::run,
+    },
+    ModuleDef {
+        name: "physicaldisk",
+        doc: "physical storage devices",
+        run: physicaldisk::run,
+    },
+    ModuleDef {
+        name: "physicalmemory",
+        doc: "dimm modules from the udev database",
+        run: physicalmemory::run,
+    },
+    ModuleDef {
+        name: "netio",
+        doc: "default-route interface rx/tx rates",
+        run: netio::run,
+    },
+    ModuleDef {
+        name: "diskio",
+        doc: "physical disk read/write rates",
+        run: diskio::run,
+    },
+    ModuleDef {
+        name: "localip",
+        doc: "lan addresses of network interfaces",
+        run: localip::run,
+    },
+    ModuleDef {
+        name: "dns",
+        doc: "dns servers from resolv.conf",
+        run: dns::run,
+    },
+    ModuleDef {
+        name: "datetime",
+        doc: "local date and time",
+        run: datetime::run,
+    },
+    ModuleDef {
+        name: "locale",
+        doc: "system locale",
+        run: locale::run,
+    },
+    ModuleDef {
+        name: "battery",
+        doc: "battery charge and status",
+        run: battery::run,
+    },
+    ModuleDef {
+        name: "poweradapter",
+        doc: "power adapter wattage",
+        run: poweradapter::run,
+    },
+    ModuleDef {
+        name: "camera",
+        doc: "video capture devices",
+        run: camera::run,
+    },
+    ModuleDef {
+        name: "wallpaper",
+        doc: "file name of the current wallpaper",
+        run: wallpaper::run,
+    },
+    ModuleDef {
+        name: "media",
+        doc: "currently playing song and its progress",
+        run: media::run,
+    },
+    ModuleDef {
+        name: "player",
+        doc: "active media player name",
+        run: player::run,
+    },
+    ModuleDef {
+        name: "break",
+        doc: "an empty line",
+        run: r#break::run,
+    },
+    ModuleDef {
+        name: "command",
+        doc: "output of a config command",
+        run: command::run,
+    },
+    ModuleDef {
+        name: "custom",
+        doc: "custom text from a config format string",
+        run: custom::run,
+    },
+    ModuleDef {
+        name: "colors",
+        doc: "terminal color palette",
+        run: colors::run,
+    },
 ];
 
 /// Modules shown when no explicit selection is given, mirroring fastfetch's
@@ -476,12 +760,8 @@ pub fn colorize_percent(pct: f64, green: u8, yellow: u8, color: bool) -> String 
 /// overlap instead of adding up. Rows are emitted in structure order.
 pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
     let jobs: Vec<PresetJob> = if selected.is_empty() {
-        preset_from_fastfetch_config().unwrap_or_else(|| {
-            DEFAULT_PRESET
-                .iter()
-                .filter_map(|name| module_job(name))
-                .collect()
-        })
+        preset_from_fastfetch_config()
+            .unwrap_or_else(|| DEFAULT_PRESET.iter().filter_map(|name| module_job(name)).collect())
     } else {
         // Unknown names are skipped like fastfetch's structure parser: the
         // token becomes a hidden error row and the rest still runs. Module
@@ -490,7 +770,8 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
     };
 
     let wants = |name: &str| {
-        jobs.iter().any(|job| matches!(job, PresetJob::Module(module) if module.name == name))
+        jobs.iter()
+            .any(|job| matches!(job, PresetJob::Module(module) if module.name == name))
     };
 
     // The rate modules sample counters twice; start the clock before the
@@ -515,9 +796,7 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
         jobs.iter()
             .map(|job| match job {
                 PresetJob::Module(module) => scope.spawn(move || (module.run)(instance)),
-                PresetJob::Custom(text) => {
-                    scope.spawn(move || custom::render_rows(text, instance))
-                },
+                PresetJob::Custom(text) => scope.spawn(move || custom::render_rows(text, instance)),
                 PresetJob::Command {
                     text,
                     shell,
@@ -586,9 +865,7 @@ mod preset_tests {
             ]
         );
 
-        assert!(
-            super::preset_from_fastfetch_config_content("{\"other\": []}").is_none()
-        );
+        assert!(super::preset_from_fastfetch_config_content("{\"other\": []}").is_none());
     }
 
     #[test]
