@@ -5,7 +5,7 @@
 
 use std::fmt::Write;
 
-use crate::{dbus, instance::Instance, modules::Row};
+use crate::{dbus, instance::Instance, modules::Row, util};
 
 const MPRIS_PREFIX: &str = "org.mpris.MediaPlayer2.";
 
@@ -22,104 +22,22 @@ struct Media {
     player: String,
 }
 
-/// ffDBusGetString-from-rendered-text: strings unquoted; arrays of strings
-/// joined with ", "; anything else passes through.
-fn string_value(text: &str) -> String {
-    if let Some(inner) = text.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-        return split_top_level(inner)
-            .iter()
-            .map(|item| unquote(item))
-            .collect::<Vec<_>>()
-            .join(", ");
-    }
-    unquote(text)
-}
-
-/// Unquotes a rendered string, undoing the \' and \\ escapes the renderer
-/// emits; non-strings pass through.
-fn unquote(text: &str) -> String {
-    let Some(inner) = text.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')) else {
-        return text.to_string();
-    };
-    let mut out = String::with_capacity(inner.len());
-    let mut chars = inner.chars();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.next() {
-                Some(e @ ('\\' | '\'')) => out.push(e),
-                Some(other) => {
-                    out.push('\\');
-                    out.push(other);
-                },
-                None => out.push('\\'),
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
-/// Splits rendered container bodies on top-level ", " (outside quotes and
-/// nested parens/brackets/braces), honoring backslash escapes.
-fn split_top_level(text: &str) -> Vec<String> {
-    let mut items: Vec<String> = Vec::new();
-    let mut depth = 0i32;
-    let mut in_string = false;
-    let mut escaped = false;
-    let mut start = 0usize;
-    for (i, c) in text.char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == '\'' {
-                in_string = false;
-            }
-            continue;
-        }
-        match c {
-            '\'' => in_string = true,
-            '(' | '[' | '{' => depth += 1,
-            ')' | ']' | '}' => depth -= 1,
-            ',' if depth == 0 => {
-                items.push(text[start..i].trim().to_string());
-                start = i + 1;
-            },
-            _ => {},
-        }
-    }
-    let last = text[start..].trim();
-    if !last.is_empty() {
-        items.push(last.to_string());
-    }
-    items
-}
-
-/// Splits a rendered dict entry `'key': value` at the first top-level ": "
-/// (keys are quoted strings, so their colons sit inside quotes).
-fn split_pair(item: &str) -> Option<(&str, &str)> {
-    let pos = item.find("': ")?;
-    Some((&item[..pos + 1], &item[pos + 3..]))
-}
-
 /// parseMprisMetadata: the rendered a{sv} body of the Metadata property.
 fn parse_metadata(media: &mut Media, value: &str) {
     let Some(inner) = value.strip_prefix('{').and_then(|s| s.strip_suffix('}')) else {
         return;
     };
-    for item in split_top_level(inner) {
-        let Some((key, entry)) = split_pair(&item) else {
+    for item in util::split_top_level(inner) {
+        let Some((key, entry)) = util::split_pair(&item) else {
             continue;
         };
         // Metadata values are variants: <'...'>, <['a', 'b']>, <123>.
         let value = entry.strip_prefix('<').and_then(|s| s.strip_suffix('>')).unwrap_or(entry);
-        match unquote(key).as_str() {
-            "xesam:title" => media.song = string_value(value),
-            "xesam:album" => media.album = string_value(value),
-            "xesam:artist" => media.artist = string_value(value),
-            "xesam:url" => media.url = string_value(value),
+        match util::unquote(key).as_str() {
+            "xesam:title" => media.song = util::string_value(value),
+            "xesam:album" => media.album = util::string_value(value),
+            "xesam:artist" => media.artist = util::string_value(value),
+            "xesam:url" => media.url = util::string_value(value),
             "mpris:length" => {
                 if let Ok(length) = value.parse::<i64>()
                     && length > 0
@@ -175,7 +93,7 @@ fn get_bus_properties(bus_name: &str) -> Option<Media> {
     for (key, value) in &props {
         match key.as_str() {
             "'Metadata'" => parse_metadata(&mut media, value),
-            "'PlaybackStatus'" => media.status = unquote(value),
+            "'PlaybackStatus'" => media.status = util::unquote(value),
             "'Position'" => {
                 if let Ok(position) = value.parse::<i64>()
                     && position > 0
@@ -233,8 +151,8 @@ fn get_best_bus() -> Option<Media> {
         .trim()
         .strip_prefix('[')
         .and_then(|s| s.strip_suffix(']'))?;
-    for name in split_top_level(inner) {
-        let name = unquote(&name);
+    for name in util::split_top_level(inner) {
+        let name = util::unquote(&name);
         if let Some(id) = name.strip_prefix(MPRIS_PREFIX)
             && id != "playerctld"
             && let Some(media) = get_bus_properties(&name)
@@ -411,23 +329,23 @@ mod tests {
     #[test]
     fn splits_rendered_containers() {
         assert_eq!(
-            split_top_level("'a', 'b, c', 'd'"),
+            util::split_top_level("'a', 'b, c', 'd'"),
             ["'a'", "'b, c'", "'d'"]
         );
         assert_eq!(
-            split_top_level("'k': <'v'>, 'k2': <['x', 'y']>"),
+            util::split_top_level("'k': <'v'>, 'k2': <['x', 'y']>"),
             ["'k': <'v'>", "'k2': <['x', 'y']>"]
         );
-        assert_eq!(split_pair("'xesam:title': <'T'>"), Some(("'xesam:title'", "<'T'>")));
-        assert_eq!(split_pair("no pair here"), None);
+        assert_eq!(util::split_pair("'xesam:title': <'T'>"), Some(("'xesam:title'", "<'T'>")));
+        assert_eq!(util::split_pair("no pair here"), None);
     }
 
     #[test]
     fn unquotes_escapes() {
-        assert_eq!(unquote("'it\\'s'"), "it's");
-        assert_eq!(unquote("'back\\\\slash'"), "back\\slash");
-        assert_eq!(unquote("'plain'"), "plain");
-        assert_eq!(unquote("123"), "123");
+        assert_eq!(util::unquote("'it\\'s'"), "it's");
+        assert_eq!(util::unquote("'back\\\\slash'"), "back\\slash");
+        assert_eq!(util::unquote("'plain'"), "plain");
+        assert_eq!(util::unquote("123"), "123");
     }
 
     #[test]
