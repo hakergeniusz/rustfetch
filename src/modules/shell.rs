@@ -52,7 +52,7 @@ fn detect_shell() -> Option<(String, Option<String>)> {
 
     let mut pid = std::process::id();
     while pid > 1 {
-        let Ok((comm, ppid)) = process_basic_info(pid) else {
+        let Some((comm, ppid)) = process_basic_info(pid) else {
             break;
         };
         if comm == user_shell_name || !is_wrapper(&comm) {
@@ -130,8 +130,10 @@ mod tests {
 
     #[test]
     fn extracts_embedded_versions() {
-        assert_eq!(extract_zsh_version("zsh-5.9.2"), Some("5.9.2".to_string()));
+        // zsh embeds "zsh-<version>-<release>"; the dash is part of the format
+        assert_eq!(extract_zsh_version("zsh-5.9.2-0"), Some("5.9.2".to_string()));
         assert_eq!(extract_zsh_version("zsh-5.9.2-dev-something"), Some("5.9.2".to_string()));
+        assert_eq!(extract_zsh_version("zsh-5.9.2"), None);
         assert_eq!(extract_zsh_version("unrelated string"), None);
 
         assert_eq!(extract_bash_version("@(#)Bash version 5.2.26(1)-release GNU"), Some("5.2.26".to_string()));
