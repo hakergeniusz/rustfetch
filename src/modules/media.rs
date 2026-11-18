@@ -292,9 +292,15 @@ fn append_progress(out: &mut String, media: &Media) {
 
 pub fn run(instance: &Instance) -> Vec<Row> {
     let Some(media) = get_best_bus() else {
-        // fastfetch still prints the key with an empty value here.
-        return vec![Row::new("Media", "")];
+        // No player: upstream reports it through ffPrintError ("No media
+        // found"), which is hidden by default.
+        return Vec::new();
     };
+    if media.song.is_empty() {
+        // An empty song sets the same hidden "No media found" error row;
+        // the visible "Media: " row can never occur upstream.
+        return Vec::new();
+    }
 
     let mut song_pretty = media.song.clone();
     for remove in REMOVE_STRINGS {

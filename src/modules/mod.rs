@@ -127,7 +127,6 @@ impl Row {
 
 pub struct ModuleDef {
     pub name: &'static str,
-    pub doc: &'static str,
     pub run: fn(&Instance) -> Vec<Row>,
 }
 
@@ -136,382 +135,306 @@ pub struct ModuleDef {
 pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "title",
-        doc: "user@host",
         run: title::run,
     },
     ModuleDef {
         name: "separator",
-        doc: "dashed separator line",
         run: separator::run,
     },
     ModuleDef {
         name: "os",
-        doc: "operating system name and architecture",
         run: os::run,
     },
     ModuleDef {
         name: "opencl",
-        doc: "opencl platform version",
         run: opencl::run,
     },
     ModuleDef {
         name: "opengl",
-        doc: "gl version via a headless context",
         run: opengl::run,
     },
     ModuleDef {
         name: "vulkan",
-        doc: "vulkan api version and driver",
         run: vulkan::run,
     },
     ModuleDef {
         name: "host",
-        doc: "device model name",
         run: host::run,
     },
     ModuleDef {
         name: "bios",
-        doc: "firmware version and release date",
         run: bios::run,
     },
     ModuleDef {
         name: "bootmgr",
-        doc: "current uefi boot entry",
         run: bootmgr::run,
     },
     ModuleDef {
         name: "bluetooth",
-        doc: "connected bluetooth devices",
         run: bluetooth::run,
     },
     ModuleDef {
         name: "bluetoothradio",
-        doc: "bluetooth adapters and their versions",
         run: bluetoothradio::run,
     },
     ModuleDef {
         name: "board",
-        doc: "motherboard name and version",
         run: board::run,
     },
     ModuleDef {
         name: "chassis",
-        doc: "smbios chassis type and version",
         run: chassis::run,
     },
     ModuleDef {
         name: "codec",
-        doc: "hardware video acceleration codecs",
         run: codec::run,
     },
     ModuleDef {
         name: "kernel",
-        doc: "kernel name and release",
         run: kernel::run,
     },
     ModuleDef {
         name: "initsystem",
-        doc: "pid 1 name and version",
         run: initsystem::run,
     },
     ModuleDef {
         name: "uptime",
-        doc: "time since boot",
         run: uptime::run,
     },
     ModuleDef {
         name: "users",
-        doc: "users logged in with their login time",
         run: users::run,
     },
     ModuleDef {
         name: "tpm",
-        doc: "tpm version",
         run: tpm::run,
     },
     ModuleDef {
         name: "version",
-        doc: "binary version and architecture",
         run: version::run,
     },
     ModuleDef {
         name: "loadavg",
-        doc: "load averages of the last 1, 5 and 15 minutes",
         run: loadavg::run,
     },
     ModuleDef {
         name: "keyboard",
-        doc: "keyboard devices",
         run: keyboard::run,
     },
     ModuleDef {
         name: "lm",
-        doc: "login manager",
         run: lm::run,
     },
     ModuleDef {
         name: "processes",
-        doc: "number of running processes",
         run: processes::run,
     },
     ModuleDef {
         name: "packages",
-        doc: "installed packages by package manager",
         run: packages::run,
     },
     ModuleDef {
         name: "shell",
-        doc: "user shell and version",
         run: shell::run,
     },
     ModuleDef {
         name: "editor",
-        doc: "$VISUAL or $EDITOR and its version",
         run: editor::run,
     },
     ModuleDef {
         name: "display",
-        doc: "monitors: resolution, size, refresh rate",
         run: display::run,
     },
     ModuleDef {
         name: "brightness",
-        doc: "monitor brightness by backlight or DDC/CI",
         run: brightness::run,
     },
     ModuleDef {
         name: "de",
-        doc: "desktop environment",
         run: de::run,
     },
     ModuleDef {
         name: "wm",
-        doc: "window manager",
         run: wm::run,
     },
     ModuleDef {
         name: "wmtheme",
-        doc: "window manager theme",
         run: wmtheme::run,
     },
     ModuleDef {
         name: "theme",
-        doc: "gtk theme",
         run: theme::run,
     },
     ModuleDef {
         name: "icons",
-        doc: "icon theme",
         run: icons::run,
     },
     ModuleDef {
         name: "font",
-        doc: "desktop font",
         run: font::run,
     },
     ModuleDef {
         name: "cursor",
-        doc: "cursor theme and size",
         run: cursor::run,
     },
     ModuleDef {
         name: "terminal",
-        doc: "terminal emulator",
         run: terminal::run,
     },
     ModuleDef {
         name: "terminalfont",
-        doc: "terminal font",
         run: terminalfont::run,
     },
     ModuleDef {
         name: "terminalsize",
-        doc: "terminal dimensions in cells and pixels",
         run: terminalsize::run,
     },
     ModuleDef {
         name: "cpu",
-        doc: "cpu model, core count and frequency",
         run: cpu::run,
     },
     ModuleDef {
         name: "cpucache",
-        doc: "cpu cache levels grouped by size",
         run: cpucache::run,
     },
     ModuleDef {
         name: "cpuusage",
-        doc: "average cpu usage over the last 200ms",
         run: cpuusage::run,
     },
     ModuleDef {
         name: "gpu",
-        doc: "gpu vendor and model",
         run: gpu::run,
     },
     ModuleDef {
         name: "gamepad",
-        doc: "gamepad devices and battery",
         run: gamepad::run,
     },
     ModuleDef {
         name: "mouse",
-        doc: "mouse devices",
         run: mouse::run,
     },
     ModuleDef {
         name: "memory",
-        doc: "ram usage",
         run: memory::run,
     },
     ModuleDef {
         name: "monitor",
-        doc: "same as display, different default output",
         run: monitor::run,
     },
     ModuleDef {
         name: "terminaltheme",
-        doc: "terminal fg/bg colors",
         run: terminaltheme::run,
     },
     ModuleDef {
         name: "top",
-        doc: "processes with the highest cpu/memory/disk usage",
         run: top::run,
     },
     ModuleDef {
         name: "swap",
-        doc: "swap usage",
         run: swap::run,
     },
     ModuleDef {
         name: "disk",
-        doc: "root filesystem usage",
         run: disk::run,
     },
     ModuleDef {
         name: "btrfs",
-        doc: "mounted btrfs filesystem usage",
         run: btrfs::run,
     },
     ModuleDef {
         name: "physicaldisk",
-        doc: "physical storage devices",
         run: physicaldisk::run,
     },
     ModuleDef {
         name: "physicalmemory",
-        doc: "dimm modules from the udev database",
         run: physicalmemory::run,
     },
     ModuleDef {
         name: "netio",
-        doc: "default-route interface rx/tx rates",
         run: netio::run,
     },
     ModuleDef {
         name: "diskio",
-        doc: "physical disk read/write rates",
         run: diskio::run,
     },
     ModuleDef {
         name: "publicip",
-        doc: "public address from ipinfo.io",
         run: publicip::run,
     },
     ModuleDef {
         name: "localip",
-        doc: "lan addresses of network interfaces",
         run: localip::run,
     },
     ModuleDef {
         name: "dns",
-        doc: "dns servers from resolv.conf",
         run: dns::run,
     },
     ModuleDef {
         name: "wifi",
-        doc: "wireless interface state via nl80211 and wireless ioctls",
         run: wifi::run,
     },
     ModuleDef {
         name: "sound",
-        doc: "output devices and volume from the sound server or ALSA",
         run: sound::run,
     },
     ModuleDef {
         name: "zpool",
-        doc: "ZFS pool state via libzfs",
         run: zpool::run,
     },
     ModuleDef {
         name: "datetime",
-        doc: "local date and time",
         run: datetime::run,
     },
     ModuleDef {
         name: "locale",
-        doc: "system locale",
         run: locale::run,
     },
     ModuleDef {
         name: "battery",
-        doc: "battery charge and status",
         run: battery::run,
     },
     ModuleDef {
         name: "poweradapter",
-        doc: "power adapter wattage",
         run: poweradapter::run,
     },
     ModuleDef {
         name: "camera",
-        doc: "video capture devices",
         run: camera::run,
     },
     ModuleDef {
         name: "wallpaper",
-        doc: "file name of the current wallpaper",
         run: wallpaper::run,
     },
     ModuleDef {
         name: "media",
-        doc: "currently playing song and its progress",
         run: media::run,
     },
     ModuleDef {
         name: "player",
-        doc: "active media player name",
         run: player::run,
     },
     ModuleDef {
         name: "weather",
-        doc: "current weather from wttr.in",
         run: weather::run,
     },
     ModuleDef {
         name: "break",
-        doc: "an empty line",
         run: r#break::run,
     },
     ModuleDef {
         name: "command",
-        doc: "output of a config command",
         run: command::run,
     },
     ModuleDef {
         name: "custom",
-        doc: "custom text from a config format string",
         run: custom::run,
     },
     ModuleDef {
         name: "colors",
-        doc: "terminal color palette",
         run: colors::run,
     },
     ModuleDef {
         name: "logo",
-        doc: "the logo itself, supported in JSON config only",
         run: logo::run,
     },
 ];
@@ -755,9 +678,92 @@ fn json_string_field(object: &str, name: &str) -> Option<String> {
     Some(value)
 }
 
+/// The `--list-modules` table: module names and descriptions are the
+/// upstream ffModuleInfos data (MIT), in upstream registration order.
+const MODULE_LIST: &[(&str, &str)] = &[
+    ("Battery", "Print battery information"),
+    ("BIOS", "Print first-stage bootloader information (name, version, release date, etc.)"),
+    ("Bluetooth", "List connected Bluetooth devices"),
+    ("BluetoothRadio", "List Bluetooth radios (supported versions, vendors, etc.)"),
+    ("Board", "Print motherboard name and other information"),
+    ("Bootmgr", "Print second-stage bootloader information (name, firmware, etc.)"),
+    ("Break", "Print an empty line"),
+    ("Brightness", "Print the current brightness level of your monitors"),
+    ("Btrfs", "Print Linux BTRFS volumes"),
+    ("Camera", "Print available cameras"),
+    ("Chassis", "Print chassis type information (desktop, laptop, etc.)"),
+    ("Codec", "Print hardware video acceleration codec types (decode / encode)"),
+    ("Command", "Run custom shell scripts"),
+    ("Colors", "Display the terminal's 16-color palette"),
+    ("CPU", "Print CPU name, frequency, etc."),
+    ("CPUCache", "Print CPU cache sizes"),
+    ("CPUUsage", "Print CPU usage. Collecting data takes some time"),
+    ("Cursor", "Print cursor style name"),
+    ("Custom", "Print a custom string, with or without key"),
+    ("DateTime", "Print the current date and time"),
+    ("DE", "Print desktop environment name"),
+    ("Display", "Print resolutions, refresh rates, etc"),
+    ("Disk", "Print partitions, space usage, file system, etc"),
+    ("DiskIO", "Print physical disk I/O throughput"),
+    ("DNS", "Print configured DNS servers"),
+    ("Editor", "Print information about the default editor ($VISUAL or $EDITOR)"),
+    ("Font", "Print system font names"),
+    ("Gamepad", "List connected gamepads"),
+    ("GPU", "Print GPU names, memory sizes, types, etc"),
+    ("Host", "Print your computer's product name"),
+    ("Icons", "Print icon style name"),
+    ("InitSystem", "Print init system (pid 1) name and version"),
+    ("Kernel", "Print system kernel version"),
+    ("Keyboard", "List connected keyboards"),
+    ("LM", "Print login manager (desktop manager) name and version"),
+    ("Loadavg", "Print system load averages"),
+    ("Locale", "Print system locale name"),
+    ("LocalIp", "List local IP addresses (IPv4 or IPv6), MAC addresses, etc"),
+    ("Logo", "Query built-in logo for JSON output"),
+    ("Media", "Print the name of the currently playing song"),
+    ("Memory", "Print system memory usage information"),
+    ("Monitor", "Same as Display module, but with a different default output format"),
+    ("Mouse", "List connected mice"),
+    ("NetIO", "Print network I/O throughput"),
+    ("OpenCL", "Print the highest OpenCL version supported by the GPU"),
+    ("OpenGL", "Print the highest OpenGL version supported by the GPU"),
+    ("OS", "Print the OS or Linux distribution name and version"),
+    ("Packages", "List installed package managers and count of installed packages"),
+    ("PhysicalDisk", "Print physical disk information"),
+    ("PhysicalMemory", "Print system physical memory devices"),
+    ("Player", "Print the music player name that is currently active"),
+    ("PowerAdapter", "Print power adapter name and charging watts"),
+    ("Processes", "Print number of running processes and threads"),
+    ("PublicIp", "Print your public IP address and related information"),
+    ("Separator", "Print a separator line"),
+    ("Shell", "Print the current shell name and version"),
+    ("Sound", "Print sound devices, volume levels, etc"),
+    ("Swap", "Print swap (paging file) space usage"),
+    ("Terminal", "Print the current terminal name and version"),
+    ("TerminalFont", "Print the font name and size used by the current terminal"),
+    ("TerminalSize", "Print the current terminal size"),
+    ("TerminalTheme", "Print the current terminal theme (foreground and background colors)"),
+    ("Title", "Print the title, including your username and hostname"),
+    ("Top", "Print processes with the highest CPU, memory or disk I/O usage"),
+    ("Theme", "Print the current desktop environment theme"),
+    ("TPM", "Print information about the Trusted Platform Module (TPM) security device"),
+    ("Uptime", "Print how long the system has been running"),
+    ("Users", "Print users who are currently logged in"),
+    ("Version", "Print the Fastfetch version and build information"),
+    ("Vulkan", "Print the highest Vulkan version supported by the GPU"),
+    ("Wallpaper", "Print the file path of the current wallpaper"),
+    ("Weather", "Print weather information"),
+    ("WM", "Print the window manager name and version"),
+    ("Wifi", "Print connected Wi-Fi info (SSID, connection and security protocol)"),
+    ("WMTheme", "Print the current window manager theme"),
+    ("Zpool", "Print ZFS storage pools"),
+];
+
 pub fn list_modules() {
-    for module in REGISTRY {
-        println!("{:10} {}", module.name, module.doc);
+    // printf("%d)%s%-14s: %s\n", count, count > 9 ? " " : "  ", name, description)
+    for (index, (name, description)) in MODULE_LIST.iter().enumerate() {
+        let gap = if index >= 9 { " " } else { "  " };
+        println!("{}){gap}{name:<14}: {description}", index + 1);
     }
 }
 
@@ -789,13 +795,14 @@ pub fn colorize_percent(pct: f64, green: u8, yellow: u8, color: bool) -> String 
     }
 }
 
-/// Runs the selected modules (or the default preset) in structure order.
+/// Runs the selected modules (or the default preset when no structure was
+/// given) in structure order.
 ///
 /// Modules are independent of each other, so each one runs in its own
 /// scoped thread: the slow data sources (gdbus, gsettings, process scans)
 /// overlap instead of adding up. Rows are emitted in structure order.
-pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
-    let jobs: Vec<PresetJob> = if selected.is_empty() {
+pub fn collect(selected: &[String], structure_given: bool, instance: &Instance) -> Vec<Row> {
+    let jobs: Vec<PresetJob> = if !structure_given && selected.is_empty() {
         preset_from_fastfetch_config()
             .unwrap_or_else(|| DEFAULT_PRESET.iter().filter_map(|name| module_job(name)).collect())
     } else {
@@ -852,7 +859,7 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
 
 #[cfg(test)]
 mod preset_tests {
-    use super::PresetJob;
+    use super::{module_job, PresetJob, REGISTRY, MODULE_LIST};
 
     fn job_names(jobs: &[PresetJob]) -> Vec<String> {
         jobs.iter()
@@ -862,6 +869,22 @@ mod preset_tests {
                 PresetJob::Command { text, .. } => format!("command:{text}"),
             })
             .collect()
+    }
+
+    #[test]
+    fn module_list_covers_the_registry() {
+        // --list-modules and the registry must stay in lockstep: every
+        // listed name selects a module, and no module goes unlisted.
+        assert_eq!(MODULE_LIST.len(), REGISTRY.len());
+        let mut listed: Vec<String> =
+            MODULE_LIST.iter().map(|(name, _)| name.to_ascii_lowercase()).collect();
+        let mut registered: Vec<&str> = REGISTRY.iter().map(|module| module.name).collect();
+        listed.sort_unstable();
+        registered.sort_unstable();
+        assert_eq!(listed, registered);
+        for (name, _) in MODULE_LIST {
+            assert!(module_job(name).is_some(), "{name} does not select a module");
+        }
     }
 
     #[test]

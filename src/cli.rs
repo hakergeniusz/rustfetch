@@ -17,10 +17,10 @@ pub enum Format {
     name = "rustfetch",
     version,
     about = "Fastfetch, rewritten in Rust",
-    after_help = "Run `rustfetch <module> ...` to only show the given modules."
+    after_help = "Run `rustfetch -s <module>:<module>` to only show the given modules."
 )]
 pub struct Cli {
-    /// Only show these modules, e.g. `rustfetch os cpu memory`
+    /// Only show these modules, e.g. `rustfetch -s os cpu memory`
     pub modules: Vec<String>,
 
     /// List all available modules and exit
