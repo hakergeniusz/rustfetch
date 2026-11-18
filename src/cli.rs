@@ -31,14 +31,14 @@ pub struct Cli {
     #[arg(long)]
     pub logo: Option<String>,
 
-    /// Use the small variant of the logo when available
-    #[arg(short, long)]
-    pub small: bool,
-
     /// Set padding around the logo (like fastfetch: applies to both sides,
     /// while the default puts 4 spaces on the right only)
-    #[arg(short, long)]
+    #[arg(long)]
     pub padding: Option<u8>,
+
+    /// Only show these modules, like fastfetch's `-s os cpu`
+    #[arg(short, long)]
+    pub structure: Option<String>,
 
     /// Disable colors, logo and layout (for scripting)
     #[arg(long)]

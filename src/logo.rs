@@ -82,9 +82,10 @@ fn find_logo(id: &str) -> Option<&'static LogoDef> {
         .find(|logo| logo.names.iter().any(|name| normalize(name) == id))
 }
 
-/// Builds a renderable logo from its definition, honoring `--small`.
-fn build(def: &'static LogoDef, cli: &Cli) -> Logo {
-    let art = if cli.small {
+/// Builds a renderable logo from its definition; `small` picks the compact
+/// variant, like fastfetch's `-l small`.
+fn build(def: &'static LogoDef, small: bool) -> Logo {
+    let art = if small {
         def.small.unwrap_or(def.big)
     } else {
         def.big
@@ -96,31 +97,35 @@ fn build(def: &'static LogoDef, cli: &Cli) -> Logo {
 /// Resolves the logo to display: explicit `--logo` source first, then the
 /// detected distro (ID, then ID_LIKE), then fastfetch's unknown fallback.
 pub fn load(cli: &Cli, instance: &Instance) -> Option<Logo> {
+    let mut small = false;
     if let Some(source) = &cli.logo {
         if source == "none" {
             return None;
         }
-        if let Some(def) = find_logo(source) {
-            return Some(build(def, cli));
-        }
-        if let Ok(art) = std::fs::read_to_string(source) {
+        // `-l small`: the small variant of the detected distro logo.
+        if source == "small" {
+            small = true;
+        } else if let Some(def) = find_logo(source) {
+            return Some(build(def, false));
+        } else if let Ok(art) = std::fs::read_to_string(source) {
             let (lines, width) = parse_art(&art, logo_data::UNKNOWN.colors);
             return Some(Logo {
                 def: &logo_data::UNKNOWN,
                 lines,
                 width,
             });
+        } else {
+            eprintln!("rustfetch: unknown logo or unreadable file: {source}");
+            return None;
         }
-        eprintln!("rustfetch: unknown logo or unreadable file: {source}");
-        return None;
     }
 
     for id in instance.distro_id.iter().chain(&instance.distro_like) {
         if let Some(def) = find_logo(id) {
-            return Some(build(def, cli));
+            return Some(build(def, small));
         }
     }
-    Some(build(&logo_data::UNKNOWN, cli))
+    Some(build(&logo_data::UNKNOWN, small))
 }
 
 #[cfg(test)]
@@ -169,3 +174,4 @@ mod tests {
         assert_eq!(normalize("Linux Mint"), normalize("linuxmint"));
     }
 }
+

@@ -13,7 +13,11 @@ mod util;
 use clap::Parser;
 
 fn main() {
-    let cli = cli::Cli::parse();
+    let mut cli = cli::Cli::parse();
+    if let Some(structure) = &cli.structure {
+        cli.modules
+            .extend(structure.split_whitespace().map(str::to_owned));
+    }
 
     if cli.list_modules {
         modules::list_modules();
