@@ -29,6 +29,7 @@ pub mod locale;
 pub mod localip;
 pub mod media;
 pub mod memory;
+pub mod netio;
 pub mod os;
 pub mod packages;
 pub mod physicaldisk;
