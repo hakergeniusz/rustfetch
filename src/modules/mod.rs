@@ -320,6 +320,9 @@ pub fn collect(selected: &[String], instance: &Instance) -> Vec<Row> {
     if names.contains(&"cpuusage") {
         cpuusage::prepare();
     }
+    if names.contains(&"netio") {
+        netio::prepare();
+    }
 
     let results: Vec<Vec<Row>> = std::thread::scope(|scope| {
         REGISTRY
