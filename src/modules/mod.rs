@@ -36,6 +36,7 @@ pub mod terminalsize;
 pub mod theme;
 pub mod title;
 pub mod uptime;
+pub mod wallpaper;
 pub mod wm;
 pub mod wmtheme;
 
@@ -128,6 +129,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "locale", doc: "system locale", run: locale::run },
     ModuleDef { name: "battery", doc: "battery charge and status", run: battery::run },
     ModuleDef { name: "poweradapter", doc: "power adapter wattage", run: poweradapter::run },
+    ModuleDef { name: "wallpaper", doc: "file name of the current wallpaper", run: wallpaper::run },
     ModuleDef { name: "break", doc: "an empty line", run: r#break::run },
     ModuleDef { name: "colors", doc: "terminal color palette", run: colors::run },
 ];

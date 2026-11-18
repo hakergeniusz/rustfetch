@@ -1,0 +1,56 @@
+//! `wallpaper` module: file path of the current wallpaper, ported from
+//! fastfetch's wallpaper_linux.c: the DE settings daemon first (GNOME family,
+//! Cinnamon, MATE), then the Qt sources (Plasma's appletsrc, LXQt's pcmanfm).
+//! Only the file's basename is printed.
+
+use crate::{instance::Instance, modules::Row, util};
+
+/// ffDetectWallpaper's per-DE settings keys.
+fn from_settings_daemon(instance: &Instance) -> Option<String> {
+    let (schema, key) = match super::de::detect()? {
+        "GNOME" | "GNOME Classic" | "Unity" | "Budgie" => {
+            ("org.gnome.desktop.background", "picture-uri")
+        },
+        "Cinnamon" => ("org.cinnamon.desktop.background", "picture-uri"),
+        "MATE" => ("org.mate.background", "picture-filename"),
+        _ => return None,
+    };
+    super::gtk::get(instance, schema, key)
+}
+
+/// fastfetch's Qt fallback: Plasma stores the wallpaper in the appletsrc.
+fn from_kde() -> Option<String> {
+    for dir in util::config_dirs() {
+        let mut image = None;
+        util::parse_prop_file(
+            &dir.join("plasma-org.kde.plasma.desktop-appletsrc"),
+            &mut [("Image =", &mut image)],
+        );
+        if let Some(image) = image {
+            return Some(image);
+        }
+    }
+    None
+}
+
+/// LXQt stores it in pcmanfm-qt's settings.
+fn from_lxqt() -> Option<String> {
+    util::parse_props_in_config_dirs("pcmanfm-qt/lxqt/settings.conf", &["Wallpaper ="])
+        .1
+        .into_iter()
+        .next()
+        .flatten()
+}
+
+pub fn run(instance: &Instance) -> Vec<Row> {
+    let value = from_settings_daemon(instance)
+        .or_else(from_kde)
+        .or_else(from_lxqt)
+        .map(|wallpaper| {
+            // picture-uri is often a file:// URL
+            let wallpaper = wallpaper.strip_prefix("file://").unwrap_or(&wallpaper);
+            wallpaper.rsplit('/').next().unwrap_or(wallpaper).to_string()
+        });
+
+    value.map(|value| vec![Row::new("Wallpaper", value)]).unwrap_or_default()
+}
