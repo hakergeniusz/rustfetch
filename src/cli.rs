@@ -40,9 +40,10 @@ pub struct Cli {
     #[arg(short, long)]
     pub structure: Option<String>,
 
-    /// Disable colors, logo and layout (for scripting)
-    #[arg(long)]
-    pub pipe: bool,
+    /// Disable colors, logo and layout (for scripting); a value re-enables
+    /// it, like fastfetch's `--pipe false`
+    #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+    pub pipe: Option<bool>,
 
     /// Output format
     #[arg(long, value_enum, default_value = "standard")]

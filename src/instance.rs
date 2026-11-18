@@ -33,10 +33,13 @@ pub struct Instance {
 
 impl Instance {
     pub fn new(cli: &Cli) -> Self {
-        let color = !cli.pipe
-            && cli.format == Format::Standard
-            && std::env::var_os("NO_COLOR").is_none()
-            && std::io::stdout().is_terminal();
+        // display.c: --pipe defaults to !isatty(stdout) || NO_COLOR (empty
+        // does not count), and an explicit --pipe false overrides both.
+        let pipe = cli.pipe.unwrap_or_else(|| {
+            !std::io::stdout().is_terminal()
+                || std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty())
+        });
+        let color = !pipe && cli.format == Format::Standard;
 
         let mut distro_id = None;
         let mut distro_like = Vec::new();
