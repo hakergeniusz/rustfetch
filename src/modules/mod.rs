@@ -76,6 +76,7 @@ pub mod weather;
 pub mod wifi;
 pub mod wm;
 pub mod wmtheme;
+pub mod zpool;
 
 use crate::{instance::Instance, util};
 
@@ -436,6 +437,11 @@ pub const REGISTRY: &[ModuleDef] = &[
         name: "sound",
         doc: "output devices and volume from the sound server or ALSA",
         run: sound::run,
+    },
+    ModuleDef {
+        name: "zpool",
+        doc: "ZFS pool state via libzfs",
+        run: zpool::run,
     },
     ModuleDef {
         name: "datetime",
