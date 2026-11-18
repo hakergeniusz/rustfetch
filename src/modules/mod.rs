@@ -17,6 +17,7 @@ pub mod cpuusage;
 pub mod cursor;
 pub mod datetime;
 pub mod de;
+pub mod btrfs;
 pub mod disk;
 pub mod diskio;
 pub mod display;
@@ -168,6 +169,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "top", doc: "processes with the highest cpu/memory/disk usage", run: top::run },
     ModuleDef { name: "swap", doc: "swap usage", run: swap::run },
     ModuleDef { name: "disk", doc: "root filesystem usage", run: disk::run },
+    ModuleDef { name: "btrfs", doc: "mounted btrfs filesystem usage", run: btrfs::run },
     ModuleDef { name: "physicaldisk", doc: "physical storage devices", run: physicaldisk::run },
     ModuleDef { name: "physicalmemory", doc: "dimm modules from the udev database", run: physicalmemory::run },
     ModuleDef { name: "netio", doc: "default-route interface rx/tx rates", run: netio::run },
