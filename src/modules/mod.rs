@@ -52,6 +52,7 @@ pub mod physicaldisk;
 pub mod physicalmemory;
 pub mod player;
 pub mod poweradapter;
+pub mod publicip;
 pub mod processes;
 pub mod qt;
 pub mod separator;
@@ -407,6 +408,11 @@ pub const REGISTRY: &[ModuleDef] = &[
         name: "diskio",
         doc: "physical disk read/write rates",
         run: diskio::run,
+    },
+    ModuleDef {
+        name: "publicip",
+        doc: "public address from ipinfo.io",
+        run: publicip::run,
     },
     ModuleDef {
         name: "localip",
