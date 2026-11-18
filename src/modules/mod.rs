@@ -44,6 +44,7 @@ pub mod netio;
 pub mod os;
 pub mod packages;
 pub mod physicaldisk;
+pub mod physicalmemory;
 pub mod poweradapter;
 pub mod processes;
 pub mod qt;
@@ -162,6 +163,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "swap", doc: "swap usage", run: swap::run },
     ModuleDef { name: "disk", doc: "root filesystem usage", run: disk::run },
     ModuleDef { name: "physicaldisk", doc: "physical storage devices", run: physicaldisk::run },
+    ModuleDef { name: "physicalmemory", doc: "dimm modules from the udev database", run: physicalmemory::run },
     ModuleDef { name: "netio", doc: "default-route interface rx/tx rates", run: netio::run },
     ModuleDef { name: "diskio", doc: "physical disk read/write rates", run: diskio::run },
     ModuleDef { name: "localip", doc: "lan addresses of network interfaces", run: localip::run },
