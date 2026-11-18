@@ -11,8 +11,7 @@ use crate::{instance::Instance, modules::Row};
 const CL_SUCCESS: c_int = 0;
 const CL_PLATFORM_VERSION: c_uint = 0x0901;
 
-type ClGetPlatformIDsFn =
-    unsafe extern "C" fn(c_uint, *mut *mut c_void, *mut c_uint) -> c_int;
+type ClGetPlatformIDsFn = unsafe extern "C" fn(c_uint, *mut *mut c_void, *mut c_uint) -> c_int;
 type ClGetPlatformInfoFn =
     unsafe extern "C" fn(*mut c_void, c_uint, usize, *mut c_void, *mut usize) -> c_int;
 

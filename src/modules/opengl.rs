@@ -5,7 +5,7 @@
 //! FF_SUPPRESS_IO. The GLX fallback needs a full X11 ABI surface and is
 //! not ported; EGL surfaceless covers headless and Wayland hosts.
 
-use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_void};
 
 use crate::{instance::Instance, modules::Row};
 
@@ -20,8 +20,8 @@ const EGL_PLATFORM_SURFACELESS_MESA: c_uint = 0x31DD;
 const GL_VERSION: c_uint = 0x1F02;
 
 type EglGetProcAddressFn = unsafe extern "C" fn(*const c_char) -> *mut c_void;
-type EglQueryStringFn = unsafe extern "C" fn(*mut c_void, c_int) -> *const c_char;type EglInitializeFn =
-    unsafe extern "C" fn(*mut c_void, *mut c_int, *mut c_int) -> c_uint;
+type EglQueryStringFn = unsafe extern "C" fn(*mut c_void, c_int) -> *const c_char;
+type EglInitializeFn = unsafe extern "C" fn(*mut c_void, *mut c_int, *mut c_int) -> c_uint;
 type EglBindApiFn = unsafe extern "C" fn(c_uint) -> c_uint;
 type EglGetConfigsFn =
     unsafe extern "C" fn(*mut c_void, *mut *mut c_void, c_int, *mut c_int) -> c_uint;
@@ -40,7 +40,7 @@ type GlGetStringFn = unsafe extern "C" fn(c_uint) -> *const c_char;
 
 /// ffSuppressIO: redirect fd 1/2 to /dev/null while the driver talks, then
 /// restore. Safe here because rendering happens after all modules ran.
-struct SuppressedIo {
+pub(crate) struct SuppressedIo {
     restored: bool,
     orig_out: c_int,
     orig_err: c_int,
@@ -48,7 +48,7 @@ struct SuppressedIo {
 }
 
 impl SuppressedIo {
-    fn new() -> Option<Self> {
+    pub(crate) fn new() -> Option<Self> {
         let orig_out = unsafe { libc::dup(1) };
         let orig_err = unsafe { libc::dup(2) };
         let null_file =
@@ -69,7 +69,7 @@ impl SuppressedIo {
         })
     }
 
-    fn restore(&mut self) {
+    pub(crate) fn restore(&mut self) {
         if self.restored {
             return;
         }
@@ -111,7 +111,8 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         return Vec::new();
     };
     // SAFETY: the library handle stays open for the borrowed symbols.
-    let egl_get_proc_address: EglGetProcAddressFn = unsafe { std::mem::transmute(get_proc_address) };
+    let egl_get_proc_address: EglGetProcAddressFn =
+        unsafe { std::mem::transmute(get_proc_address) };
     let load = |name: &str| -> Option<*mut c_void> { sym(name) };
 
     let Some(egl_query_string) = load("eglQueryString") else {
@@ -164,8 +165,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
 
     let gl_string_name = CString::new("glGetString").unwrap_or_default();
     let gl_string_ptr = gl_string_name.as_ptr();
-    let Some(gl_string_raw) =
-        sym_if_nonnull(unsafe { (egl_get_proc_address)(gl_string_ptr) })
+    let Some(gl_string_raw) = sym_if_nonnull(unsafe { (egl_get_proc_address)(gl_string_ptr) })
     else {
         return Vec::new();
     };
@@ -192,7 +192,11 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                 continue;
             };
             let get_platform_display: EglGetPlatformDisplayFn = std::mem::transmute(pointer);
-            display = (get_platform_display)(EGL_PLATFORM_SURFACELESS_MESA, std::ptr::null_mut(), std::ptr::null());
+            display = (get_platform_display)(
+                EGL_PLATFORM_SURFACELESS_MESA,
+                std::ptr::null_mut(),
+                std::ptr::null(),
+            );
             if !display.is_null() {
                 break;
             }
@@ -236,16 +240,17 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             display,
             config,
             std::ptr::null_mut(),
-            [EGL_CONTEXT_CLIENT_VERSION, if gles { 2 } else { 1 }, EGL_NONE].as_ptr(),
+            [
+                EGL_CONTEXT_CLIENT_VERSION,
+                if gles { 2 } else { 1 },
+                EGL_NONE,
+            ]
+            .as_ptr(),
         );
         if context.is_null() && gles {
             // Some ANGLE builds support GLES 1.1 only.
-            context = (egl_create_context)(
-                display,
-                config,
-                std::ptr::null_mut(),
-                [EGL_NONE].as_ptr(),
-            );
+            context =
+                (egl_create_context)(display, config, std::ptr::null_mut(), [EGL_NONE].as_ptr());
         }
         if context.is_null() {
             (egl_destroy_surface)(display, surface);
@@ -259,7 +264,12 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             gl_string(get_gl_string, GL_VERSION)
         };
 
-        (egl_make_current)(display, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut());
+        (egl_make_current)(
+            display,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
         (egl_destroy_context)(display, context);
         (egl_destroy_surface)(display, surface);
         (egl_terminate)(display);
