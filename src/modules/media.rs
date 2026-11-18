@@ -10,16 +10,16 @@ use crate::{dbus, instance::Instance, modules::Row, util};
 const MPRIS_PREFIX: &str = "org.mpris.MediaPlayer2.";
 
 /// One player's flattened MPRIS.Player properties.
-struct Media {
-    song: String,
-    artist: String,
-    album: String,
-    url: String,
-    status: String,
-    length_ms: u32,
-    position_ms: u32,
-    player_id: String,
-    player: String,
+pub(crate) struct Media {
+    pub(crate) song: String,
+    pub(crate) artist: String,
+    pub(crate) album: String,
+    pub(crate) url: String,
+    pub(crate) status: String,
+    pub(crate) length_ms: u32,
+    pub(crate) position_ms: u32,
+    pub(crate) player_id: String,
+    pub(crate) player: String,
 }
 
 /// parseMprisMetadata: the rendered a{sv} body of the Metadata property.
@@ -131,7 +131,7 @@ fn get_bus_properties(bus_name: &str) -> Option<Media> {
 
 /// getBestBus: the common player busses first, then every other MPRIS name
 /// ListNames reports (playerctld excluded).
-fn get_best_bus() -> Option<Media> {
+pub(crate) fn get_best_bus() -> Option<Media> {
     for short in ["spotify", "vlc", "plasma-browser-integration"] {
         if let Some(media) = get_bus_properties(&format!("{MPRIS_PREFIX}{short}")) {
             return Some(media);

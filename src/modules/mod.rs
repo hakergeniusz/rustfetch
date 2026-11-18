@@ -35,6 +35,7 @@ pub mod loadavg;
 pub mod locale;
 pub mod localip;
 pub mod media;
+pub mod player;
 pub mod memory;
 pub mod monitor;
 pub mod terminaltheme;
@@ -172,6 +173,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef { name: "camera", doc: "video capture devices", run: camera::run },
     ModuleDef { name: "wallpaper", doc: "file name of the current wallpaper", run: wallpaper::run },
     ModuleDef { name: "media", doc: "currently playing song and its progress", run: media::run },
+    ModuleDef { name: "player", doc: "active media player name", run: player::run },
     ModuleDef { name: "break", doc: "an empty line", run: r#break::run },
     ModuleDef { name: "colors", doc: "terminal color palette", run: colors::run },
 ];
