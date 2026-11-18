@@ -30,7 +30,8 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    let rows = devices
+    
+    devices
         .iter()
         .enumerate()
         .map(|(index, name)| {
@@ -42,6 +43,5 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             };
             Row::new(&key, name.clone())
         })
-        .collect();
-    rows
+        .collect()
 }
