@@ -12,6 +12,9 @@ use crate::{
     util,
 };
 
+#[path = "gpu_nvml.rs"]
+mod gpu_nvml;
+
 const PCI_IDS_PATHS: &[&str] = &[
     "/usr/share/hwdata/pci.ids",
     "/usr/share/misc/pci.ids",
@@ -230,9 +233,14 @@ fn detect_type_by_vendor_and_name(gpu: &mut GpuResult) {
     }
 }
 
-/// pciDetectIntelSpecific: the address-based type and the current max
-/// frequency (the hwmon temperature needs --temp, which is off by default).
-fn pci_detect_intel_specific(gpu: &mut GpuResult, device_dir: &std::path::Path, drm_key: Option<&str>) {
+/// pciDetectIntelSpecific: the address-based type, the current max
+/// frequency and, with `temp`, the hwmon temperature (temp2_input on Xe).
+fn pci_detect_intel_specific(
+    gpu: &mut GpuResult,
+    device_dir: &std::path::Path,
+    drm_key: Option<&str>,
+    options: &GpuOptions,
+) {
     gpu.gpu_type = if gpu.device_id == pci_addr_to_id(0, 0, 2, 0) {
         GPU_TYPE_INTEGRATED
     } else {
@@ -250,12 +258,78 @@ fn pci_detect_intel_specific(gpu: &mut GpuResult, device_dir: &std::path::Path, 
     if let Some(value) = util::read_trimmed_in(&path, "") {
         gpu.frequency = value.trim().parse().unwrap_or(0);
     }
+
+    if options.temp {
+        let Ok(hwmon) = std::fs::read_dir(device_dir.join("hwmon")) else {
+            return;
+        };
+        let input = if gpu.driver == "xe" { "temp2_input" } else { "temp1_input" };
+        for entry in hwmon.flatten() {
+            if let Some(value) = util::read_trimmed_in(&entry.path(), input) {
+                let value: u64 = value.trim().parse().unwrap_or(0);
+                if value > 0 {
+                    gpu.temperature = Some(value as f64 / 1000.0);
+                    break;
+                }
+            }
+        }
+    }
 }
 
-/// pciDetectAmdSpecific: the APU check via in1_input; memory accounting
-/// needs --driver-specific (off by default) and the hwmon temperature needs
-/// --temp.
-fn pci_detect_amd_specific(gpu: &mut GpuResult, device_dir: &std::path::Path) {
+/// pciDetectTempGeneral: the first hwmon directory's temp1_input.
+fn pci_detect_temp_general(gpu: &mut GpuResult, device_dir: &std::path::Path) {
+    let Ok(hwmon) = std::fs::read_dir(device_dir.join("hwmon")) else {
+        return;
+    };
+    for entry in hwmon.flatten() {
+        if let Some(value) = util::read_trimmed_in(&entry.path(), "temp1_input") {
+            let value: u64 = value.trim().parse().unwrap_or(0);
+            if value > 0 {
+                gpu.temperature = Some(value as f64 / 1000.0);
+            }
+            break;
+        }
+    }
+}
+
+/// pcieLinkSpeedToGen over the sysfs speed strings ("16 GT/s" etc.).
+fn pcie_link_speed_to_gen(text: &str) -> u16 {
+    // The kernel writes "8 GT/s"; ffStrbufToSInt stops at the space.
+    let speed: i64 = text
+        .split([' ', 'G'])
+        .next()
+        .and_then(|head| head.parse().ok())
+        .unwrap_or(0);
+    if speed >= 64 {
+        6
+    } else if speed >= 32 {
+        5
+    } else if speed >= 16 {
+        4
+    } else if speed >= 8 {
+        3
+    } else if speed >= 5 {
+        2
+    } else if speed >= 2 {
+        1
+    } else {
+        0
+    }
+}
+
+/// pcieWidthToLanes: the raw width; 255 means unknown upstream.
+fn pcie_width_to_lanes(text: &str) -> u16 {
+    let width: i64 = text.trim().parse().unwrap_or(0);
+    if width > 0 && width < 255 {
+        width as u16
+    } else {
+        0
+    }
+}
+
+/// pciDetectAmdSpecific: the APU check via in1_input; the hwmon temperature
+/// needs `temp` and the memory accounting needs `driverSpecific`.
+fn pci_detect_amd_specific(gpu: &mut GpuResult, device_dir: &std::path::Path, options: &GpuOptions) {
     if !device_dir.join("hwmon").exists() {
         return;
     }
@@ -267,10 +341,47 @@ fn pci_detect_amd_specific(gpu: &mut GpuResult, device_dir: &std::path::Path) {
     } else {
         gpu.gpu_type = GPU_TYPE_DISCRETE;
     }
+
+    if options.temp {
+        pci_detect_temp_general(gpu, device_dir);
+    }
+
+    if options.driver_specific {
+        let total = util::read_trimmed_in(device_dir, "mem_info_vis_vram_total")
+            .and_then(|value| value.trim().parse().ok())
+            .unwrap_or(0);
+        if total > 0 {
+            if gpu.gpu_type == GPU_TYPE_DISCRETE {
+                gpu.dedicated_total = Some(total);
+            } else {
+                gpu.shared_total = Some(total);
+            }
+            let used = util::read_trimmed_in(device_dir, "mem_info_vis_vram_used")
+                .and_then(|value| value.trim().parse().ok())
+                .unwrap_or(0);
+            if used > 0 {
+                if gpu.gpu_type == GPU_TYPE_DISCRETE {
+                    gpu.dedicated_used = Some(used);
+                } else {
+                    gpu.shared_used = Some(used);
+                }
+            }
+        }
+        if let Some(value) = util::read_trimmed_in(device_dir, "gpu_busy_percent") {
+            let value: u64 = value.trim().parse().unwrap_or(0);
+            gpu.core_usage = Some(value as f64);
+        }
+    }
 }
 
 /// detectPci: one display-class PCI device from its modalias.
-fn detect_pci(gpus: &mut Vec<GpuResult>, modalias: &str, device_dir: &std::path::Path, mut drm_key: Option<String>) {
+fn detect_pci(
+    gpus: &mut Vec<GpuResult>,
+    modalias: &str,
+    device_dir: &std::path::Path,
+    mut drm_key: Option<String>,
+    options: &GpuOptions,
+) {
     // v%8xd%8xsv%8xsd%8xbc%2xsc%2x
     let Some(rest) = modalias.strip_prefix("pci:v") else {
         return;
@@ -339,11 +450,16 @@ fn detect_pci(gpus: &mut Vec<GpuResult>, modalias: &str, device_dir: &std::path:
     detect_driver(device_dir, &mut gpu.driver);
 
     match gpu.vendor.as_str() {
-        "AMD" => pci_detect_amd_specific(&mut gpu, device_dir),
-        "Intel" => pci_detect_intel_specific(&mut gpu, device_dir, drm_key.as_deref()),
+        "AMD" => pci_detect_amd_specific(&mut gpu, device_dir, options),
+        "Intel" => pci_detect_intel_specific(&mut gpu, device_dir, drm_key.as_deref(), options),
         "NVIDIA" if gpu.driver == "nouveau" => {
-            // The temperature needs --temp; nouveau memory needs
-            // --driver-specific; neither is exposed by this CLI.
+            // pciDetectTempGeneral: the first hwmon dir's temp1_input.
+            if options.temp {
+                pci_detect_temp_general(&mut gpu, device_dir);
+            }
+            // The nouveau ioctl getparams (memory/core count) need
+            // --driver-specific; the nouveau_drm.h constants are not
+            // available to this port, so that branch stays unported.
         },
         "Zhaoxin" if gpu.driver.starts_with("zx") => {
             gpu.gpu_type = GPU_TYPE_INTEGRATED;
@@ -351,9 +467,32 @@ fn detect_pci(gpus: &mut Vec<GpuResult>, modalias: &str, device_dir: &std::path:
                 gpu.frequency = value.trim().parse().unwrap_or(0);
             }
         },
-        // ffGPUDetectDriverSpecific needs --temp or --driver-specific; both
-        // default off, so nothing runs here.
+        // ffGPUDetectDriverSpecific: on Linux only NVIDIA (NVML) and
+        // Mthreads (mtml) have driver backends.
+        _ if gpu.vendor == "NVIDIA" && (options.temp || options.driver_specific) => {
+            gpu_nvml::detect(&mut gpu, (domain, bus, device, function), options.temp, options.driver_specific);
+        },
         _ => {},
+    }
+
+    // The driverSpecific PCIe link reads, upstream's max/current_link_*.
+    if options.driver_specific && gpu.pcie_max.0 == 0 {
+        if let Some(speed) = util::read_trimmed_in(device_dir, "max_link_speed") {
+            gpu.pcie_max.0 = pcie_link_speed_to_gen(&speed);
+        }
+        if gpu.pcie_max.0 != 0
+            && let Some(width) = util::read_trimmed_in(device_dir, "max_link_width")
+        {
+            gpu.pcie_max.1 = pcie_width_to_lanes(&width);
+        }
+        if let Some(speed) = util::read_trimmed_in(device_dir, "current_link_speed") {
+            gpu.pcie_curr.0 = pcie_link_speed_to_gen(&speed);
+        }
+        if gpu.pcie_curr.0 != 0
+            && let Some(width) = util::read_trimmed_in(device_dir, "current_link_width")
+        {
+            gpu.pcie_curr.1 = pcie_width_to_lanes(&width);
+        }
     }
 
     if gpu.name.is_empty() {
@@ -365,7 +504,7 @@ fn detect_pci(gpus: &mut Vec<GpuResult>, modalias: &str, device_dir: &std::path:
 }
 
 /// drmDetectGPUs: the DRM card directories.
-fn detect_drm(gpus: &mut Vec<GpuResult>) -> Result<(), &'static str> {
+fn detect_drm(gpus: &mut Vec<GpuResult>, options: &GpuOptions) -> Result<(), &'static str> {
     let Ok(entries) = std::fs::read_dir("/sys/class/drm") else {
         return Err("Failed to open `/sys/class/drm/`");
     };
@@ -380,7 +519,7 @@ fn detect_drm(gpus: &mut Vec<GpuResult>) -> Result<(), &'static str> {
             continue;
         };
         if modalias.starts_with("pci:") {
-            detect_pci(gpus, &modalias, &device_dir, Some(name.into_owned()));
+            detect_pci(gpus, &modalias, &device_dir, Some(name.into_owned()), options);
         } else if modalias.starts_with("of:") {
             // Open Firmware GPUs (embedded ARM boards) are not ported yet.
         }
@@ -390,7 +529,7 @@ fn detect_drm(gpus: &mut Vec<GpuResult>) -> Result<(), &'static str> {
 
 /// pciDetectGPUs: every PCI device, without a DRM key until the device dir
 /// exposes one.
-fn detect_pci_bus(gpus: &mut Vec<GpuResult>) -> Result<(), &'static str> {
+fn detect_pci_bus(gpus: &mut Vec<GpuResult>, options: &GpuOptions) -> Result<(), &'static str> {
     let Ok(entries) = std::fs::read_dir("/sys/bus/pci/devices/") else {
         return Err("Failed to open `/sys/bus/pci/devices/`");
     };
@@ -400,16 +539,39 @@ fn detect_pci_bus(gpus: &mut Vec<GpuResult>) -> Result<(), &'static str> {
             continue;
         };
         if modalias.starts_with("pci:") {
-            detect_pci(gpus, &modalias, &device_dir, None);
+            detect_pci(gpus, &modalias, &device_dir, None, options);
         }
     }
     Ok(())
 }
 
+/// The FFGPUOptions our rendering and detection consume: the JSON config's
+/// `temp` and `driverSpecific` booleans.
+#[derive(Default)]
+pub struct GpuOptions {
+    pub temp: bool,
+    pub driver_specific: bool,
+}
+
+impl GpuOptions {
+    fn from_instance(instance: &Instance) -> Self {
+        let Some(entry) = instance.entry else {
+            return Self::default();
+        };
+        Self {
+            temp: entry.get("temp").and_then(crate::jsonc::Value::as_bool).unwrap_or(false),
+            driver_specific: entry
+                .get("driverSpecific")
+                .and_then(crate::jsonc::Value::as_bool)
+                .unwrap_or(false),
+        }
+    }
+}
+
 /// ffDetectGPU: WSL2's /dev/dxg first (an exact no-op off WSL), then the
 /// DRM cards, then the whole PCI bus. The Vulkan/OpenCL/EGL/OpenGL
 /// fallbacks need shared libraries and are not ported.
-pub fn detect() -> Result<Vec<GpuResult>, &'static str> {
+pub fn detect(options: &GpuOptions) -> Result<Vec<GpuResult>, &'static str> {
     let mut gpus = Vec::new();
 
     // ffGPUDetectWsl2 fails fast without /dev/dxg.
@@ -417,9 +579,9 @@ pub fn detect() -> Result<Vec<GpuResult>, &'static str> {
         return Err("Failed to enumerate adapters with D3DKMTEnumAdapters2");
     }
 
-    detect_drm(&mut gpus)?;
+    detect_drm(&mut gpus, options)?;
     if gpus.is_empty() {
-        detect_pci_bus(&mut gpus)?;
+        detect_pci_bus(&mut gpus, options)?;
     }
     if gpus.is_empty() {
         return Err("GPU detection failed");
@@ -428,8 +590,8 @@ pub fn detect() -> Result<Vec<GpuResult>, &'static str> {
 }
 
 /// The text value: "{vendor} {name}", the vendor dropped when the name
-/// already starts with it, plus the [type] tag.
-fn item_value(gpu: &GpuResult) -> String {
+/// already starts with it, plus the temp/memory blocks and the [type] tag.
+fn item_value(gpu: &GpuResult, color: bool) -> String {
     let mut value = String::new();
     if !gpu.vendor.is_empty() && !gpu.name.to_ascii_lowercase().starts_with(&gpu.vendor.to_ascii_lowercase()) {
         value.push_str(&gpu.vendor);
@@ -442,6 +604,27 @@ fn item_value(gpu: &GpuResult) -> String {
     if gpu.frequency > 0 {
         value.push_str(&format!(" @ {}", util::fmt_freq(gpu.frequency)));
     }
+    if let Some(temperature) = gpu.temperature {
+        value.push_str(" - ");
+        value.push_str(&super::temps_num(temperature, 60, 80, color));
+    }
+    // The dedicated memory block: percent thresholds {50, 80}.
+    if let Some(total) = gpu.dedicated_total
+        && total != 0
+    {
+        value.push_str(" (");
+        if let Some(used) = gpu.dedicated_used {
+            value.push_str(&util::fmt_bytes(used));
+            value.push_str(" / ");
+        }
+        value.push_str(&util::fmt_bytes(total));
+        if let Some(used) = gpu.dedicated_used {
+            let percent = used as f64 / total as f64 * 100.0;
+            value.push_str(", ");
+            value.push_str(&super::colorize_percent(percent, 50, 80, color));
+        }
+        value.push(')');
+    }
     match gpu.gpu_type {
         GPU_TYPE_INTEGRATED => value.push_str(" [Integrated]"),
         GPU_TYPE_DISCRETE => value.push_str(" [Discrete]"),
@@ -450,18 +633,28 @@ fn item_value(gpu: &GpuResult) -> String {
     value
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Ok(gpus) = detect() else {
+pub fn run(instance: &Instance) -> Vec<Row> {
+    let Ok(gpus) = detect(&GpuOptions::from_instance(instance)) else {
         return Vec::new();
     };
+    // ffPrintGPU indexes the key when more than one GPU prints.
     gpus.iter()
-        .map(|gpu| Row::new("GPU", item_value(gpu)))
+        .enumerate()
+        .map(|(position, gpu)| {
+            let index = if gpus.len() == 1 { 0 } else { position + 1 };
+            let key = if index == 0 {
+                "GPU".to_string()
+            } else {
+                format!("GPU {index}")
+            };
+            Row::new(&key, item_value(gpu, instance.color))
+        })
         .collect()
 }
 
 /// ffGenerateGPUJsonResult.
-pub fn json(_instance: &Instance) -> JsonOutcome {
-    match detect() {
+pub fn json(instance: &Instance) -> JsonOutcome {
+    match detect(&GpuOptions::from_instance(instance)) {
         Err(error) => JsonOutcome::Error(error.to_string()),
         Ok(gpus) => {
             let mut arr = Json::Array(Vec::new());

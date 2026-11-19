@@ -212,6 +212,12 @@ fn parse_response(text: &[u8]) -> Option<(Rgb, Rgb)> {
     Some((fg, bg))
 }
 
+/// ffOptionsInitDisplay's terminalLightTheme probe: env detection only
+/// (forceEnv for performance), true when the background is light.
+pub(crate) fn terminal_is_light_by_env() -> bool {
+    detect_by_env().is_some_and(|(_, bg)| !bg.dark)
+}
+
 pub fn run(_instance: &Instance) -> Vec<Row> {
     let Some((fg, bg)) = detect_by_escape().or_else(detect_by_env) else {
         // "Failed to detect terminal theme" is an error row, hidden by default.
