@@ -6,7 +6,13 @@
 
 use std::sync::OnceLock;
 
-use crate::{dbus, instance::Instance, modules::Row, util};
+use crate::{
+    dbus,
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 /// ffBluetoothRadioGetVendor: the Bluetooth SIG company ids fastfetch maps.
 fn vendor_name(manufacturer_id: u32) -> &'static str {
@@ -94,16 +100,25 @@ fn lmp_version_str(version: i32) -> Option<&'static str> {
 #[derive(Clone)]
 struct Radio {
     name: String,
+    address: String,
     enabled: bool,
+    discoverable: bool,
+    connectable: bool,
     lmp_version: i32,
+    /// Never published by BlueZ over D-Bus; upstream leaves it INT_MIN.
+    lmp_subversion: i32,
     vendor: String,
 }
 
 fn detect_radio(hci: &str) -> Radio {
     let mut radio = Radio {
         name: String::new(),
+        address: String::new(),
         enabled: false,
+        discoverable: false,
+        connectable: false,
         lmp_version: i32::MIN,
+        lmp_subversion: i32::MIN,
         vendor: "Unknown".to_string(),
     };
     let props = dbus::get_all_properties_on_bus(
@@ -118,6 +133,7 @@ fn detect_radio(hci: &str) -> Radio {
             // The rendered keys carry their quotes; trim before matching.
             match key.trim_matches('\'') {
                 "Alias" => radio.name = util::string_value(value),
+                "Address" => radio.address = util::string_value(value),
                 "Manufacturer" => {
                     if let Ok(id) = value.parse::<u32>() {
                         radio.vendor = vendor_name(id).to_string();
@@ -129,6 +145,8 @@ fn detect_radio(hci: &str) -> Radio {
                     }
                 },
                 "Powered" => radio.enabled = value == "true",
+                "Discoverable" => radio.discoverable = value == "true",
+                "Pairable" => radio.connectable = value == "true",
                 _ => {},
             }
         }
@@ -136,25 +154,28 @@ fn detect_radio(hci: &str) -> Radio {
     radio
 }
 
-fn detect() -> Vec<Radio> {
-    static RADIOS: OnceLock<Vec<Radio>> = OnceLock::new();
+/// detectBluetooth: a missing sysfs dir is the only hard error; a failed
+/// Properties.GetAll still appends the (mostly empty) radio, like upstream
+/// discarding detectBluetoothRoot's status.
+fn detect() -> Result<Vec<Radio>, &'static str> {
+    static RADIOS: OnceLock<Result<Vec<Radio>, &'static str>> = OnceLock::new();
     RADIOS
         .get_or_init(|| {
             let Ok(entries) = std::fs::read_dir("/sys/class/bluetooth") else {
-                return Vec::new();
+                return Err("Failed to open /sys/class/bluetooth");
             };
-            entries
+            Ok(entries
                 .flatten()
                 .map(|entry| entry.file_name().to_string_lossy().into_owned())
                 .filter(|name| !name.starts_with('.') && !name.contains(':'))
                 .map(|hci| detect_radio(&hci))
-                .collect()
+                .collect())
         })
         .clone()
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let radios = detect();
+    let radios = detect().unwrap_or_default();
     let enabled: Vec<&Radio> = radios.iter().filter(|radio| radio.enabled).collect();
     if enabled.is_empty() {
         // "Bluetooth radios found but none enabled" / "No devices detected"
@@ -174,6 +195,38 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             Row::new(&format!("Bluetooth Radio ({})", radio.name), value)
         })
         .collect()
+}
+
+/// ffGenerateBluetoothRadioJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(radios) => {
+            // lmpVersion/lmpSubversion keep their INT_MIN unset sentinel as
+            // JSON null.
+            let lmp = |version: i32| {
+                if version == i32::MIN {
+                    Json::Null
+                } else {
+                    Json::I64(version as i64)
+                }
+            };
+            let mut arr = Json::Array(Vec::new());
+            for radio in &radios {
+                let mut obj = Json::obj();
+                obj.push("name", radio.name.clone());
+                obj.push("address", radio.address.clone());
+                obj.push("lmpVersion", lmp(radio.lmp_version));
+                obj.push("lmpSubversion", lmp(radio.lmp_subversion));
+                obj.push("vendor", radio.vendor.clone());
+                obj.push("enabled", radio.enabled);
+                obj.push("discoverable", radio.discoverable);
+                obj.push("connectable", radio.connectable);
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
+    }
 }
 
 #[cfg(test)]

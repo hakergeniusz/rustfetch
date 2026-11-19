@@ -192,12 +192,12 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "bluetooth",
         run: bluetooth::run,
-        json: None,
+        json: Some(bluetooth::json),
     },
     ModuleDef {
         name: "bluetoothradio",
         run: bluetoothradio::run,
-        json: None,
+        json: Some(bluetoothradio::json),
     },
     ModuleDef {
         name: "board",

@@ -9,12 +9,17 @@
 
 use std::sync::OnceLock;
 
-use crate::{dbus, instance::Instance, modules::Row, modules::colorize_percent, util};
+use crate::{
+    dbus,
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    modules::colorize_percent,
+    util,
+};
 
 /// ffRssiToSignalQuality: -50 dBm and above is a perfect link, -100 and
-/// below none, linear in between. Exposed for the RSSI format arg once the
-/// custom output format is ported.
-#[cfg(test)]
+/// below none, linear in between.
 fn rssi_to_signal_quality(rssi: i64) -> f64 {
     if rssi >= -50 {
         100.0
@@ -28,10 +33,15 @@ fn rssi_to_signal_quality(rssi: i64) -> f64 {
 #[derive(Default)]
 struct Device {
     name: String,
+    address: String,
+    /// The Device1 Icon property, upstream's `type` field.
+    r#type: String,
     connected: bool,
     battery: u8,
     classic: bool,
     le: bool,
+    /// RSSI mapped onto 0..100; unset when the property is absent.
+    signal_quality: Option<f64>,
 }
 
 /// connectedDevices: /sys/class/bluetooth entries whose name contains a ':'
@@ -50,14 +60,19 @@ fn connected_devices() -> u32 {
 fn apply_property(device: &mut Device, key: &str, value: &str) -> bool {
     let value = value.strip_prefix('<').and_then(|s| s.strip_suffix('>')).unwrap_or(value);
     match key {
-        // Address, Icon and RSSI exist on the wire but the default print
-        // doesn't show them.
         "Name" => device.name = util::string_value(value),
+        "Address" => device.address = util::string_value(value),
+        // BlueZ derives this from the Class of Device whenever there is one
+        // and only falls back to the LE appearance otherwise, so `type`
+        // describes a classic-seen device by its CoD.
+        "Icon" => device.r#type = util::string_value(value),
         "Class" => device.classic = true,
         "Appearance" => device.le = true,
         "Percentage" => device.battery = value.parse::<i64>().unwrap_or(0).clamp(0, 255) as u8,
         "Connected" => device.connected = value == "true",
-        "RSSI" => {},
+        // int16 dBm, written only from discovery reports and invalidated
+        // when the session ends, so it says nothing about connection state.
+        "RSSI" => device.signal_quality = value.parse::<i64>().ok().map(rssi_to_signal_quality),
         "Paired" => return value != "false", // false = drop the device
         _ => {},
     }
@@ -83,12 +98,12 @@ fn walk_device(path: &str, interfaces: &str) -> Option<Device> {
     Some(device)
 }
 
-fn detect() -> Vec<Device> {
+fn detect() -> Result<Vec<Device>, &'static str> {
     // Only connected devices by default: skip the bus round trip when the
     // kernel reports none.
     let connected_count = connected_devices();
     if connected_count == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     static REPLY: OnceLock<Option<String>> = OnceLock::new();
@@ -102,7 +117,7 @@ fn detect() -> Vec<Device> {
         )
     });
     let Some(reply) = reply else {
-        return Vec::new();
+        return Err("Failed to call GetManagedObjects");
     };
 
     // gdbus-style arg-list parens around the dict.
@@ -123,11 +138,11 @@ fn detect() -> Vec<Device> {
             }
         }
     }
-    devices
+    Ok(devices)
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
-    let devices = detect();
+    let devices = detect().unwrap_or_default();
     if devices.is_empty() {
         // "No bluetooth devices found" is an error row, hidden by default.
         return Vec::new();
@@ -163,6 +178,40 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             Row::new(&key, value)
         })
         .collect()
+}
+
+/// ffGenerateBluetoothJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(devices) => {
+            let mut arr = Json::Array(Vec::new());
+            for device in &devices {
+                let mut obj = Json::obj();
+                obj.push("address", device.address.clone());
+                obj.push("battery", device.battery as u64);
+                obj.push("connected", device.connected);
+
+                let mut device_types = Json::Array(Vec::new());
+                if device.classic {
+                    device_types.push_value("Classic");
+                }
+                if device.le {
+                    device_types.push_value("Low Energy");
+                }
+                obj.push("deviceType", device_types);
+
+                obj.push("name", device.name.clone());
+                match device.signal_quality {
+                    Some(quality) => obj.push("signalQuality", quality),
+                    None => obj.push("signalQuality", Json::Null),
+                }
+                obj.push("type", device.r#type.clone());
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
+    }
 }
 
 #[cfg(test)]
