@@ -6,7 +6,13 @@
 
 use std::path::PathBuf;
 
-use crate::{instance::Instance, modules::Row, modules::colorize_percent, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    modules::colorize_percent,
+    util,
+};
 
 const I2C_RDWR: libc::c_ulong = 0x0707;
 const I2C_M_RD: u16 = 0x0001;
@@ -148,6 +154,8 @@ struct Brightness {
     name: String,
     current: f64,
     max: f64,
+    /// The backlight and DDC/CI backends both report a zero minimum.
+    min: f64,
     builtin: bool,
 }
 
@@ -206,6 +214,7 @@ fn detect_with_backlight(result: &mut Vec<Brightness>) {
             name,
             current,
             max,
+            min: 0.0,
             builtin: true,
         });
     }
@@ -303,6 +312,7 @@ unsafe fn probe_bus(bus: i32, result: &mut Vec<Brightness>) -> bool {
             name,
             current: current as f64,
             max: max as f64,
+            min: 0.0,
             builtin: false,
         })
     })();
@@ -344,15 +354,19 @@ fn detect_with_ddcci(result: &mut Vec<Brightness>) -> bool {
     !validated.is_empty()
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+/// ffDetectBrightness: backlight entries, then DDC/CI when they cover fewer
+/// monitors than the display server reports.
+fn detect() -> Vec<Brightness> {
     let mut result = Vec::new();
     detect_with_backlight(&mut result);
-
-    // Only probe DDC/CI when the backlight covers fewer monitors than the
-    // display server reports. A failed probe is only logged upstream.
     if result.len() < super::display::display_count() {
         detect_with_ddcci(&mut result);
     }
+    result
+}
+
+pub fn run(instance: &Instance) -> Vec<Row> {
+    let result = detect();
 
     if result.is_empty() {
         // ffPrintError is gated behind --show-errors, off by default.
@@ -368,7 +382,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                 &format!("Brightness ({})", display.name),
                 format!(
                     "{} [{}]",
-                    colorize_percent(pct, 100, 100, _instance.color),
+                    colorize_percent(pct, 100, 100, instance.color),
                     if display.builtin {
                         "Built-in"
                     } else {
@@ -378,6 +392,22 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             )
         })
         .collect()
+}
+
+/// ffGenerateBrightnessJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let result = detect();
+    let mut arr = Json::Array(Vec::new());
+    for display in &result {
+        let mut obj = Json::obj();
+        obj.push("name", display.name.clone());
+        obj.push("max", display.max);
+        obj.push("min", display.min);
+        obj.push("current", display.current);
+        obj.push("builtin", display.builtin);
+        arr.push_value(obj);
+    }
+    JsonOutcome::Result(arr)
 }
 
 #[cfg(test)]

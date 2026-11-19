@@ -287,7 +287,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "brightness",
         run: brightness::run,
-        json: None,
+        json: Some(brightness::json),
     },
     ModuleDef {
         name: "de",
