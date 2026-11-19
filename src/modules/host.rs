@@ -13,7 +13,7 @@ use crate::{
 
 /// fastfetch's ffIsSmbiosValueSet: SMBIOS strings this hardware leaves unset
 /// carry a predictable set of placeholder values.
-fn is_smbios_value_set(value: &str) -> bool {
+pub(crate) fn is_smbios_value_set(value: &str) -> bool {
     !value.is_empty()
         && !value.to_ascii_lowercase().starts_with("to be filled")
         && !value.to_ascii_lowercase().starts_with("to be set")

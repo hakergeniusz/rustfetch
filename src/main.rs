@@ -13,6 +13,7 @@ mod modules;
 mod platform;
 mod render;
 mod settings;
+mod smbios;
 mod util;
 
 use clap::Parser;

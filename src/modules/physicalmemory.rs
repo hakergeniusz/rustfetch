@@ -1,9 +1,22 @@
-//! `physicalmemory` module: DIMM information from the udev database,
-//! ported from physicalmemory_linux.c. systemd >= 248 decodes the SMBIOS
-//! memory records into the world-readable /run/udev/data/+dmi:id; the
-//! direct SMBIOS table fallback needs privileged access and is not ported.
+//! `physicalmemory` module: DIMM records from the raw SMBIOS table, ported
+//! from physicalmemory_linux.c. Type-17 structures are walked from the
+//! first occurrence to the end-of-table marker; the record offsets below
+//! include the 4-byte header, matching the upstream packed struct.
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    smbios::SmbiosTable,
+    util,
+};
+
+const FF_SMBIOS_TYPE_MEMORY_DEVICE: u8 = 17;
+
+/// offsetof(FFSmbiosMemoryDevice, Speed) and ..., ConfiguredMemorySpeed),
+/// the version gates for the 2.3+ and 2.7+ fields.
+const OFF_SPEED: usize = 0x15;
+const OFF_CONFIGURED_SPEED: usize = 0x20;
 
 struct Device {
     installed: bool,
@@ -14,127 +27,21 @@ struct Device {
     form_factor: String,
     locator: String,
     vendor: String,
+    serial: String,
+    part_number: String,
     ecc: bool,
 }
 
-impl Device {
-    fn new() -> Self {
-        // Doubles as parse-time state: absent PRESENT / SIZE means "present,
-        // unknown size", so it starts true and is only ever cleared.
-        Self {
-            installed: true,
-            size: 0,
-            max_speed: 0,
-            running_speed: 0,
-            type_: String::new(),
-            form_factor: String::new(),
-            locator: String::new(),
-            vendor: String::new(),
-            ecc: false,
-        }
-    }
-}
-
-/// Splits "E:MEMORY_DEVICE_0_SIZE=4294967296" into (0, "SIZE", "...").
-fn parse_header(line: &str) -> Option<(u32, &str, &str)> {
-    let rest = line.strip_prefix("E:MEMORY_DEVICE_")?;
-    let eq = rest.find('=')?;
-    let (head, value) = (&rest[..eq], &rest[eq + 1..]);
-    let (index, field) = head.split_once('_')?;
-    let index: u32 = index.parse().ok()?;
-    (index < 256).then_some((index, field, value))
-}
-
-/// The placeholder strings ffIsSmbiosValueSet rejects, case-insensitively.
-fn is_placeholder(value: &str) -> bool {
-    let lower = value.to_lowercase();
-    lower.is_empty()
-        || lower.starts_with("to be filled")
-        || lower.starts_with("to be set")
-        || lower.starts_with("oem")
-        || lower.starts_with("o.e.m.")
-        || lower.starts_with("system product")
-        || lower.starts_with("unknown product")
-        || matches!(
-            lower.as_str(),
-            "none"
-                | "system name"
-                | "system version"
-                | "system sku#"
-                | "default string"
-                | "undefined"
-                | "not specified"
-                | "not applicable"
-                | "not defined"
-                | "not available"
-                | "invalid"
-                | "type1productconfigid"
-                | "tbd by oem"
-                | "no enclosure"
-                | "chassis version"
-                | "all series"
-                | "n/a"
-                | "unknown"
-                | "standard"
-        )
-        // Some SMBIOS implementations use "0x0000" to indicate unset.
-        || (lower.starts_with("0x0") && lower[2..].chars().all(|c| c == '0'))
-}
-
-/// ffUdevSetString: decode \xHH escapes, drop the "<OUT OF SPEC>" prefix,
-/// then the SMBIOS placeholder cleanup.
-fn udev_set_string(value: &str) -> String {
-    let mut text = decode_hex_escapes(value);
-    if text.starts_with("<OUT OF SPEC>") {
-        text.clear();
-    }
-    let trimmed = text.trim_end();
-    if is_placeholder(trimmed) {
+/// The string fields SMBIOS leaves at placeholder values print empty.
+fn clean_up_smbios_value(table: &SmbiosTable, start: usize, index: u8) -> String {
+    let Some(value) = table.locate_string(start, index) else {
+        return String::new();
+    };
+    let value = value.trim_end();
+    if super::host::is_smbios_value_set(value) {
+        value.to_string()
+    } else {
         String::new()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-/// ffStrbufDecodeHexEscapeSequences: udev escapes disallowed bytes as \xHH.
-fn decode_hex_escapes(value: &str) -> String {
-    let bytes = value.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut read = 0;
-    while read < bytes.len() {
-        if read + 3 < bytes.len() && bytes[read] == b'\\' && bytes[read + 1] == b'x' {
-            let hi = (bytes[read + 2] as char).to_digit(16);
-            let lo = (bytes[read + 3] as char).to_digit(16);
-            if let (Some(hi), Some(lo)) = (hi, lo) {
-                out.push(((hi << 4) | lo) as u8);
-                read += 4;
-                continue;
-            }
-        }
-        out.push(bytes[read]);
-        read += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// `locator` is the "bank/device" join; the properties arrive in no
-/// guaranteed order, so the bank prepends and the device appends.
-fn append_locator(locator: &mut String, value: &str, bank: bool) {
-    let part = udev_set_string(value);
-    if part.is_empty() {
-        return;
-    }
-    if !locator.is_empty() {
-        if bank {
-            locator.insert(0, '/');
-        } else {
-            locator.push('/');
-        }
-    }
-    if bank {
-        locator.insert_str(0, &part);
-    } else {
-        locator.push_str(&part);
     }
 }
 
@@ -163,7 +70,7 @@ fn update_vendor_string(vendor: &mut String) {
     if vendor.is_empty() {
         return;
     }
-    if vendor.eq_ignore_ascii_case("Unknown") {
+    if vendor == "Unknown" {
         vendor.clear();
         return;
     }
@@ -186,80 +93,179 @@ fn update_vendor_string(vendor: &mut String) {
     }
 }
 
-/// The udev database is authoritative: as soon as it contains any
-/// MEMORY_DEVICE_* property, the set it describes is complete.
-fn detect() -> Option<Vec<Device>> {
-    let content = util::read_file("/run/udev/data/+dmi:id")?;
-    let mut devices: Vec<Option<Device>> = Vec::new();
-    let mut total_widths = [0u16; 256];
-    let mut data_widths = [0u16; 256];
-    let mut seen = [false; 256];
-    let mut found = false;
+const FORM_FACTOR_NAMES: [&str; 20] = [
+    "", // 0x00 placeholder
+    "Other",
+    "Unknown",
+    "SIMM",
+    "SIP",
+    "Chip",
+    "DIP",
+    "ZIP",
+    "Proprietary Card",
+    "DIMM",
+    "TSOP",
+    "Row of chips",
+    "RIMM",
+    "SODIMM",
+    "SRIMM",
+    "FBDIMM",
+    "Die",
+    "CAMM",
+    "CUDIMM",
+    "CSODIMM",
+];
 
-    for line in content.lines() {
-        let Some((index, field, value)) = parse_header(line) else {
-            continue;
-        };
-        while devices.len() <= index as usize {
-            devices.push(None);
-        }
-        found = true;
-        seen[index as usize] = true;
-        let device = devices[index as usize].get_or_insert_with(Device::new);
+const MEMORY_TYPE_NAMES: [&str; 38] = [
+    "", // 0x00 placeholder
+    "Other",
+    "Unknown",
+    "DRAM",
+    "EDRAM",
+    "VRAM",
+    "SRAM",
+    "RAM",
+    "ROM",
+    "FLASH",
+    "EEPROM",
+    "FEPROM",
+    "EPROM",
+    "CDRAM",
+    "3DRAM",
+    "SDRAM",
+    "SGRAM",
+    "RDRAM",
+    "DDR",
+    "DDR2",
+    "DDR2 FB-DIMM",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "DDR3",
+    "FBD2",
+    "DDR4",
+    "LPDDR",
+    "LPDDR2",
+    "LPDDR3",
+    "LPDDR4",
+    "Logical non-volatile device",
+    "HBM",
+    "HBM2",
+    "DDR5",
+    "LPDDR5",
+    "HBM3",
+    "MRDIMM",
+];
 
-        match field {
-            "SIZE" => {
-                device.size = value.parse().unwrap_or(0);
-                if device.size == 0 {
-                    device.installed = false;
-                }
-            },
-            "PRESENT" => {
-                if value.trim().parse::<u64>().unwrap_or(0) == 0 {
-                    device.installed = false;
-                }
-            },
-            "TOTAL_WIDTH" => total_widths[index as usize] = value.trim().parse().unwrap_or(0),
-            "DATA_WIDTH" => data_widths[index as usize] = value.trim().parse().unwrap_or(0),
-            "SPEED_MTS" => device.max_speed = value.trim().parse().unwrap_or(0),
-            "CONFIGURED_SPEED_MTS" => device.running_speed = value.trim().parse().unwrap_or(0),
-            "FORM_FACTOR" => device.form_factor = udev_set_string(value),
-            "BANK_LOCATOR" => append_locator(&mut device.locator, value, true),
-            "LOCATOR" => append_locator(&mut device.locator, value, false),
-            "TYPE" => device.type_ = udev_set_string(value),
-            "MANUFACTURER" => device.vendor = udev_set_string(value),
-            _ => {},
-        }
-    }
+/// parsePhysicalDisk-equivalent for one type-17 structure.
+fn parse_device(table: &SmbiosTable, offset: usize) -> Option<Device> {
+    let size_raw = table.u16_at(offset, 0x0C);
+    let installed = size_raw != 0;
 
-    if !found {
+    // showEmptySlots defaults to false.
+    if !installed {
         return None;
     }
 
-    // Finalize and drop sparse / empty slots.
-    let mut result = Vec::new();
-    for (index, device) in devices.into_iter().enumerate() {
-        let Some(device) = device else {
-            continue;
-        };
-        if !seen[index] || !device.installed {
-            continue;
+    let total_width = table.u16_at(offset, 0x08);
+    let data_width = table.u16_at(offset, 0x0A);
+    let ecc = total_width != 0xFFFF && data_width != 0xFFFF && total_width > data_width;
+
+    let mut size = 0u64;
+    if size_raw != 0xFFFF {
+        if size_raw == 0x7FFF {
+            size = (table.u32_at(offset, 0x1C) as u64 & !(1u64 << 31)) * 1024 * 1024;
+        } else if size_raw & (1 << 15) != 0 {
+            size = u64::from(size_raw & !(1 << 15)) * 1024;
+        } else {
+            size = u64::from(size_raw) * 1024 * 1024;
         }
-        let mut device = device;
-        device.ecc = total_widths[index] > 0
-            && data_widths[index] > 0
-            && total_widths[index] > data_widths[index];
-        if device.type_.is_empty() {
-            device.type_ = "Unknown".to_string();
-        }
-        update_vendor_string(&mut device.vendor);
-        result.push(device);
     }
-    Some(result)
+
+    let strings = offset + table.header_length(offset);
+    let bank = table.locate_string(strings, table.u8_at(offset, 0x11));
+    let device = table.locate_string(strings, table.u8_at(offset, 0x10));
+    let locator = match (bank, device) {
+        (Some(bank), Some(device)) => format!("{bank}/{device}"),
+        (Some(bank), None) => bank.to_string(),
+        (None, Some(device)) => device.to_string(),
+        (None, None) => String::new(),
+    };
+
+    let form_factor_raw = table.u8_at(offset, 0x0E);
+    let form_factor = if form_factor_raw > 0 && (form_factor_raw as usize) < FORM_FACTOR_NAMES.len()
+    {
+        FORM_FACTOR_NAMES[form_factor_raw as usize].to_string()
+    } else {
+        format!("Unknown ({form_factor_raw})")
+    };
+
+    let memory_type_raw = table.u8_at(offset, 0x12);
+    let type_ = if memory_type_raw > 0 && (memory_type_raw as usize) < MEMORY_TYPE_NAMES.len() {
+        MEMORY_TYPE_NAMES[memory_type_raw as usize].to_string()
+    } else {
+        format!("Unknown ({memory_type_raw})")
+    };
+
+    let mut device = Device {
+        installed,
+        size,
+        max_speed: 0,
+        running_speed: 0,
+        type_,
+        form_factor,
+        locator,
+        vendor: String::new(),
+        serial: String::new(),
+        part_number: String::new(),
+        ecc,
+    };
+
+    if table.header_length(offset) > OFF_SPEED {
+        let speed = table.u16_at(offset, 0x15);
+        if speed != 0 {
+            device.max_speed = if speed == 0xFFFF {
+                table.u32_at(offset, 0x54)
+            } else {
+                u32::from(speed)
+            };
+        }
+
+        device.vendor = clean_up_smbios_value(table, strings, table.u8_at(offset, 0x17));
+        update_vendor_string(&mut device.vendor);
+        device.serial = clean_up_smbios_value(table, strings, table.u8_at(offset, 0x18));
+        device.part_number = clean_up_smbios_value(table, strings, table.u8_at(offset, 0x1A));
+    }
+
+    if table.header_length(offset) > OFF_CONFIGURED_SPEED {
+        let configured = table.u16_at(offset, 0x20);
+        if configured != 0 {
+            device.running_speed = if configured == 0xFFFF {
+                table.u32_at(offset, 0x58)
+            } else {
+                u32::from(configured)
+            };
+        }
+    }
+
+    Some(device)
+}
+
+/// ffDetectPhysicalMemory.
+fn detect() -> Result<Vec<Device>, &'static str> {
+    let table = SmbiosTable::load().ok_or("Failed to get SMBIOS data")?;
+    if table.first_offset(FF_SMBIOS_TYPE_MEMORY_DEVICE).is_none() {
+        return Err("Memory device is not found in SMBIOS data");
+    }
+    Ok(table
+        .walk(FF_SMBIOS_TYPE_MEMORY_DEVICE)
+        .iter()
+        .filter_map(|&offset| parse_device(&table, offset))
+        .collect())
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Some(devices) = detect() else {
+    let Ok(devices) = detect() else {
         // "Failed to get SMBIOS data" is an error row, hidden by default.
         return Vec::new();
     };
@@ -309,54 +315,55 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         .collect()
 }
 
+/// ffGeneratePhysicalMemoryJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(devices) => {
+            let mut arr = Json::Array(Vec::new());
+            for device in &devices {
+                let mut obj = Json::obj();
+                obj.push("size", device.size);
+                obj.push("installed", device.installed);
+                obj.push("maxSpeed", device.max_speed as u64);
+                obj.push("runningSpeed", device.running_speed as u64);
+                obj.push("type", device.type_.clone());
+                obj.push("locator", device.locator.clone());
+                obj.push("formFactor", device.form_factor.clone());
+                obj.push("vendor", device.vendor.clone());
+                obj.push("serial", device.serial.clone());
+                obj.push("partNumber", device.part_number.clone());
+                obj.push("ecc", device.ecc);
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
-    fn parses_udev_headers() {
-        assert_eq!(
-            parse_header("E:MEMORY_DEVICE_0_SIZE=4294967296"),
-            Some((0, "SIZE", "4294967296"))
-        );
-        assert_eq!(
-            parse_header("E:MEMORY_DEVICE_12_SPEED_MTS=3200"),
-            Some((12, "SPEED_MTS", "3200"))
-        );
-        assert_eq!(
-            parse_header("E:MEMORY_DEVICE_0_SPEED_MTS=3200"),
-            Some((0, "SPEED_MTS", "3200"))
-        );
-        assert_eq!(parse_header("E:OTHER=1"), None);
-        assert_eq!(parse_header("E:MEMORY_DEVICE_300_SIZE=1"), None);
-    }
-
-    #[test]
-    fn filters_placeholders() {
-        assert!(is_placeholder("To Be Filled By O.E.M."));
-        assert!(is_placeholder("Unknown"));
-        assert!(is_placeholder("0x0000"));
-        assert!(is_placeholder("N/A"));
-        assert!(!is_placeholder("Micron Technology"));
-        assert!(!is_placeholder("0x10"));
-    }
-
-    #[test]
-    fn decodes_udev_escapes() {
-        assert_eq!(decode_hex_escapes("Micron\\x20Technology"), "Micron Technology");
-        assert_eq!(decode_hex_escapes("plain"), "plain");
-    }
-
-    #[test]
-    fn maps_vendors_and_joins_locators() {
-        assert_eq!(vendor_name(0x2C00), Some("Micron"));
-        assert_eq!(vendor_name(0x1234), None);
+    fn maps_vendors_from_ids() {
         let mut vendor = "0x2C00".to_string();
-        update_vendor_string(&mut vendor);
+        super::update_vendor_string(&mut vendor);
         assert_eq!(vendor, "Micron");
-        let mut locator = String::new();
-        append_locator(&mut locator, "BANK 2", true);
-        append_locator(&mut locator, "DIMM2", false);
-        assert_eq!(locator, "BANK 2/DIMM2");
+        let mut vendor = "Unknown".to_string();
+        super::update_vendor_string(&mut vendor);
+        assert_eq!(vendor, "");
+        let mut vendor = "Micron Technology".to_string();
+        super::update_vendor_string(&mut vendor);
+        assert_eq!(vendor, "Micron Technology"); // not a bare id
+        let mut vendor = "0x2C".to_string();
+        super::update_vendor_string(&mut vendor);
+        assert_eq!(vendor, "0x2C"); // too short
+    }
+
+    #[test]
+    fn memory_type_and_form_factor_tables_cover_enums() {
+        assert_eq!(super::MEMORY_TYPE_NAMES[0x1A], "DDR4");
+        assert_eq!(super::MEMORY_TYPE_NAMES[0x22], "DDR5");
+        assert_eq!(super::FORM_FACTOR_NAMES[0x09], "DIMM");
+        assert_eq!(super::FORM_FACTOR_NAMES[0x0D], "SODIMM");
     }
 }

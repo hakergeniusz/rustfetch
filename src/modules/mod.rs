@@ -412,7 +412,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "physicalmemory",
         run: physicalmemory::run,
-        json: None,
+        json: Some(physicalmemory::json),
     },
     ModuleDef {
         name: "netio",
