@@ -242,12 +242,12 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "version",
         run: version::run,
-        json: None,
+        json: Some(version::json),
     },
     ModuleDef {
         name: "loadavg",
         run: loadavg::run,
-        json: None,
+        json: Some(loadavg::json),
     },
     ModuleDef {
         name: "keyboard",
@@ -457,12 +457,12 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "datetime",
         run: datetime::run,
-        json: None,
+        json: Some(datetime::json),
     },
     ModuleDef {
         name: "locale",
         run: locale::run,
-        json: None,
+        json: Some(locale::json),
     },
     ModuleDef {
         name: "battery",
