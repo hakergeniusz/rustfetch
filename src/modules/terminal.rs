@@ -1357,13 +1357,6 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     vec![Row::new("Terminal", value)]
 }
 
-/// The detailed process name, shared with the terminalfont dispatch until
-/// it reads ffDetectTerminal directly.
-pub fn detect_raw() -> Option<String> {
-    let result = detect_full();
-    (!result.process_name.is_empty()).then(|| result.process_name.clone())
-}
-
 /// ffGenerateTerminalJsonResult: the nine fields in upstream order.
 pub fn json(_instance: &Instance) -> JsonOutcome {
     let result = detect_full();
