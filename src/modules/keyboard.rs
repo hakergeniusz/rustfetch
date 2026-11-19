@@ -95,6 +95,23 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         .collect()
 }
 
+
+
+/// ffGenerateKeyboardJsonResult: ignored is false (the ignores list is a
+/// module option this CLI does not expose).
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let devices = detect();
+    let mut arr = Json::Array(Vec::new());
+    for device in &devices {
+        let mut obj = Json::obj();
+        obj.push("serial", device.serial.clone());
+        obj.push("name", device.name.clone());
+        obj.push("ignored", false);
+        arr.push_value(obj);
+    }
+    JsonOutcome::Result(arr)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -127,19 +144,4 @@ B: KEY=c 0 0 40000000
         let names: Vec<&str> = devices.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(names, ["AT Translated Set 2 keyboard", "Real Keyboard"]);
     }
-}
-
-/// ffGenerateKeyboardJsonResult: ignored is false (the ignores list is a
-/// module option this CLI does not expose).
-pub fn json(_instance: &Instance) -> JsonOutcome {
-    let devices = detect();
-    let mut arr = Json::Array(Vec::new());
-    for device in &devices {
-        let mut obj = Json::obj();
-        obj.push("serial", device.serial.clone());
-        obj.push("name", device.name.clone());
-        obj.push("ignored", false);
-        arr.push_value(obj);
-    }
-    JsonOutcome::Result(arr)
 }

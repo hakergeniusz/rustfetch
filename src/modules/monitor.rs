@@ -99,6 +99,13 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     }
 }
 
+
+
+/// ffGenerateMonitorJsonResult: the module is a Display alias.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    JsonOutcome::Error("Monitor module is an alias of Display module".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -131,9 +138,4 @@ mod tests {
         edid[133] = 5;
         assert!(!super::display::hdr_compatible(&edid));
     }
-}
-
-/// ffGenerateMonitorJsonResult: the module is a Display alias.
-pub fn json(_instance: &Instance) -> JsonOutcome {
-    JsonOutcome::Error("Monitor module is an alias of Display module".to_string())
 }

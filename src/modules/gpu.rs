@@ -571,16 +571,14 @@ mod tests {
 
     #[test]
     fn modalias_and_names_resolve_like_ffgpu() {
-        let mut gpu = GpuResult::default();
         // The vendor is set from ffGPUGetVendorString before the lookup.
-        gpu.vendor = "NVIDIA".to_string();
+        let mut gpu = GpuResult { vendor: "NVIDIA".to_string(), ..GpuResult::default() };
         fill_vendor_and_name(&mut gpu, 0, 0x10de, 0x2508);
         assert_eq!(gpu.vendor, "NVIDIA");
         assert_eq!(gpu.name, "GeForce RTX 3050 OEM");
 
         // A synthesized name when pci.ids has no entry.
-        let mut gpu = GpuResult::default();
-        gpu.vendor = "NVIDIA".to_string();
+        let mut gpu = GpuResult { vendor: "NVIDIA".to_string(), ..GpuResult::default() };
         fill_vendor_and_name(&mut gpu, 0, 0x10de, 0xffff);
         assert_eq!(gpu.name, "NVIDIA Device FFFF (VGA compatible)");
     }

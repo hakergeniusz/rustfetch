@@ -232,6 +232,25 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     vec![Row::new("Terminal Theme", value)]
 }
 
+
+
+/// ffGenerateTerminalThemeJsonResult: {fg, bg} with r/g/b/dark each.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let Some((fg, bg)) = detect_by_escape().or_else(detect_by_env) else {
+        return JsonOutcome::Error("Failed to detect terminal theme".to_string());
+    };
+    let mut obj = Json::obj();
+    for (key, color) in [("fg", &fg), ("bg", &bg)] {
+        let mut channel = Json::obj();
+        channel.push("r", color.r as u64);
+        channel.push("g", color.g as u64);
+        channel.push("b", color.b as u64);
+        channel.push("dark", color.dark);
+        obj.push(key, channel);
+    }
+    JsonOutcome::Result(obj)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,21 +288,4 @@ mod tests {
         let color = color_from_palette(15);
         assert!(!color.dark);
     }
-}
-
-/// ffGenerateTerminalThemeJsonResult: {fg, bg} with r/g/b/dark each.
-pub fn json(_instance: &Instance) -> JsonOutcome {
-    let Some((fg, bg)) = detect_by_escape().or_else(detect_by_env) else {
-        return JsonOutcome::Error("Failed to detect terminal theme".to_string());
-    };
-    let mut obj = Json::obj();
-    for (key, color) in [("fg", &fg), ("bg", &bg)] {
-        let mut channel = Json::obj();
-        channel.push("r", color.r as u64);
-        channel.push("g", color.g as u64);
-        channel.push("b", color.b as u64);
-        channel.push("dark", color.dark);
-        obj.push(key, channel);
-    }
-    JsonOutcome::Result(obj)
 }

@@ -185,6 +185,29 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         .collect()
 }
 
+
+
+/// ffGenerateDiskIOJsonResult: the per-second deltas over /sys/block.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(samples) => {
+            let mut arr = Json::Array(Vec::new());
+            for dev in &samples {
+                let mut obj = Json::obj();
+                obj.push("name", dev.name.clone());
+                obj.push("devPath", dev.dev_path.clone());
+                obj.push("bytesRead", dev.bytes_read);
+                obj.push("bytesWritten", dev.bytes_written);
+                obj.push("readCount", dev.read_count);
+                obj.push("writeCount", dev.write_count);
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -210,26 +233,5 @@ mod tests {
         assert!(super::apply_rates(&mut samples, &[prev], 1000));
         assert_eq!(samples[0].bytes_read, 2000);
         assert_eq!(samples[0].bytes_written, 0);
-    }
-}
-
-/// ffGenerateDiskIOJsonResult: the per-second deltas over /sys/block.
-pub fn json(_instance: &Instance) -> JsonOutcome {
-    match detect() {
-        Err(error) => JsonOutcome::Error(error.to_string()),
-        Ok(samples) => {
-            let mut arr = Json::Array(Vec::new());
-            for dev in &samples {
-                let mut obj = Json::obj();
-                obj.push("name", dev.name.clone());
-                obj.push("devPath", dev.dev_path.clone());
-                obj.push("bytesRead", dev.bytes_read);
-                obj.push("bytesWritten", dev.bytes_written);
-                obj.push("readCount", dev.read_count);
-                obj.push("writeCount", dev.write_count);
-                arr.push_value(obj);
-            }
-            JsonOutcome::Result(arr)
-        },
     }
 }

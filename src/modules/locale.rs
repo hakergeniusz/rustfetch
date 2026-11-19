@@ -17,10 +17,10 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
 /// ffDetectLocale: LC_ALL, then LANG, then the current LC_TIME locale.
 fn detect() -> Result<String, &'static str> {
     for key in ["LC_ALL", "LANG"] {
-        if let Ok(value) = std::env::var(key) {
-            if !value.is_empty() {
-                return Ok(value);
-            }
+        if let Ok(value) = std::env::var(key)
+            && !value.is_empty()
+        {
+            return Ok(value);
         }
     }
     // SAFETY: setlocale with a null locale only queries the current one.

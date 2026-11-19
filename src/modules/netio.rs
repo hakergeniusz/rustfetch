@@ -440,32 +440,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn rates_are_deltas_over_elapsed() {
-        let prev = super::NetIoSample {
-            name: "wlan0".to_string(),
-            default_route: true,
-            rx_bytes: 1000,
-            tx_bytes: 500,
-            rx_packets: 0,
-            tx_packets: 0,
-            rx_errors: 0,
-            tx_errors: 0,
-            rx_dropped: 0,
-            tx_dropped: 0,
-        };
-        let mut curr = prev.clone();
-        curr.rx_bytes = 3000;
-        curr.tx_bytes = 2500;
-        let mut samples = [curr.clone()];
-        assert!(super::apply_rates(&mut samples, &[prev], 500));
-        // 2000 bytes over 0.5s
-        assert_eq!(samples[0].rx_bytes, 4000);
-        assert_eq!(samples[0].tx_bytes, 4000);
-    }
-}
+
 
 /// ffGenerateNetIOJsonResult: the per-second deltas over the default set of
 /// interfaces (defaultRouteOnly is a module option not exposed here, so all
@@ -491,5 +466,32 @@ pub fn json(_instance: &Instance) -> JsonOutcome {
             }
             JsonOutcome::Result(arr)
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn rates_are_deltas_over_elapsed() {
+        let prev = super::NetIoSample {
+            name: "wlan0".to_string(),
+            default_route: true,
+            rx_bytes: 1000,
+            tx_bytes: 500,
+            rx_packets: 0,
+            tx_packets: 0,
+            rx_errors: 0,
+            tx_errors: 0,
+            rx_dropped: 0,
+            tx_dropped: 0,
+        };
+        let mut curr = prev.clone();
+        curr.rx_bytes = 3000;
+        curr.tx_bytes = 2500;
+        let mut samples = [curr.clone()];
+        assert!(super::apply_rates(&mut samples, &[prev], 500));
+        // 2000 bytes over 0.5s
+        assert_eq!(samples[0].rx_bytes, 4000);
+        assert_eq!(samples[0].tx_bytes, 4000);
     }
 }

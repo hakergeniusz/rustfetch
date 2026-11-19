@@ -161,22 +161,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn maps_colorspace_names() {
-        assert_eq!(super::colorspace_name(1), "SMPTE 170M");
-        assert_eq!(super::colorspace_name(8), "sRGB");
-        assert_eq!(super::colorspace_name(9), "Adobe RGB");
-        assert_eq!(super::colorspace_name(0), "");
-    }
 
-    #[test]
-    fn truncates_c_strings() {
-        let bytes = b"USB Camera\0rest";
-        assert_eq!(super::c_string(bytes), "USB Camera");
-    }
-}
 
 /// ffGenerateCameraJsonResult: vendor is never filled on Linux detection.
 pub fn json(_instance: &Instance) -> JsonOutcome {
@@ -196,5 +181,22 @@ pub fn json(_instance: &Instance) -> JsonOutcome {
             }
             JsonOutcome::Result(arr)
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn maps_colorspace_names() {
+        assert_eq!(super::colorspace_name(1), "SMPTE 170M");
+        assert_eq!(super::colorspace_name(8), "sRGB");
+        assert_eq!(super::colorspace_name(9), "Adobe RGB");
+        assert_eq!(super::colorspace_name(0), "");
+    }
+
+    #[test]
+    fn truncates_c_strings() {
+        let bytes = b"USB Camera\0rest";
+        assert_eq!(super::c_string(bytes), "USB Camera");
     }
 }

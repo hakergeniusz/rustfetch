@@ -138,25 +138,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn groups_caches_by_size_and_type() {
-        let mut caches = Vec::new();
-        // Six distinct cache instances of the same size and type collapse
-        // into "6x".
-        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
-        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
-        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
-        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
-        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
-        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
-        super::add_item(&mut caches, super::CacheType::Instruction, 32 * 1024, 64);
-        assert_eq!(caches.len(), 2);
-        assert_eq!(caches[0].num, 6);
-        assert_eq!(caches[1].num, 1);
-    }
-}
+
 
 /// ffGenerateCPUCacheJsonResult: l1..l4 arrays, the prefix of non-empty
 /// levels only; items carry size, num, lineSize and the type string.
@@ -187,4 +169,24 @@ pub fn json(_instance: &Instance) -> JsonOutcome {
         caches.push(&format!("l{}", index + 1), arr);
     }
     JsonOutcome::Result(caches)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn groups_caches_by_size_and_type() {
+        let mut caches = Vec::new();
+        // Six distinct cache instances of the same size and type collapse
+        // into "6x".
+        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
+        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
+        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
+        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
+        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
+        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
+        super::add_item(&mut caches, super::CacheType::Instruction, 32 * 1024, 64);
+        assert_eq!(caches.len(), 2);
+        assert_eq!(caches[0].num, 6);
+        assert_eq!(caches[1].num, 1);
+    }
 }
