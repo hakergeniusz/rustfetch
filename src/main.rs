@@ -1,6 +1,7 @@
 //! rustfetch: fastfetch, rewritten in Rust.
 
 mod cli;
+mod ffont;
 mod dbus;
 mod instance;
 mod json;
