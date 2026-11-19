@@ -167,7 +167,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "opengl",
         run: opengl::run,
-        json: None,
+        json: Some(opengl::json),
     },
     ModuleDef {
         name: "vulkan",
