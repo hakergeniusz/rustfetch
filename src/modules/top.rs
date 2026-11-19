@@ -5,7 +5,12 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 const PF_KTHREAD: u64 = 0x0020_0000;
 const N_PROCESSES: u32 = 5;
@@ -131,7 +136,18 @@ pub fn prepare() {
     }
 }
 
-pub fn run(instance: &Instance) -> Vec<Row> {
+/// One compared-and-rated process after the two-sample measurement.
+struct TopProcess {
+    process: Snapshot,
+    cpu_percent: f64,
+    bytes_read: u64,
+    bytes_written: u64,
+}
+
+/// ffDetectTopProcesses: the baseline sample, the wait, the second sample,
+/// the per-process deltas; the baseline of the next run is the second
+/// sample. Sorted cpu-desc (ties by ascending pid), truncated to the top 5.
+fn top_processes() -> Vec<TopProcess> {
     prepare();
     let lock = BASELINE.get_or_init(|| Mutex::new(None));
     let (first, started) = {
@@ -151,8 +167,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
     // A process must still exist with monotonic counters and the same
     // start time, or it is dropped from the comparison.
-    type Rated = (Snapshot, f64, u64, u64);
-    let mut results: Vec<Rated> = Vec::new();
+    let mut results: Vec<TopProcess> = Vec::new();
     for old in &first {
         let Some(new) = second.iter().find(|new| new.pid == old.pid) else {
             continue;
@@ -164,10 +179,12 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         {
             continue;
         }
-        let cpu_percent = (new.cpu_time_ms - old.cpu_time_ms) as f64 / elapsed as f64 * 100.0;
-        let bytes_read = (new.bytes_read - old.bytes_read) * 1000 / elapsed;
-        let bytes_written = (new.bytes_written - old.bytes_written) * 1000 / elapsed;
-        results.push((new.clone(), cpu_percent, bytes_read, bytes_written));
+        results.push(TopProcess {
+            cpu_percent: (new.cpu_time_ms - old.cpu_time_ms) as f64 / elapsed as f64 * 100.0,
+            bytes_read: (new.bytes_read - old.bytes_read) * 1000 / elapsed,
+            bytes_written: (new.bytes_written - old.bytes_written) * 1000 / elapsed,
+            process: new.clone(),
+        });
     }
 
     // The baseline of the next run is the second sample.
@@ -177,17 +194,22 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     }
 
     // Default sort: cpu desc, ties by ascending pid; keep the top 5.
-    results.sort_by(|(a, a_cpu, _, _), (b, b_cpu, _, _)| {
-        let order = if b_cpu < a_cpu {
+    results.sort_by(|a, b| {
+        let order = if b.cpu_percent < a.cpu_percent {
             std::cmp::Ordering::Less
-        } else if b_cpu > a_cpu {
+        } else if b.cpu_percent > a.cpu_percent {
             std::cmp::Ordering::Greater
         } else {
             std::cmp::Ordering::Equal
         };
-        order.then(a.pid.cmp(&b.pid))
+        order.then(a.process.pid.cmp(&b.process.pid))
     });
     results.truncate(N_PROCESSES as usize);
+    results
+}
+
+pub fn run(instance: &Instance) -> Vec<Row> {
+    let results = top_processes();
     if results.is_empty() {
         // "No processes found" is an error row, hidden by default.
         return Vec::new();
@@ -197,7 +219,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     results
         .iter()
         .enumerate()
-        .map(|(index, (process, cpu_percent, bytes_read, bytes_written))| {
+        .map(|(index, top)| {
+            let process = &top.process;
             let key = if total == 1 {
                 "Top Processes".to_string()
             } else {
@@ -210,17 +233,35 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             };
             let mut value = format!("{name} ({})", process.pid);
             value.push_str(" - CPU ");
-            value.push_str(&super::colorize_percent(*cpu_percent, 50, 80, instance.color));
+            value.push_str(&super::colorize_percent(top.cpu_percent, 50, 80, instance.color));
             value.push_str(" - MEM ");
             value.push_str(&util::fmt_bytes(process.mem_bytes));
             value.push_str(" - DSK ");
-            value.push_str(&util::fmt_bytes(*bytes_read));
+            value.push_str(&util::fmt_bytes(top.bytes_read));
             value.push_str("/s / ");
-            value.push_str(&util::fmt_bytes(*bytes_written));
+            value.push_str(&util::fmt_bytes(top.bytes_written));
             value.push_str("/s");
             Row::new(&key, value)
         })
         .collect()
+}
+
+/// ffGenerateTopJsonResult with the default showTypes (CPU | memory | disk).
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let results = top_processes();
+    let mut arr = Json::Array(Vec::new());
+    for top in &results {
+        let mut obj = Json::obj();
+        obj.push("name", top.process.name.clone());
+        obj.push("pid", top.process.pid as u64);
+        obj.push("cpuPercent", top.cpu_percent);
+        obj.push("mem", top.process.mem_bytes);
+        obj.push("bytesRead", top.bytes_read);
+        obj.push("bytesWritten", top.bytes_written);
+        obj.push("startTime", top.process.start_time);
+        arr.push_value(obj);
+    }
+    JsonOutcome::Result(arr)
 }
 
 #[cfg(test)]
@@ -260,63 +301,34 @@ mod tests {
 
     #[test]
     fn sorts_by_cpu_desc_then_pid_asc() {
+        let snapshot = |name: &str, pid: u32| Snapshot {
+            name: name.into(),
+            cpu_time_ms: 0,
+            mem_bytes: 0,
+            bytes_read: 0,
+            bytes_written: 0,
+            start_time: 1,
+            threads: 0,
+            pid,
+        };
         let mut results = [
-            (
-                Snapshot {
-                    name: "b".into(),
-                    cpu_time_ms: 0,
-                    mem_bytes: 0,
-                    bytes_read: 0,
-                    bytes_written: 0,
-                    start_time: 1,
-                    threads: 0,
-                    pid: 20,
-                },
-                5.0,
-                0,
-                0,
-            ),
-            (
-                Snapshot {
-                    name: "a".into(),
-                    cpu_time_ms: 0,
-                    mem_bytes: 0,
-                    bytes_read: 0,
-                    bytes_written: 0,
-                    start_time: 1,
-                    threads: 0,
-                    pid: 10,
-                },
-                10.0,
-                0,
-                0,
-            ),
-            (
-                Snapshot {
-                    name: "c".into(),
-                    cpu_time_ms: 0,
-                    mem_bytes: 0,
-                    bytes_read: 0,
-                    bytes_written: 0,
-                    start_time: 1,
-                    threads: 0,
-                    pid: 2,
-                },
-                10.0,
-                0,
-                0,
-            ),
+            TopProcess { process: snapshot("b", 20), cpu_percent: 5.0, bytes_read: 0, bytes_written: 0 },
+            TopProcess { process: snapshot("a", 10), cpu_percent: 10.0, bytes_read: 0, bytes_written: 0 },
+            TopProcess { process: snapshot("c", 2), cpu_percent: 10.0, bytes_read: 0, bytes_written: 0 },
         ];
-        results.sort_by(|(a, a_cpu, _, _), (b, b_cpu, _, _)| {
-            let order = if b_cpu < a_cpu {
+        results.sort_by(|a, b| {
+            let order = if b.cpu_percent < a.cpu_percent {
                 std::cmp::Ordering::Less
-            } else if b_cpu > a_cpu {
+            } else if b.cpu_percent > a.cpu_percent {
                 std::cmp::Ordering::Greater
             } else {
                 std::cmp::Ordering::Equal
             };
-            order.then(a.pid.cmp(&b.pid))
+            order.then(a.process.pid.cmp(&b.process.pid))
         });
-        assert_eq!(results.iter().map(|(s, _, _, _)| s.pid).collect::<Vec<_>>(), [2, 10, 20]);
+        assert_eq!(
+            results.iter().map(|tp| tp.process.pid).collect::<Vec<_>>(),
+            [2, 10, 20]
+        );
     }
 }

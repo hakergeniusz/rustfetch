@@ -387,7 +387,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "top",
         run: top::run,
-        json: None,
+        json: Some(top::json),
     },
     ModuleDef {
         name: "swap",
