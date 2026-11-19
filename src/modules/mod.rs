@@ -212,7 +212,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "codec",
         run: codec::run,
-        json: None,
+        json: Some(codec::json),
     },
     ModuleDef {
         name: "kernel",

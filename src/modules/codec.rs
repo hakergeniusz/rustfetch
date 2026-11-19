@@ -4,9 +4,13 @@
 //! codec types and the entrypoints decide decoder vs encoder. The VDPAU
 //! fallback needs a live X11 display and is not ported.
 
-use std::ffi::{CString, c_int, c_void};
+use std::ffi::{CString, c_char, c_int, c_void};
 
-use crate::{instance::Instance, modules::Row};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+};
 
 const VA_STATUS_SUCCESS: c_int = 0;
 const VA_CONFIG_ATTRIB_RT_FORMAT: u32 = 0;
@@ -29,6 +33,7 @@ type VaQueryEntrypointsFn = unsafe extern "C" fn(Display, c_int, *mut c_int, *mu
 type VaGetAttributesFn =
     unsafe extern "C" fn(Display, c_int, c_int, *mut VaConfigAttrib, c_int) -> c_int;
 type VaGetDisplayDrmFn = unsafe extern "C" fn(c_int) -> Display;
+type VaQueryVendorStringFn = unsafe extern "C" fn(Display) -> *const c_char;
 
 #[repr(C)]
 struct VaConfigAttrib {
@@ -138,6 +143,7 @@ struct VaApi {
     va_query_config_profiles: VaQueryProfilesFn,
     va_query_config_entrypoints: VaQueryEntrypointsFn,
     va_get_config_attributes: VaGetAttributesFn,
+    va_query_vendor_string: VaQueryVendorStringFn,
     va_get_display_drm: VaGetDisplayDrmFn,
 }
 
@@ -178,6 +184,9 @@ impl VaApi {
                 ),
                 va_get_config_attributes: std::mem::transmute::<*mut c_void, VaGetAttributesFn>(
                     load_symbol(libva, "vaGetConfigAttributes")?,
+                ),
+                va_query_vendor_string: std::mem::transmute::<*mut c_void, VaQueryVendorStringFn>(
+                    load_symbol(libva, "vaQueryVendorString")?,
                 ),
                 va_get_display_drm: std::mem::transmute::<*mut c_void, VaGetDisplayDrmFn>(
                     load_symbol(libva_drm, "vaGetDisplayDRM")?,
@@ -228,8 +237,11 @@ unsafe fn profile_has_output(
 }
 
 struct CodecResult {
+    gpu: String,
     decoders: CodecType,
     encoders: CodecType,
+    /// The detection backend that produced the entry.
+    platform_api: &'static str,
 }
 
 /// One successful display: the codec bitmask split by entrypoint kind.
@@ -267,14 +279,22 @@ unsafe fn query_display(api: &VaApi, display: Display) -> Option<CodecResult> {
         if decoders.0 == 0 && encoders.0 == 0 {
             return None;
         }
-        Some(CodecResult { decoders, encoders })
+        let vendor = (api.va_query_vendor_string)(display);
+        let gpu = if vendor.is_null() {
+            String::new()
+        } else {
+            // SAFETY: vaQueryVendorString returns a NUL-terminated static
+            // string for an initialized display.
+            std::ffi::CStr::from_ptr(vendor).to_string_lossy().into_owned()
+        };
+        Some(CodecResult { gpu, decoders, encoders, platform_api: "VA-API (DRM)" })
     }
 }
 
 /// detectCodecByVaDrm: every renderD node answers one VA-API session.
-fn detect_by_va_drm(api: &VaApi) -> Vec<CodecResult> {
+fn detect_by_va_drm(api: &VaApi) -> Result<Vec<CodecResult>, &'static str> {
     let Ok(entries) = std::fs::read_dir("/dev/dri") else {
-        return Vec::new();
+        return Err("opendir(/dev/dri/) failed");
     };
     let mut results = Vec::new();
     for entry in entries.flatten() {
@@ -302,23 +322,28 @@ fn detect_by_va_drm(api: &VaApi) -> Vec<CodecResult> {
             libc::close(fd);
         }
     }
-    results
+    if results.is_empty() {
+        return Err("No DRM device could initialize VA-API");
+    }
+    Ok(results)
+}
+
+/// ffDetectCodecNative reduced to the DRM path: load the libraries, walk
+/// /dev/dri, and surface the upstream error when nothing initializes.
+fn detect() -> Result<Vec<CodecResult>, &'static str> {
+    let Some(api) = VaApi::load() else {
+        return Err("dlopen(libva.so) failed");
+    };
+    detect_by_va_drm(&api)
 }
 
 /// ffPrintCodec: one Encoder row and one Decoder row per device; empty
 /// directions print "None".
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Some(api) = VaApi::load() else {
-        // "Both libva and libvdpau fail to initialize" is an error row,
-        // hidden by default.
+    let Ok(results) = detect() else {
+        // The load/detection error rows are hidden by default.
         return Vec::new();
     };
-    let results = detect_by_va_drm(&api);
-    if results.is_empty() {
-        // "No hardware video acceleration found" is an error row, hidden by
-        // default.
-        return Vec::new();
-    }
 
     let mut rows = Vec::new();
     for result in &results {
@@ -339,6 +364,36 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         }
     }
     rows
+}
+
+/// ffGenerateCodecJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(results) => {
+            let mut arr = Json::Array(Vec::new());
+            for result in &results {
+                let mut obj = Json::obj();
+                obj.push("gpu", result.gpu.clone());
+
+                let mut encoders = Json::Array(Vec::new());
+                let mut decoders = Json::Array(Vec::new());
+                for type_ in VA_TYPES {
+                    if result.encoders.0 & type_.0 != 0 {
+                        encoders.push_value(codec_type_name(type_));
+                    }
+                    if result.decoders.0 & type_.0 != 0 {
+                        decoders.push_value(codec_type_name(type_));
+                    }
+                }
+                obj.push("encoders", encoders);
+                obj.push("decoders", decoders);
+                obj.push("platformApi", result.platform_api);
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
+    }
 }
 
 #[cfg(test)]
