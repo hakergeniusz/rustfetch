@@ -59,16 +59,29 @@ fn is_skipped(name: &str) -> bool {
         || name.ends_with(".sh")
 }
 
-/// (comm, ppid) from /proc/<pid>/stat; comm may contain parens and spaces,
-/// so it is cut between the first '(' and the last ')'.
-fn process_basic_info(pid: u32) -> Option<(String, u32)> {
+/// (comm, ppid, tty device minor) from /proc/<pid>/stat; comm may contain
+/// parens and spaces, so it is cut between the first '(' and the last ')'
+/// and right-trimmed, like ffProcessGetBasicInfoLinux.
+pub(crate) fn process_basic_info_full(pid: u32) -> Option<(String, u32, i32)> {
     let stat = util::read_file(&format!("/proc/{pid}/stat"))?;
     let open = stat.find('(')?;
     let close = stat.rfind(')')?;
-    let comm = &stat[open + 1..close];
-    // after the comm: " S <ppid> ..." — state then ppid
-    let ppid = stat[close + 2..].split_whitespace().nth(1)?.parse().ok()?;
-    Some((comm.to_string(), ppid))
+    let comm = stat[open + 1..close].trim_end().to_string();
+    if comm.is_empty() {
+        return None;
+    }
+    // after the comm: state, ppid, pgrp, session, tty_nr, ...
+    let mut fields = stat[close + 2..].split_whitespace();
+    let _state = fields.next()?;
+    let ppid: u32 = fields.next()?.parse().ok()?;
+    let _pgrp = fields.next()?;
+    let _session = fields.next()?;
+    let tty_nr: i32 = fields.next()?.parse().ok()?;
+    Some((comm, ppid, tty_nr & 0xFF))
+}
+
+pub(crate) fn process_basic_info(pid: u32) -> Option<(String, u32)> {
+    process_basic_info_full(pid).map(|(comm, ppid, _)| (comm, ppid))
 }
 
 /// access(path, X_OK).
@@ -83,7 +96,7 @@ fn x_ok(path: &str) -> bool {
 /// the first non-option argument), minus login-shell dashes; exeName is
 /// the basename; exePath is /proc/<pid>/exe while the binary still exists
 /// (the literal /proc path otherwise, when accessible).
-fn process_exe_info(pid: u32, comm: &str) -> (String, String, String) {
+pub(crate) fn process_exe_info(pid: u32, comm: &str) -> (String, String, String) {
     let mut exe = String::new();
     if let Some(cmdline) = util::read_file(&format!("/proc/{pid}/cmdline")) {
         let args: Vec<&str> = cmdline.split('\0').collect();
@@ -1088,44 +1101,17 @@ fn tty_name_fd(fd: i32) -> String {
 
 /// Wrapper processes the shell walk skips; a process whose name equals the
 /// user's shell stops the walk instead.
-const SHELL_SKIPPED: &[&str] = &[
+pub(crate) const SHELL_SKIPPED: &[&str] = &[
     "sh", "sudo", "su", "strace", "gdb", "lldb", "lldb-mi", "login", "ltrace", "perf",
     "guake-wrapped", "time", "clifm", "valgrind", "fastfetch", "flashfetch", "mise", "mise-shim",
     "atuin", "proot", "script", "run-parts",
 ];
 
-fn shell_is_skipped(name: &str) -> bool {
+pub(crate) fn shell_is_skipped(name: &str) -> bool {
     SHELL_SKIPPED.contains(&name)
         || name.contains("debug")
         || name.contains("command-not-")
         || name.ends_with(".sh")
-}
-
-/// getShellInfo: walk up from our parent until the user's shell (or any
-/// non-wrapper) is reached; returns that process's ppid, 0 when the walk
-/// hit init or failed. The terminal walk starts there.
-fn shell_ppid() -> u32 {
-    let user_shell = crate::platform::platform().user_shell.clone();
-    let user_shell_name = user_shell.rsplit('/').next().unwrap_or("").to_string();
-
-    let mut ppid: u32 = 0;
-    let mut pid = unsafe { libc::getppid() } as u32;
-    while pid > 1 {
-        let Some((comm, parent)) = process_basic_info(pid) else {
-            break;
-        };
-        ppid = parent;
-        if comm != user_shell_name && shell_is_skipped(&comm) {
-            pid = parent;
-            continue;
-        }
-        break;
-    }
-    if pid > 1 {
-        ppid
-    } else {
-        0
-    }
 }
 
 /// getTerminalInfo: walk up from the shell's parent to the first process
@@ -1318,7 +1304,9 @@ pub fn detect_full() -> &'static TerminalResult {
     CACHE.get_or_init(|| {
         let mut result = TerminalResult::default();
 
-        let parent = shell_ppid();
+        // Like upstream, the terminal walk starts at the detected shell's
+        // parent process.
+        let parent = super::shell::detect_full().ppid;
         if parent != 0
             && let Some((pid, ppid, comm)) = terminal_walk(parent)
         {

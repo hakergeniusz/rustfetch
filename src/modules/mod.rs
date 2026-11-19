@@ -272,7 +272,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "shell",
         run: shell::run,
-        json: None,
+        json: Some(shell::json),
     },
     ModuleDef {
         name: "editor",

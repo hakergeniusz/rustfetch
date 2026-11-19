@@ -83,7 +83,7 @@ fn version_spawn(name: &str, exe: &str) -> Option<String> {
 }
 
 fn detect() -> Option<(String, Option<String>)> {
-    let (name, _) = super::shell::process_basic_info(1)?;
+    let (name, _) = super::terminal::process_basic_info(1)?;
 
     // /proc/1/exe is not readable for a user on some systems; the name from
     // stat stands in when it is.

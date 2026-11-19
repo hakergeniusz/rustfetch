@@ -1,93 +1,111 @@
 //! `shell` module: the shell from the parent process chain (fastfetch's
-//! getShellInfo), falling back to $SHELL. Versions come from the shell
-//! binary's own embedded version string where possible (zsh, bash), so no
-//! process is spawned on common setups.
+//! getShellInfo: walk up from our parent until the user's login shell or any
+//! non-wrapper process), falling back to the passwd shell. Versions come
+//! from the shell binary's own embedded version string where possible (zsh,
+//! bash), so no process is spawned on common setups.
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::{terminal, Row},
+    platform,
+    util,
+};
 
-/// fastfetch's wrapper processes between terminal and shell that must not be
-/// taken for the shell itself.
-const WRAPPERS: &[&str] = &[
-    "sh",
-    "sudo",
-    "su",
-    "strace",
-    "gdb",
-    "lldb",
-    "lldb-mi",
-    "login",
-    "ltrace",
-    "perf",
-    "guake-wrapped",
-    "time",
-    "clifm",
-    "valgrind",
-    "fastfetch",
-    "flashfetch",
-    "rustfetch",
-    "mise",
-    "mise-shim",
-    "atuin",
-    "proot",
-    "script",
-    "run-parts",
-];
-
-/// comm and ppid from /proc/<pid>/stat; comm may contain spaces, so both
-/// ends are located and ppid is parsed after the closing paren. Shared with
-/// the initsystem module for the pid 1 lookup.
-pub(crate) fn process_basic_info(pid: u32) -> Option<(String, u32)> {
-    let stat = util::read_file(&format!("/proc/{pid}/stat"))?;
-    let open = stat.find('(')?;
-    let close = stat.rfind(')')?;
-    let comm = stat[open + 1..close].to_string();
-    let ppid = stat[close + 1..].split_whitespace().nth(1)?.parse().ok()?;
-    Some((comm, ppid))
+pub struct ShellResult {
+    pub process_name: String,
+    pub exe: String,
+    pub exe_name: String,
+    pub exe_path: String,
+    pub pretty_name: String,
+    pub version: String,
+    pub pid: u32,
+    pub ppid: u32,
+    /// The found process's controlling terminal device minor, -1 when the
+    /// walk failed.
+    pub tty: i32,
 }
 
-fn is_wrapper(comm: &str) -> bool {
-    WRAPPERS.contains(&comm)
-        || comm.contains("debug")
-        || comm.contains("command-not-")
-        || comm.ends_with(".sh")
+impl Default for ShellResult {
+    fn default() -> Self {
+        Self {
+            process_name: String::new(),
+            exe: String::new(),
+            exe_name: String::new(),
+            exe_path: String::new(),
+            pretty_name: String::new(),
+            version: String::new(),
+            pid: 0,
+            ppid: 0,
+            tty: -1,
+        }
+    }
 }
 
-/// fastfetch's pretty-name specials (setShellInfoDetails).
-fn pretty_name(comm: &str, exe_name: Option<&str>) -> String {
-    match comm {
+/// fastfetch's setShellInfoDetails.
+fn set_details(process_name: &str, exe_name: &str) -> String {
+    match process_name {
         "pwsh" => "PowerShell".to_string(),
         "nu" => "nushell".to_string(),
         "oil.ovm" => "Oils".to_string(),
         "busybox" => "ash".to_string(),
-        _ => match exe_name {
-            Some(exe_name) => exe_name.to_string(),
-            None => comm.to_string(),
-        },
+        _ => exe_name.to_string(),
     }
 }
 
-/// The shell process on the parent chain, with its exe path when readable.
-fn detect_shell() -> Option<(String, Option<String>)> {
-    let user_shell = std::env::var("SHELL").ok()?;
-    let user_shell_name = user_shell.rsplit('/').next().unwrap_or("").to_string();
+/// ffDetectShell. Memoized like upstream's cache entry.
+pub fn detect_full() -> &'static ShellResult {
+    static CACHE: std::sync::OnceLock<ShellResult> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| {
+        let mut result = ShellResult::default();
 
-    let mut pid = std::process::id();
-    while pid > 1 {
-        let Some((comm, ppid)) = process_basic_info(pid) else {
-            break;
-        };
-        if comm == user_shell_name || !is_wrapper(&comm) {
-            let exe = std::fs::read_link(format!("/proc/{pid}/exe"))
-                .ok()
-                .map(|path| path.to_string_lossy().into_owned());
-            let exe_name =
-                exe.as_ref().and_then(|path| path.rsplit('/').next().map(str::to_string));
-            let name = pretty_name(&comm, exe_name.filter(|exe| exe.starts_with(&comm)).as_deref());
-            return Some((name, exe));
+        let mut pid = unsafe { libc::getppid() } as u32;
+        // fastfetch's FFTS_IGNORE_PARENT test hook.
+        if std::env::var("FFTS_IGNORE_PARENT").as_deref() == Ok("1")
+            && let Some((_, parent, _)) = terminal::process_basic_info_full(pid)
+        {
+            pid = parent;
         }
-        pid = ppid;
-    }
-    Some((pretty_name(&user_shell_name, Some(&user_shell)), Some(user_shell)))
+
+        let user_shell = platform::platform().user_shell.clone();
+        let user_shell_name = user_shell.rsplit('/').next().unwrap_or("").to_string();
+
+        while pid > 1 {
+            let Some((comm, parent, tty)) = terminal::process_basic_info_full(pid) else {
+                break;
+            };
+            if comm != user_shell_name && terminal::shell_is_skipped(&comm) {
+                pid = parent;
+                continue;
+            }
+            result.pid = pid;
+            result.ppid = parent;
+            result.tty = tty;
+            (result.exe, result.exe_name, result.exe_path) =
+                terminal::process_exe_info(pid, &comm);
+            result.process_name = comm;
+            break;
+        }
+
+        // getUserShellFromEnv: when the walk failed, the passwd shell is it.
+        if result.process_name.is_empty() && !user_shell.is_empty() {
+            result.exe = user_shell.clone();
+            result.exe_name = user_shell.rsplit('/').next().unwrap_or("").to_string();
+            result.process_name = result.exe_name.clone();
+        }
+
+        if !result.process_name.is_empty() {
+            result.pretty_name = set_details(&result.process_name, &result.exe_name);
+            let exe_for_version = if result.exe_path.is_empty() {
+                result.exe.clone()
+            } else {
+                result.exe_path.clone()
+            };
+            result.version = shell_version(&result.exe_name, Some(&exe_for_version))
+                .unwrap_or_default();
+        }
+        result
+    })
 }
 
 fn extract_zsh_version(line: &str) -> Option<String> {
@@ -112,9 +130,10 @@ fn version_spawn_last(path: &str) -> Option<String> {
     first.split_whitespace().next_back().map(str::to_string)
 }
 
-/// Per-shell version resolution, mirroring fastfetch's dispatch.
-fn shell_version(name: &str, exe: Option<&str>) -> Option<String> {
-    match (name, exe) {
+/// Per-shell version resolution, mirroring fastfetch's dispatch (keyed on
+/// the exe name). Port more getters as needed.
+fn shell_version(exe_name: &str, exe: Option<&str>) -> Option<String> {
+    match (exe_name, exe) {
         ("zsh", Some(exe)) => {
             util::binary_extract_strings(exe, "zsh-0.0-0".len(), extract_zsh_version)
                 .or_else(|| version_spawn_last(exe))
@@ -130,20 +149,45 @@ fn shell_version(name: &str, exe: Option<&str>) -> Option<String> {
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Some((name, exe)) = detect_shell() else {
+    let result = detect_full();
+    if result.process_name.is_empty() {
         return Vec::new();
-    };
+    }
 
-    let value = match shell_version(&name, exe.as_deref()) {
-        Some(version) => format!("{name} {version}"),
-        None => name,
+    let value = if result.version.is_empty() {
+        result.pretty_name.clone()
+    } else {
+        format!("{} {}", result.pretty_name, result.version)
     };
     vec![Row::new("Shell", value)]
 }
 
+/// ffGenerateShellJsonResult: exe first, tty null when the walk failed.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let result = detect_full();
+    if result.process_name.is_empty() {
+        return JsonOutcome::Error("Couldn't detect shell".to_string());
+    }
+    let mut obj = Json::obj();
+    obj.push("exe", result.exe.clone());
+    obj.push("exeName", result.exe_name.clone());
+    obj.push("exePath", result.exe_path.clone());
+    obj.push("pid", result.pid as u64);
+    obj.push("ppid", result.ppid as u64);
+    obj.push("processName", result.process_name.clone());
+    obj.push("prettyName", result.pretty_name.clone());
+    obj.push("version", result.version.clone());
+    if result.tty >= 0 {
+        obj.push("tty", result.tty as i64);
+    } else {
+        obj.push("tty", Json::Null);
+    }
+    JsonOutcome::Result(obj)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{extract_bash_version, extract_zsh_version, is_wrapper};
+    use super::{extract_bash_version, extract_zsh_version};
 
     #[test]
     fn extracts_embedded_versions() {
@@ -158,14 +202,5 @@ mod tests {
             Some("5.2.26".to_string())
         );
         assert_eq!(extract_bash_version("no marker here"), None);
-    }
-
-    #[test]
-    fn wrappers_are_skipped() {
-        assert!(is_wrapper("sudo"));
-        assert!(is_wrapper("ld-debug-wrapper"));
-        assert!(is_wrapper("run-script.sh"));
-        assert!(!is_wrapper("zsh"));
-        assert!(!is_wrapper("fish"));
     }
 }
