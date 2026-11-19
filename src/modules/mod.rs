@@ -357,7 +357,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "gpu",
         run: gpu::run,
-        json: None,
+        json: Some(gpu::json),
     },
     ModuleDef {
         name: "gamepad",

@@ -553,3 +553,15 @@ pub fn glob_match(pattern: &str, value: &str) -> bool {
     }
     inner(pattern.as_bytes(), value.as_bytes())
 }
+
+/// ffFreqAppendNum with the display defaults: up to 2 decimals, trailing
+/// zeros trimmed, " GHz"; a zero frequency prints nothing.
+pub fn fmt_freq(mhz: u32) -> String {
+    if mhz == 0 {
+        return String::new();
+    }
+    let ghz = mhz as f64 / 1000.0;
+    let text = format!("{ghz:.2}");
+    let text = text.trim_end_matches('0').trim_end_matches('.').to_string();
+    format!("{text} GHz")
+}
