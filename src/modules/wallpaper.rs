@@ -5,7 +5,7 @@
 
 use crate::{
     instance::Instance,
-    json::{Json, JsonOutcome},
+    json::JsonOutcome,
     modules::Row,
     util,
 };

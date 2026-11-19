@@ -112,10 +112,10 @@ fn detect() -> Result<BootmgrResult, &'static str> {
     let (name, firmware) = fill_load_option(&boot_entry[4..]);
 
     let mut secure_boot = false;
-    if let Ok(secure) = std::fs::read(format!("{EFIVARS_PREFIX}SecureBoot-{EFI_GLOBAL_GUID}")) {
-        if secure.len() >= 5 {
-            secure_boot = secure[4] == 1;
-        }
+    if let Ok(secure) = std::fs::read(format!("{EFIVARS_PREFIX}SecureBoot-{EFI_GLOBAL_GUID}"))
+        && secure.len() >= 5
+    {
+        secure_boot = secure[4] == 1;
     }
 
     Ok(BootmgrResult {
