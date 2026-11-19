@@ -79,7 +79,11 @@ pub mod wm;
 pub mod wmtheme;
 pub mod zpool;
 
-use crate::{instance::Instance, util};
+use crate::{
+    instance::Instance,
+    json::JsonOutcome,
+    util,
+};
 
 /// How a row should be rendered.
 #[derive(Clone, Copy)]
@@ -125,9 +129,15 @@ impl Row {
     }
 }
 
+/// A module's JSON generator: modules/display/genJsonResult, returning
+/// `result` on success or `error` with a message on detection failure.
+/// `None` until the module's printJson is ported.
+pub type JsonFn = fn(&Instance) -> JsonOutcome;
+
 pub struct ModuleDef {
     pub name: &'static str,
     pub run: fn(&Instance) -> Vec<Row>,
+    pub json: Option<JsonFn>,
 }
 
 /// All modules in fastfetch's ordering; `break` can't use the old macro
@@ -136,306 +146,382 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "title",
         run: title::run,
+        json: None,
     },
     ModuleDef {
         name: "separator",
         run: separator::run,
+        json: None,
     },
     ModuleDef {
         name: "os",
         run: os::run,
+        json: None,
     },
     ModuleDef {
         name: "opencl",
         run: opencl::run,
+        json: None,
     },
     ModuleDef {
         name: "opengl",
         run: opengl::run,
+        json: None,
     },
     ModuleDef {
         name: "vulkan",
         run: vulkan::run,
+        json: None,
     },
     ModuleDef {
         name: "host",
         run: host::run,
+        json: None,
     },
     ModuleDef {
         name: "bios",
         run: bios::run,
+        json: None,
     },
     ModuleDef {
         name: "bootmgr",
         run: bootmgr::run,
+        json: None,
     },
     ModuleDef {
         name: "bluetooth",
         run: bluetooth::run,
+        json: None,
     },
     ModuleDef {
         name: "bluetoothradio",
         run: bluetoothradio::run,
+        json: None,
     },
     ModuleDef {
         name: "board",
         run: board::run,
+        json: None,
     },
     ModuleDef {
         name: "chassis",
         run: chassis::run,
+        json: None,
     },
     ModuleDef {
         name: "codec",
         run: codec::run,
+        json: None,
     },
     ModuleDef {
         name: "kernel",
         run: kernel::run,
+        json: None,
     },
     ModuleDef {
         name: "initsystem",
         run: initsystem::run,
+        json: None,
     },
     ModuleDef {
         name: "uptime",
         run: uptime::run,
+        json: None,
     },
     ModuleDef {
         name: "users",
         run: users::run,
+        json: None,
     },
     ModuleDef {
         name: "tpm",
         run: tpm::run,
+        json: None,
     },
     ModuleDef {
         name: "version",
         run: version::run,
+        json: None,
     },
     ModuleDef {
         name: "loadavg",
         run: loadavg::run,
+        json: None,
     },
     ModuleDef {
         name: "keyboard",
         run: keyboard::run,
+        json: None,
     },
     ModuleDef {
         name: "lm",
         run: lm::run,
+        json: None,
     },
     ModuleDef {
         name: "processes",
         run: processes::run,
+        json: None,
     },
     ModuleDef {
         name: "packages",
         run: packages::run,
+        json: None,
     },
     ModuleDef {
         name: "shell",
         run: shell::run,
+        json: None,
     },
     ModuleDef {
         name: "editor",
         run: editor::run,
+        json: None,
     },
     ModuleDef {
         name: "display",
         run: display::run,
+        json: None,
     },
     ModuleDef {
         name: "brightness",
         run: brightness::run,
+        json: None,
     },
     ModuleDef {
         name: "de",
         run: de::run,
+        json: None,
     },
     ModuleDef {
         name: "wm",
         run: wm::run,
+        json: None,
     },
     ModuleDef {
         name: "wmtheme",
         run: wmtheme::run,
+        json: None,
     },
     ModuleDef {
         name: "theme",
         run: theme::run,
+        json: None,
     },
     ModuleDef {
         name: "icons",
         run: icons::run,
+        json: None,
     },
     ModuleDef {
         name: "font",
         run: font::run,
+        json: None,
     },
     ModuleDef {
         name: "cursor",
         run: cursor::run,
+        json: None,
     },
     ModuleDef {
         name: "terminal",
         run: terminal::run,
+        json: None,
     },
     ModuleDef {
         name: "terminalfont",
         run: terminalfont::run,
+        json: None,
     },
     ModuleDef {
         name: "terminalsize",
         run: terminalsize::run,
+        json: None,
     },
     ModuleDef {
         name: "cpu",
         run: cpu::run,
+        json: None,
     },
     ModuleDef {
         name: "cpucache",
         run: cpucache::run,
+        json: None,
     },
     ModuleDef {
         name: "cpuusage",
         run: cpuusage::run,
+        json: None,
     },
     ModuleDef {
         name: "gpu",
         run: gpu::run,
+        json: None,
     },
     ModuleDef {
         name: "gamepad",
         run: gamepad::run,
+        json: None,
     },
     ModuleDef {
         name: "mouse",
         run: mouse::run,
+        json: None,
     },
     ModuleDef {
         name: "memory",
         run: memory::run,
+        json: None,
     },
     ModuleDef {
         name: "monitor",
         run: monitor::run,
+        json: None,
     },
     ModuleDef {
         name: "terminaltheme",
         run: terminaltheme::run,
+        json: None,
     },
     ModuleDef {
         name: "top",
         run: top::run,
+        json: None,
     },
     ModuleDef {
         name: "swap",
         run: swap::run,
+        json: None,
     },
     ModuleDef {
         name: "disk",
         run: disk::run,
+        json: None,
     },
     ModuleDef {
         name: "btrfs",
         run: btrfs::run,
+        json: None,
     },
     ModuleDef {
         name: "physicaldisk",
         run: physicaldisk::run,
+        json: None,
     },
     ModuleDef {
         name: "physicalmemory",
         run: physicalmemory::run,
+        json: None,
     },
     ModuleDef {
         name: "netio",
         run: netio::run,
+        json: None,
     },
     ModuleDef {
         name: "diskio",
         run: diskio::run,
+        json: None,
     },
     ModuleDef {
         name: "publicip",
         run: publicip::run,
+        json: None,
     },
     ModuleDef {
         name: "localip",
         run: localip::run,
+        json: None,
     },
     ModuleDef {
         name: "dns",
         run: dns::run,
+        json: None,
     },
     ModuleDef {
         name: "wifi",
         run: wifi::run,
+        json: None,
     },
     ModuleDef {
         name: "sound",
         run: sound::run,
+        json: None,
     },
     ModuleDef {
         name: "zpool",
         run: zpool::run,
+        json: None,
     },
     ModuleDef {
         name: "datetime",
         run: datetime::run,
+        json: None,
     },
     ModuleDef {
         name: "locale",
         run: locale::run,
+        json: None,
     },
     ModuleDef {
         name: "battery",
         run: battery::run,
+        json: None,
     },
     ModuleDef {
         name: "poweradapter",
         run: poweradapter::run,
+        json: None,
     },
     ModuleDef {
         name: "camera",
         run: camera::run,
+        json: None,
     },
     ModuleDef {
         name: "wallpaper",
         run: wallpaper::run,
+        json: None,
     },
     ModuleDef {
         name: "media",
         run: media::run,
+        json: None,
     },
     ModuleDef {
         name: "player",
         run: player::run,
+        json: None,
     },
     ModuleDef {
         name: "weather",
         run: weather::run,
+        json: None,
     },
     ModuleDef {
         name: "break",
         run: r#break::run,
+        json: None,
     },
     ModuleDef {
         name: "command",
         run: command::run,
+        json: None,
     },
     ModuleDef {
         name: "custom",
         run: custom::run,
+        json: None,
     },
     ModuleDef {
         name: "colors",
         run: colors::run,
+        json: None,
     },
     ModuleDef {
         name: "logo",
         run: logo::run,
+        json: None,
     },
 ];
 
@@ -481,6 +567,10 @@ pub const DEFAULT_PRESET: &[&str] = &[
 /// config-supplied custom text / shell command row.
 pub enum PresetJob {
     Module(&'static ModuleDef),
+    /// A structure/config token that selects no module. Text mode hides it
+    /// (the hidden "<no implementation provided>" error row); JSON mode
+    /// emits {"type": <token as written>, "error": "Unknown module type"}.
+    Unknown(String),
     Custom(String),
     Command {
         text: String,
@@ -575,9 +665,7 @@ fn preset_from_fastfetch_config_content(content: &str) -> Option<Vec<PresetJob>>
             '"' => {
                 let (name, next) = read_json_string(&chars, i);
                 i = next;
-                if let Some(job) = module_job(&name) {
-                    jobs.push(job);
-                }
+                jobs.push(module_job(&name).unwrap_or(PresetJob::Unknown(name)));
             },
             '{' => {
                 // Object item: {"type": "custom", "format": "..."} or
@@ -612,8 +700,8 @@ fn preset_from_fastfetch_config_content(content: &str) -> Option<Vec<PresetJob>>
                         },
                         split_lines: json_bool_field(&object, "splitLines").unwrap_or(false),
                     });
-                } else if let Some(job) = module_job(&type_) {
-                    jobs.push(job);
+                } else {
+                    jobs.push(module_job(&type_).unwrap_or(PresetJob::Unknown(type_)));
                 }
                 i = depth_end + 1;
             },
@@ -795,23 +883,49 @@ pub fn colorize_percent(pct: f64, green: u8, yellow: u8, color: bool) -> String 
     }
 }
 
-/// Runs the selected modules (or the default preset when no structure was
-/// given) in structure order.
-///
-/// Modules are independent of each other, so each one runs in its own
-/// scoped thread: the slow data sources (gdbus, gsettings, process scans)
-/// overlap instead of adding up. Rows are emitted in structure order.
-pub fn collect(selected: &[String], structure_given: bool, instance: &Instance) -> Vec<Row> {
-    let jobs: Vec<PresetJob> = if !structure_given && selected.is_empty() {
-        preset_from_fastfetch_config()
-            .unwrap_or_else(|| DEFAULT_PRESET.iter().filter_map(|name| module_job(name)).collect())
+/// The module list both output formats dispatch on: the fastfetch config's
+/// modules when present, the -s structure when given, else the default
+/// preset. Unknown tokens become Unknown jobs (hidden rows in text mode,
+/// "Unknown module type" items in JSON mode); empty -s tokens are unknown
+/// tokens too, like fastfetch's getdelim walk.
+fn build_jobs(selected: &[String], structure_given: bool) -> Vec<PresetJob> {
+    let mut jobs: Vec<PresetJob> = if !structure_given && selected.is_empty() {
+        preset_from_fastfetch_config().unwrap_or_else(|| {
+            DEFAULT_PRESET.iter().filter_map(|name| module_job(name)).collect()
+        })
     } else {
-        // Unknown names are skipped like fastfetch's structure parser: the
-        // token becomes a hidden error row and the rest still runs. Module
-        // names match case-insensitively (ffStrEqualsIgnCase).
-        selected.iter().filter_map(|name| module_job(name)).collect()
+        // Module names match case-insensitively (ffStrEqualsIgnCase); anything
+        // else keeps the token verbatim for the JSON path.
+        selected
+            .iter()
+            .map(|name| module_job(name).unwrap_or(PresetJob::Unknown(name.clone())))
+            .collect()
     };
+    // The structureDisabled check runs before parsing each token, and
+    // ffStrbufSeparatedContainIgnCaseNS answers "an empty list contains
+    // only the empty segment" — with no --structure-disabled, that check
+    // passes exactly for empty tokens, which are therefore never parsed.
+    jobs.retain(|job| !matches!(job, PresetJob::Unknown(token) if token.is_empty()));
+    jobs
+}
 
+/// The canonical `type` string of a JSON item ("cpu" → "CPU"), from the
+/// same ffModuleInfos table --list-modules uses.
+fn canonical_type(name: &str) -> &'static str {
+    MODULE_LIST
+        .iter()
+        .find(|(canonical, _)| canonical.eq_ignore_ascii_case(name))
+        .map(|(canonical, _)| *canonical)
+        .unwrap_or("")
+}
+
+/// One `{type, result|error}` entry of --format json output.
+pub struct JsonItem {
+    pub type_name: String,
+    pub outcome: JsonOutcome,
+}
+
+fn prepare_rate_modules(jobs: &[PresetJob]) {
     let wants = |name: &str| {
         jobs.iter()
             .any(|job| matches!(job, PresetJob::Module(module) if module.name == name))
@@ -832,13 +946,28 @@ pub fn collect(selected: &[String], structure_given: bool, instance: &Instance) 
     if wants("diskio") {
         diskio::prepare();
     }
+}
+
+/// Runs the selected modules (or the default preset when no structure was
+/// given) in structure order.
+///
+/// Modules are independent of each other, so each one runs in its own
+/// scoped thread: the slow data sources (gdbus, gsettings, process scans)
+/// overlap instead of adding up. Rows are emitted in structure order.
+pub fn collect(selected: &[String], structure_given: bool, instance: &Instance) -> Vec<Row> {
+    let jobs = build_jobs(selected, structure_given);
+    prepare_rate_modules(&jobs);
 
     let results: Vec<Vec<Row>> = std::thread::scope(|scope| {
         // Structure order wins: `-s b:os:a` prints rows in exactly that
         // order, like fastfetch's structure loop. Duplicates allowed.
+        // Unknown tokens are the hidden "<no implementation provided>"
+        // error rows and never print.
         jobs.iter()
             .map(|job| match job {
                 PresetJob::Module(module) => scope.spawn(move || (module.run)(instance)),
+                // The hidden "<no implementation provided>" error row.
+                PresetJob::Unknown(_) => scope.spawn(std::vec::Vec::new),
                 PresetJob::Custom(text) => scope.spawn(move || custom::render_rows(text, instance)),
                 PresetJob::Command {
                     text,
@@ -857,6 +986,48 @@ pub fn collect(selected: &[String], structure_given: bool, instance: &Instance) 
     results.into_iter().flatten().collect()
 }
 
+/// --format json: one {type, result|error} item per structure entry, in
+/// structure order. Unknown tokens print their verbatim spelling.
+pub fn collect_json(selected: &[String], structure_given: bool, instance: &Instance) -> Vec<JsonItem> {
+    let jobs = build_jobs(selected, structure_given);
+    prepare_rate_modules(&jobs);
+
+    std::thread::scope(|scope| {
+        jobs.iter()
+            .map(|job| match job {
+                PresetJob::Module(module) => scope.spawn(move || JsonItem {
+                    type_name: canonical_type(module.name).to_string(),
+                    // A module without a ported generator still prints the
+                    // fixed upstream error for generator-less modules.
+                    outcome: module.json.map_or(JsonOutcome::Unsupported, |json| (json)(instance)),
+                }),
+                PresetJob::Unknown(token) => scope.spawn(move || JsonItem {
+                    type_name: token.clone(),
+                    outcome: JsonOutcome::Error("Unknown module type".to_string()),
+                }),
+                PresetJob::Custom(text) => {
+                    scope.spawn(move || JsonItem {
+                        type_name: "Custom".to_string(),
+                        outcome: custom::json(text, instance),
+                    })
+                },
+                PresetJob::Command {
+                    text,
+                    shell,
+                    param,
+                    split_lines,
+                } => scope.spawn(move || JsonItem {
+                    type_name: "Command".to_string(),
+                    outcome: command::json(text, shell, param.as_deref(), *split_lines, instance),
+                }),
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter_map(|handle| handle.join().ok())
+            .collect()
+    })
+}
+
 #[cfg(test)]
 mod preset_tests {
     use super::{module_job, PresetJob, REGISTRY, MODULE_LIST};
@@ -865,6 +1036,7 @@ mod preset_tests {
         jobs.iter()
             .map(|job| match job {
                 PresetJob::Module(module) => module.name.to_string(),
+                PresetJob::Unknown(token) => format!("unknown:{token}"),
                 PresetJob::Custom(text) => format!("custom:{text}"),
                 PresetJob::Command { text, .. } => format!("command:{text}"),
             })

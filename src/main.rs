@@ -3,6 +3,7 @@
 mod cli;
 mod dbus;
 mod instance;
+mod json;
 mod logo;
 mod logo_data;
 mod modules;
@@ -32,14 +33,17 @@ fn main() {
 
     let mut structure_given = false;
     if let Some(structure) = &cli.structure {
-        // The structure string is colon-separated; empty tokens vanish
-        // from the module list (fastfetch turns them into hidden "<no
-        // implementation provided>" error rows). An empty structure string
-        // keeps the default preset, like fastfetch's empty data->structure.
+        // The structure string is colon-separated. Tokens are kept
+        // verbatim: known ones select modules, unknown tokens become
+        // hidden "<no implementation provided>" rows in text mode and
+        // {"type": token, "error": "Unknown module type"} items in JSON
+        // mode, and empty tokens are skipped entirely (the
+        // structureDisabled gate "contains" them). An empty structure
+        // string keeps the default preset, like fastfetch's empty
+        // data->structure.
         if !structure.is_empty() {
             structure_given = true;
-            cli.modules
-                .extend(structure.split(':').filter(|s| !s.is_empty()).map(str::to_owned));
+            cli.modules.extend(structure.split(':').map(str::to_owned));
         }
     }
 
@@ -59,8 +63,8 @@ fn main() {
     let instance = instance::Instance::new(&cli);
 
     if cli.format == cli::Format::Json {
-        let rows = modules::collect(&cli.modules, structure_given, &instance);
-        render::print_json(&rows);
+        let items = modules::collect_json(&cli.modules, structure_given, &instance);
+        render::print_json(&items);
         return;
     }
 

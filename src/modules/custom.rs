@@ -3,7 +3,7 @@
 //! (collect() renders those inline); selecting the module without a
 //! format prints the keyless empty row the format parser still emits.
 
-use crate::{instance::Instance, modules::Row};
+use crate::{instance::Instance, json::JsonOutcome, modules::Row};
 
 /// parseFormatString for the custom module: zero format args, so every
 /// placeholder other than colors, resets, env vars and escapes renders
@@ -250,6 +250,16 @@ fn utf8_len(first: u8) -> usize {
 pub fn render_rows(format: &str, instance: &Instance) -> Vec<Row> {
     let colors = instance.logo_colors.get().copied();
     vec![Row::bare(render_format(format, instance.color, colors))]
+}
+
+/// ffGenerateCustomJsonResult: the JSON result is the format string
+/// rendered exactly like the text row. {#color} tokens are gated on
+/// !display.pipe (format.c), not on the JSON mode, so a tty run keeps
+/// the escapes inside the result string.
+pub fn json(format: &str, instance: &Instance) -> JsonOutcome {
+    JsonOutcome::Result(
+        render_format(format, !instance.pipe, instance.logo_colors.get().copied()).into(),
+    )
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {

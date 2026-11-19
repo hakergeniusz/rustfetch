@@ -16,6 +16,10 @@ pub struct LogoColors {
 }
 
 pub struct Instance {
+    /// display.c:957 — `!isatty(stdout) || NO_COLOR is set (even empty)`,
+    /// or an explicit `--pipe`. Gates {#color} tokens in custom formats
+    /// even in JSON mode.
+    pub pipe: bool,
     /// True when ANSI escape sequences may be printed (interactive tty,
     /// colors not disabled via `--pipe` or `NO_COLOR`; unlike many tools,
     /// fastfetch does not honor TERM=dumb).
@@ -33,12 +37,10 @@ pub struct Instance {
 
 impl Instance {
     pub fn new(cli: &Cli) -> Self {
-        // display.c: --pipe defaults to !isatty(stdout) || NO_COLOR (empty
-        // does not count), and an explicit --pipe false overrides both.
-        let pipe = cli.pipe.unwrap_or_else(|| {
-            !std::io::stdout().is_terminal()
-                || std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty())
-        });
+        // display.c:957 — --pipe defaults to !isatty(stdout) || NO_COLOR
+        // (getenv, so an empty value counts too); --pipe false overrides.
+        let pipe = cli.pipe
+            .unwrap_or_else(|| !std::io::stdout().is_terminal() || std::env::var_os("NO_COLOR").is_some());
         let color = !pipe && cli.format == Format::Standard;
 
         let mut distro_id = None;
@@ -56,6 +58,7 @@ impl Instance {
         }
 
         Self {
+            pipe,
             color,
             distro_id,
             distro_like,

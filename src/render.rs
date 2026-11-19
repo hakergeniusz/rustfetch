@@ -6,7 +6,8 @@
 
 use std::io::{BufWriter, Write};
 
-use crate::{cli::Cli, instance::Instance, logo::Logo, modules::Kind, modules::Row};
+use crate::json::{self, Json, JsonOutcome};
+use crate::{cli::Cli, instance::Instance, logo::Logo, modules::JsonItem, modules::Kind, modules::Row};
 
 /// Serializes parsed logo lines to strings, tracking visible widths
 /// separately. Every segment emits its color — including empty ones from
@@ -125,41 +126,22 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) 
     let _ = out.flush();
 }
 
-/// JSON string escaping without a serde dependency; values are ASCII text.
-fn json_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
+/// --format json: the result document fastfetch serializes with
+/// yyjson_mut_write_fp — one {type, result|error} object per module item,
+/// pretty-printed with a trailing newline.
+pub fn print_json(items: &[JsonItem]) {
+    let mut root = Json::Array(Vec::new());
+    for item in items {
+        let mut object = Json::obj();
+        object.push("type", item.type_name.as_str());
+        match &item.outcome {
+            JsonOutcome::Result(value) => object.push("result", value.clone()),
+            JsonOutcome::Error(message) => object.push("error", message.as_str()),
+            JsonOutcome::Unsupported => object.push("error", "Unsupported for JSON format"),
         }
+        root.push_value(object);
     }
-    out
-}
-
-/// fastfetch-style JSON output: one compact object per module row.
-pub fn print_json(rows: &[Row]) {
-    let mut out = String::from("[");
-    for (i, row) in rows.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push_str("{\"key\":");
-        match &row.key {
-            Some(key) => out.push_str(&format!("\"{}\"", json_escape(key))),
-            None => out.push_str("null"),
-        }
-        out.push_str(",\"value\":\"");
-        out.push_str(&json_escape(&row.value));
-        out.push_str("\"}");
-    }
-    out.push(']');
-    println!("{out}");
+    print!("{}", json::to_pretty(&root));
 }
 
 #[cfg(test)]
