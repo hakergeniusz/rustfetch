@@ -10,8 +10,9 @@ use crate::{
 };
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Some(media) = media::get_best_bus() else {
-        // "No media player detected" is an error row, hidden by default.
+    let Ok(media) = media::detect() else {
+        // The shared media detection errors ("No media found", DBus
+        // failures) are error rows, hidden by default.
         return Vec::new();
     };
 

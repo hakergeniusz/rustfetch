@@ -5,24 +5,77 @@
 
 use std::fmt::Write;
 
-use crate::{dbus, instance::Instance, modules::Row, util};
+use crate::{
+    dbus,
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 const MPRIS_PREFIX: &str = "org.mpris.MediaPlayer2.";
 
 /// One player's flattened MPRIS.Player properties.
+#[derive(Default)]
 pub(crate) struct Media {
     pub(crate) song: String,
     pub(crate) artist: String,
     pub(crate) album: String,
     pub(crate) url: String,
     pub(crate) status: String,
+    pub(crate) cover: String,
     pub(crate) length_ms: u32,
     pub(crate) position_ms: u32,
     pub(crate) player_id: String,
     pub(crate) player: String,
 }
 
+/// The upstream early-break condition: every xesam field has a value.
+fn xesam_complete(media: &Media) -> bool {
+    !media.song.is_empty()
+        && !media.artist.is_empty()
+        && !media.album.is_empty()
+        && !media.url.is_empty()
+}
+
+/// The mpris:artUrl cover: only `file:///` URLs count, and the %XX escapes
+/// after `file://` are decoded byte-wise; an invalid escape keeps its `%`,
+/// a truncated one ends the decode.
+fn decode_cover(url: &str) -> String {
+    if !url.starts_with("file:///") {
+        return String::new();
+    }
+    let bytes = url.as_bytes();
+    let mut out: Vec<u8> = Vec::new();
+    // strlen("file://"): decoding starts at the path's leading '/'.
+    let mut i = 7;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len() {
+                break;
+            }
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or("");
+            match u8::from_str_radix(hex, 16) {
+                // strtoul consumed both digits
+                Ok(byte) => {
+                    i += 2;
+                    out.push(byte);
+                },
+                _ => out.push(b'%'),
+            }
+        } else {
+            out.push(bytes[i]);
+        }
+        i += 1;
+    }
+    // Upstream appends the decoded bytes verbatim; lossy only replaces
+    // sequences that would make the JSON itself invalid UTF-8.
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// parseMprisMetadata: the rendered a{sv} body of the Metadata property.
+/// Upstream stops as soon as all four xesam fields are set, skipping any
+/// mpris: entries listed after them.
 fn parse_metadata(media: &mut Media, value: &str) {
     let Some(inner) = value.strip_prefix('{').and_then(|s| s.strip_suffix('}')) else {
         return;
@@ -34,10 +87,34 @@ fn parse_metadata(media: &mut Media, value: &str) {
         // Metadata values are variants: <'...'>, <['a', 'b']>, <123>.
         let value = entry.strip_prefix('<').and_then(|s| s.strip_suffix('>')).unwrap_or(entry);
         match util::unquote(key).as_str() {
-            "xesam:title" => media.song = util::string_value(value),
-            "xesam:album" => media.album = util::string_value(value),
-            "xesam:artist" => media.artist = util::string_value(value),
-            "xesam:url" => media.url = util::string_value(value),
+            "xesam:title" => {
+                media.song = util::string_value(value);
+                if xesam_complete(media) {
+                    break;
+                }
+            },
+            "xesam:album" => {
+                media.album = util::string_value(value);
+                if xesam_complete(media) {
+                    break;
+                }
+            },
+            "xesam:artist" => {
+                media.artist = util::string_value(value);
+                if xesam_complete(media) {
+                    break;
+                }
+            },
+            "xesam:url" => {
+                media.url = util::string_value(value);
+                if xesam_complete(media) {
+                    break;
+                }
+            },
+            "mpris:artUrl" => {
+                let url = util::string_value(value);
+                media.cover = decode_cover(&url);
+            },
             "mpris:length" => {
                 if let Ok(length) = value.parse::<i64>()
                     && length > 0
@@ -83,17 +160,7 @@ fn get_bus_properties(bus_name: &str) -> Option<Media> {
         "org.mpris.MediaPlayer2.Player",
     )?;
 
-    let mut media = Media {
-        song: String::new(),
-        artist: String::new(),
-        album: String::new(),
-        url: String::new(),
-        status: String::new(),
-        length_ms: 0,
-        position_ms: 0,
-        player_id: String::new(),
-        player: String::new(),
-    };
+    let mut media = Media::default();
     for (key, value) in &props {
         match key.as_str() {
             "'Metadata'" => parse_metadata(&mut media, value),
@@ -145,7 +212,7 @@ fn get_bus_properties(bus_name: &str) -> Option<Media> {
 
 /// getBestBus: the common player busses first, then every other MPRIS name
 /// ListNames reports (playerctld excluded).
-pub(crate) fn get_best_bus() -> Option<Media> {
+fn get_best_bus() -> Option<Media> {
     for short in ["spotify", "vlc", "plasma-browser-integration"] {
         if let Some(media) = get_bus_properties(&format!("{MPRIS_PREFIX}{short}")) {
             return Some(media);
@@ -175,6 +242,24 @@ pub(crate) fn get_best_bus() -> Option<Media> {
         }
     }
     None
+}
+
+/// ffDetectMedia: DBus load/connect failures map to upstream's error
+/// strings; a run without a matching bus — or with no song — is upstream's
+/// "No media found" error. On success the text fields are space-trimmed.
+pub(crate) fn detect() -> Result<Media, &'static str> {
+    dbus::load(dbus::DBUS_BUS_SESSION)?;
+    let Some(mut media) = get_best_bus() else {
+        return Err("No media found");
+    };
+    if media.song.is_empty() {
+        return Err("No media found");
+    }
+    trim_right_spaces(&mut media.song);
+    trim_right_spaces(&mut media.artist);
+    trim_right_spaces(&mut media.album);
+    trim_right_spaces(&mut media.player);
+    Ok(media)
 }
 
 /// The YouTube-style suffixes ffStrbufRemoveStrings strips from song titles;
@@ -291,16 +376,11 @@ fn append_progress(out: &mut String, media: &Media) {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
-    let Some(media) = get_best_bus() else {
-        // No player: upstream reports it through ffPrintError ("No media
-        // found"), which is hidden by default.
+    let Ok(media) = detect() else {
+        // Both upstream errors ("Failed to load/connect to DBus", "No media
+        // found") are error rows, hidden by default.
         return Vec::new();
     };
-    if media.song.is_empty() {
-        // An empty song sets the same hidden "No media found" error row;
-        // the visible "Media: " row can never occur upstream.
-        return Vec::new();
-    }
 
     let mut song_pretty = media.song.clone();
     for remove in REMOVE_STRINGS {
@@ -349,6 +429,40 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     vec![Row::new("Media", value)]
 }
 
+/// ffGenerateMediaJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let media = match detect() {
+        Ok(media) => media,
+        Err(error) => return JsonOutcome::Error(error.to_string()),
+    };
+
+    let mut result = Json::obj();
+    let mut song = Json::obj();
+    song.push("name", media.song);
+    song.push("artist", media.artist);
+    song.push("album", media.album);
+    song.push("status", media.status);
+    song.push("length", media.length_ms as u64);
+    song.push("position", media.position_ms as u64);
+    song.push(
+        "cover",
+        if media.cover.is_empty() {
+            Json::Null
+        } else {
+            media.cover.into()
+        },
+    );
+    result.push("song", song);
+
+    let mut player = Json::obj();
+    player.push("name", media.player);
+    player.push("id", media.player_id);
+    player.push("url", media.url);
+    result.push("player", player);
+
+    JsonOutcome::Result(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,26 +488,42 @@ mod tests {
 
     #[test]
     fn parses_metadata_dict() {
-        let mut media = Media {
-            song: String::new(),
-            artist: String::new(),
-            album: String::new(),
-            url: String::new(),
-            status: String::new(),
-            length_ms: 0,
-            position_ms: 0,
-            player_id: String::new(),
-            player: String::new(),
-        };
+        let mut media = Media::default();
         parse_metadata(
             &mut media,
-            "{ 'xesam:title': <'Song Name'>, 'xesam:artist': <['One', 'Two']>, \
-             'xesam:url': <'file:///a%20b.mp3'>, 'mpris:length': <237000> }",
+            "{ 'mpris:length': <237000>, 'xesam:title': <'Song Name'>, \
+             'xesam:artist': <['One', 'Two']>, 'xesam:album': <'Album'>, \
+             'xesam:url': <'file:///a%20b.mp3'> }",
         );
+        assert_eq!(media.length_ms, 237);
         assert_eq!(media.song, "Song Name");
         assert_eq!(media.artist, "One, Two");
+        assert_eq!(media.album, "Album");
         assert_eq!(media.url, "file:///a%20b.mp3");
+    }
+
+    #[test]
+    fn decodes_arturl_covers() {
+        assert_eq!(decode_cover("file:///home/u/a%20b.jpg"), "/home/u/a b.jpg");
+        assert_eq!(decode_cover("https://x/y.jpg"), "");
+        assert_eq!(decode_cover("file:///a%zz.jpg"), "/a%zz.jpg");
+        assert_eq!(decode_cover("file:///a%2"), "/a"); // truncated escape ends the decode
+        assert_eq!(decode_cover("file:///"), "/");
+    }
+
+    #[test]
+    fn stops_after_all_xesam_fields() {
+        let mut media = Media::default();
+        parse_metadata(
+            &mut media,
+            "{ 'mpris:length': <237000>, 'xesam:title': <'T'>, 'xesam:artist': <['A']>, \
+             'xesam:album': <'L'>, 'xesam:url': <'u'>, 'mpris:artUrl': <'file:///c.jpg'> }",
+        );
+        // All four xesam fields were set at the url entry, so the artUrl
+        // after it is skipped — length, listed before, survives.
         assert_eq!(media.length_ms, 237);
+        assert_eq!(media.song, "T");
+        assert_eq!(media.cover, "");
     }
 
     #[test]
@@ -433,15 +563,9 @@ mod tests {
     #[test]
     fn formats_progress() {
         let media = |length_ms: u32, position_ms: u32| Media {
-            song: String::new(),
-            artist: String::new(),
-            album: String::new(),
-            url: String::new(),
-            status: String::new(),
             length_ms,
             position_ms,
-            player_id: String::new(),
-            player: String::new(),
+            ..Media::default()
         };
         let mut out = String::new();
         append_progress(&mut out, &media(37_000, 12_000));

@@ -487,7 +487,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "media",
         run: media::run,
-        json: None,
+        json: Some(media::json),
     },
     ModuleDef {
         name: "player",

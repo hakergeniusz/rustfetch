@@ -203,6 +203,19 @@ unsafe fn get_string(api: &DbusApi, iter: &mut DBusMessageIter) -> Option<String
     }
 }
 
+/// ffDBusLoadData: load the library and get a bus connection, returning
+/// upstream's error strings; callers pass DBUS_BUS_SESSION or _SYSTEM.
+pub fn load(bus: c_int) -> Result<(), &'static str> {
+    let api = dbus_api().ok_or("Failed to load DBus library")?;
+    unsafe {
+        let connection = (api.bus_get)(bus, std::ptr::null_mut());
+        if connection.is_null() {
+            return Err("Failed to connect to DBus");
+        }
+    }
+    Ok(())
+}
+
 /// org.freedesktop.DBus.Properties.Get returning a string-ish value.
 pub fn get_property_string(
     dest: &str,
