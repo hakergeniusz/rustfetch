@@ -7,6 +7,7 @@ mod ffont;
 mod dbus;
 mod instance;
 mod json;
+mod jsonc;
 mod logo;
 mod logo_data;
 mod logo_entries;
