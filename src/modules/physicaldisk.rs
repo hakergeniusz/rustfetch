@@ -96,25 +96,23 @@ fn parse_physical_disk(block_dir: &Path, dev_name: &str) -> Option<Disk> {
     let device = block_dir.join("device");
     let has_device = device.is_dir();
 
-    let name = if has_device {
+    let mut name = if has_device {
         let mut name = attr_trimmed_right(&device, "vendor").unwrap_or_default();
         if !name.is_empty() {
             name.push(' ');
         }
         name.push_str(&attr_trimmed_right(&device, "model").unwrap_or_default());
-        let name = name.trim_end();
-        if name.is_empty() {
+        if name.trim_end().is_empty() {
             dev_name.to_string()
         } else {
-            name.to_string()
+            name.trim_end().to_string()
         }
-        if dev_name.starts_with("nvme") {
-            append_nvme_namespace_suffix(&mut name, dev_name);
-        }
-        name
     } else {
         dev_name.to_string()
     };
+    if dev_name.starts_with("nvme") {
+        append_nvme_namespace_suffix(&mut name, dev_name);
+    }
 
     let mut type_bits = 0u8;
     if !has_device {
