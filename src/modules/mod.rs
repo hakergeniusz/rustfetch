@@ -417,12 +417,12 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "netio",
         run: netio::run,
-        json: None,
+        json: Some(netio::json),
     },
     ModuleDef {
         name: "diskio",
         run: diskio::run,
-        json: None,
+        json: Some(diskio::json),
     },
     ModuleDef {
         name: "publicip",

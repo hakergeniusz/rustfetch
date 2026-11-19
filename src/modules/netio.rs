@@ -7,7 +7,12 @@
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 const WAIT_MS: u64 = 250;
 
@@ -368,7 +373,8 @@ fn apply_rates(samples: &mut [NetIoSample], prev: &[NetIoSample], elapsed_ms: u6
     true
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+/// ffDetectNetIO: the two-sample window with the per-second deltas.
+fn detect() -> Result<Vec<NetIoSample>, &'static str> {
     let times1 = {
         let mut baseline = match BASELINE.lock() {
             Ok(baseline) => baseline,
@@ -384,7 +390,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             },
             None => {
                 let Some(counters) = get_counters() else {
-                    return Vec::new();
+                    return Err("opendir(\"/sys/class/net\") == nullptr");
                 };
                 std::thread::sleep(Duration::from_millis(WAIT_MS));
                 Some((counters, WAIT_MS))
@@ -392,21 +398,27 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         }
     };
     let Some((counters1, elapsed_ms)) = times1 else {
-        return Vec::new();
+        return Err("No network interfaces found");
     };
     if counters1.is_empty() {
-        return Vec::new();
+        return Err("No network interfaces found");
     }
 
     let mut counters2 = match get_counters() {
         Some(counters) => counters,
-        None => return vec![Row::new("NetIO", "opendir(\"/sys/class/net\") == nullptr")],
+        None => return Err("opendir(\"/sys/class/net\") == nullptr"),
     };
     if !apply_rates(&mut counters2, &counters1, elapsed_ms) {
-        return Vec::new();
+        return Err("Different number of network interfaces. Network change?");
     }
 
-    counters2.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(counters2)
+}
+
+pub fn run(_instance: &Instance) -> Vec<Row> {
+    let Ok(counters2) = detect() else {
+        return Vec::new();
+    };
 
     counters2
         .iter()
@@ -452,5 +464,32 @@ mod tests {
         // 2000 bytes over 0.5s
         assert_eq!(samples[0].rx_bytes, 4000);
         assert_eq!(samples[0].tx_bytes, 4000);
+    }
+}
+
+/// ffGenerateNetIOJsonResult: the per-second deltas over the default set of
+/// interfaces (defaultRouteOnly is a module option not exposed here, so all
+/// /sys/class/net entries appear).
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(samples) => {
+            let mut arr = Json::Array(Vec::new());
+            for inf in &samples {
+                let mut obj = Json::obj();
+                obj.push("name", inf.name.clone());
+                obj.push("defaultRoute", inf.default_route);
+                obj.push("txBytes", inf.tx_bytes);
+                obj.push("rxBytes", inf.rx_bytes);
+                obj.push("txPackets", inf.tx_packets);
+                obj.push("rxPackets", inf.rx_packets);
+                obj.push("rxErrors", inf.rx_errors);
+                obj.push("txErrors", inf.tx_errors);
+                obj.push("rxDrops", inf.rx_dropped);
+                obj.push("txDrops", inf.tx_dropped);
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
     }
 }

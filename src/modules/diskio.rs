@@ -7,7 +7,12 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 const WAIT_MS: u64 = 250;
 
@@ -113,7 +118,8 @@ fn apply_rates(samples: &mut [DiskIoSample], prev: &[DiskIoSample], elapsed_ms: 
     true
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+/// ffDetectDiskIO: the two-sample window with the per-second deltas.
+fn detect() -> Result<Vec<DiskIoSample>, &'static str> {
     let times1 = {
         let mut baseline = match BASELINE.lock() {
             Ok(baseline) => baseline,
@@ -129,7 +135,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             },
             None => {
                 let Some(counters) = get_counters() else {
-                    return Vec::new();
+                    return Err("opendir(\"/sys/block/\") == nullptr");
                 };
                 std::thread::sleep(Duration::from_millis(WAIT_MS));
                 Some((counters, WAIT_MS))
@@ -137,21 +143,27 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         }
     };
     let Some((counters1, elapsed_ms)) = times1 else {
-        return Vec::new();
+        return Err("No disk devices found");
     };
     if counters1.is_empty() {
-        return Vec::new();
+        return Err("No disk devices found");
     }
 
     let mut counters2 = match get_counters() {
         Some(counters) => counters,
-        None => return vec![Row::new("DiskIO", "opendir(\"/sys/block/\") == nullptr")],
+        None => return Err("opendir(\"/sys/block/\") == nullptr"),
     };
     if !apply_rates(&mut counters2, &counters1, elapsed_ms) {
-        return Vec::new();
+        return Err("Different number of disks. Disk change?");
     }
 
-    counters2.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(counters2)
+}
+
+pub fn run(_instance: &Instance) -> Vec<Row> {
+    let Ok(counters2) = detect() else {
+        return Vec::new();
+    };
 
     counters2
         .iter()
@@ -198,5 +210,26 @@ mod tests {
         assert!(super::apply_rates(&mut samples, &[prev], 1000));
         assert_eq!(samples[0].bytes_read, 2000);
         assert_eq!(samples[0].bytes_written, 0);
+    }
+}
+
+/// ffGenerateDiskIOJsonResult: the per-second deltas over /sys/block.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(samples) => {
+            let mut arr = Json::Array(Vec::new());
+            for dev in &samples {
+                let mut obj = Json::obj();
+                obj.push("name", dev.name.clone());
+                obj.push("devPath", dev.dev_path.clone());
+                obj.push("bytesRead", dev.bytes_read);
+                obj.push("bytesWritten", dev.bytes_written);
+                obj.push("readCount", dev.read_count);
+                obj.push("writeCount", dev.write_count);
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
     }
 }
