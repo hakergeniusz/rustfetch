@@ -100,10 +100,10 @@ fn data_dirs() -> Vec<String> {
     add(format!("{home}.local/share/"));
     // ${exePath}/../share
     let exe = &platform::platform().exe_path;
-    if let Some(last_slash) = exe.rfind('/') {
-        if let Some(second_slash) = exe[..last_slash].rfind('/') {
-            add(format!("{}/share/", &exe[..second_slash]));
-        }
+    if let Some(last_slash) = exe.rfind('/')
+        && let Some(second_slash) = exe[..last_slash].rfind('/')
+    {
+        add(format!("{}/share/", &exe[..second_slash]));
     }
     add(home.clone());
     if let Some(list) = std::env::var_os("XDG_DATA_DIRS") {
@@ -145,7 +145,7 @@ pub fn load_explicit(value: &str, already_loaded: &mut bool) -> Config {
     }
 
     if value == "-" {
-        return build_config(&leak_root(parse_stdin()));
+        return build_config(leak_root(parse_stdin()));
     }
 
     // Extension rules decide the parser mode; without one, .jsonc is
@@ -234,7 +234,7 @@ fn try_file(path: &str, strict: bool) -> Option<Config> {
             "JsonConfig Error: Invalid JSON config format. Root value must be an object",
         );
     }
-    Some(build_config(&leak_root(root)))
+    Some(build_config(leak_root(root)))
 }
 
 /// The parsed tree is leaked so entries can reference it &'static across
@@ -520,6 +520,8 @@ fn object_array(value: &'static jsonc::Value) -> Option<&'static Vec<jsonc::Valu
 
 #[cfg(test)]
 pub(crate) fn for_test(content: &str) -> Config {
-    let root = jsonc::Parser::parse(content, true).expect("test config parses");
-    build_config(&leak_root(root))
+    let Ok(root) = jsonc::Parser::parse(content, true) else {
+        panic!("test config must parse");
+    };
+    build_config(leak_root(root))
 }

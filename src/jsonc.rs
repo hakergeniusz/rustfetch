@@ -492,11 +492,17 @@ mod tests {
     use super::*;
 
     fn parse_ok(input: &str) -> Value {
-        Parser::parse(input, true).unwrap()
+        let Ok(value) = Parser::parse(input, true) else {
+            panic!("expected {input} to parse");
+        };
+        value
     }
 
     fn parse_err(input: &str, jsonc: bool) -> ParseError {
-        Parser::parse(input, jsonc).unwrap_err()
+        let Err(error) = Parser::parse(input, jsonc) else {
+            panic!("expected {input} to fail");
+        };
+        error
     }
 
     #[test]
