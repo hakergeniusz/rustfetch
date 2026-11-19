@@ -10,16 +10,14 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-use crate::{instance::Instance, modules::Row};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+};
 
 const REQUEST: &str = "GET /json HTTP/1.0\r\nHost: ipinfo.io\r\nConnection: close\r\n\r\n";
 const MAX_RESPONSE_SIZE: usize = 1024 * 1024;
-
-/// yyjson_get_str in a glibc printf: a missing or non-string JSON value
-/// prints as "(null)".
-fn string_or_null(json: &str, key: &str) -> Option<String> {
-    json_string_field(json, key)
-}
 
 /// json_string_field from the module registry: finds `"name": "value"`.
 fn json_string_field(object: &str, name: &str) -> Option<String> {
@@ -58,47 +56,63 @@ fn response_body(response: &str) -> &str {
     }
 }
 
-/// The value shown for a parsed ipinfo.io reply: `ip (city, country)`.
-fn parsed_value(body: &str) -> String {
+/// (ip, "city, country") with yyjson_get_str's "(null)" default for missing
+/// or non-string values, as glibc printf would print them.
+fn parse_ip_location(body: &str) -> (String, String) {
     let ip = json_string_field(body, "ip").unwrap_or_default();
-    let city = string_or_null(body, "city").unwrap_or_else(|| "(null)".into());
-    let country = string_or_null(body, "country").unwrap_or_else(|| "(null)".into());
-    format!("{ip} ({city}, {country})")
+    let city = json_string_field(body, "city").unwrap_or_else(|| "(null)".into());
+    let country = json_string_field(body, "country").unwrap_or_else(|| "(null)".into());
+    (ip, format!("{city}, {country}"))
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+/// ffDetectPublicIp: (ip, location) from the ipinfo.io reply; only a JSON
+/// object reply is interpreted, anything else prints verbatim.
+fn detect() -> Result<(String, String), &'static str> {
     let Ok(mut stream) = TcpStream::connect("ipinfo.io:80") else {
-        // "getaddrinfo() failed" / "connect() failed" are error rows,
-        // hidden by default.
-        return Vec::new();
+        return Err("connect() failed");
     };
     if stream.write_all(REQUEST.as_bytes()).is_err() {
-        return Vec::new();
+        return Err("connect() failed");
     }
 
     let mut response = Vec::new();
     if stream.take((MAX_RESPONSE_SIZE + 1) as u64).read_to_end(&mut response).is_err()
         || response.len() > MAX_RESPONSE_SIZE
     {
-        // "Response too large" is an error row, hidden by default.
-        return Vec::new();
+        return Err("Response too large");
     }
     let response = String::from_utf8_lossy(&response);
     let body = response_body(&response);
     if body.is_empty() {
-        // "Empty server response received" is an error row, hidden by
-        // default.
-        return Vec::new();
+        return Err("Empty server response received");
     }
 
-    // Only a JSON object reply is interpreted; anything else (custom
-    // servers, header-only responses) prints verbatim, right-trimmed.
-    let value = if body.starts_with('{') {
-        parsed_value(body)
+    if body.starts_with('{') {
+        Ok(parse_ip_location(body))
     } else {
-        body.trim_end().to_string()
+        // Custom servers may answer with plain text; the ip field carries it.
+        Ok((body.trim_end().to_string(), String::new()))
+    }
+}
+
+pub fn run(_instance: &Instance) -> Vec<Row> {
+    let Ok((ip, location)) = detect() else {
+        return Vec::new();
     };
-    vec![Row::new("Public IP", value)]
+    vec![Row::new("Public IP", format!("{ip} ({location})"))]
+}
+
+/// ffGeneratePublicIpJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok((ip, location)) => {
+            let mut obj = Json::obj();
+            obj.push("ip", ip);
+            obj.push("location", location);
+            JsonOutcome::Result(obj)
+        },
+    }
 }
 
 #[cfg(test)]
@@ -113,11 +127,11 @@ mod tests {
     #[test]
     fn builds_location_with_nulls() {
         let body = r#"{"ip": "1.2.3.4", "city": "Łódź", "country": "PL"}"#;
-        assert_eq!(super::parsed_value(body), "1.2.3.4 (Łódź, PL)");
+        assert_eq!(super::parse_ip_location(body), ("1.2.3.4".into(), "Łódź, PL".into()));
         let body = r#"{"ip": "1.2.3.4"}"#;
-        assert_eq!(super::parsed_value(body), "1.2.3.4 ((null), (null))");
+        assert_eq!(super::parse_ip_location(body), ("1.2.3.4".into(), "(null), (null)".into()));
         let body = r#"{"ip": "1.2.3.4", "city": null, "country": "PL"}"#;
-        assert_eq!(super::parsed_value(body), "1.2.3.4 ((null), PL)");
+        assert_eq!(super::parse_ip_location(body), ("1.2.3.4".into(), "(null), PL".into()));
     }
 
     #[test]

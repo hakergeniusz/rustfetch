@@ -9,7 +9,11 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-use crate::{instance::Instance, modules::Row};
+use crate::{
+    instance::Instance,
+    json::JsonOutcome,
+    modules::Row,
+};
 
 const REQUEST: &str = "GET /?format=%t+-+%C+(%l) HTTP/1.0\r\nHost: wttr.in\r\nConnection: close\r\nUser-Agent: curl/0.0.0\r\n\r\n";
 const MAX_RESPONSE_SIZE: usize = 1024 * 1024;
@@ -24,33 +28,43 @@ fn response_body(response: &str) -> &str {
     }
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+/// ffDetectWeather: the wttr.in reply body, right-trimmed.
+fn detect() -> Result<String, &'static str> {
     let Ok(mut stream) = TcpStream::connect("wttr.in:80") else {
-        // "getaddrinfo() failed" / "connect() failed" are error rows,
-        // hidden by default.
-        return Vec::new();
+        return Err("connect() failed");
     };
     if stream.write_all(REQUEST.as_bytes()).is_err() {
-        return Vec::new();
+        return Err("connect() failed");
     }
 
     let mut response = Vec::new();
     if stream.take((MAX_RESPONSE_SIZE + 1) as u64).read_to_end(&mut response).is_err()
         || response.len() > MAX_RESPONSE_SIZE
     {
-        // "Response too large" is an error row, hidden by default.
-        return Vec::new();
+        return Err("Response too large");
     }
     let response = String::from_utf8_lossy(&response);
     // ffStrbufTrimRightSpace.
     let body = response_body(&response).trim_end();
     if body.is_empty() {
-        // "Empty server response received" is an error row, hidden by
-        // default.
-        return Vec::new();
+        return Err("Empty server response received");
     }
+    Ok(body.to_string())
+}
 
-    vec![Row::new("Weather", body.to_string())]
+pub fn run(_instance: &Instance) -> Vec<Row> {
+    let Ok(body) = detect() else {
+        return Vec::new();
+    };
+    vec![Row::new("Weather", body)]
+}
+
+/// ffGenerateWeatherJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(body) => JsonOutcome::Result(body.into()),
+    }
 }
 
 #[cfg(test)]

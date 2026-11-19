@@ -427,7 +427,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "publicip",
         run: publicip::run,
-        json: None,
+        json: Some(publicip::json),
     },
     ModuleDef {
         name: "localip",
@@ -437,7 +437,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "dns",
         run: dns::run,
-        json: None,
+        json: Some(dns::json),
     },
     ModuleDef {
         name: "wifi",
@@ -492,12 +492,12 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "player",
         run: player::run,
-        json: None,
+        json: Some(player::json),
     },
     ModuleDef {
         name: "weather",
         run: weather::run,
-        json: None,
+        json: Some(weather::json),
     },
     ModuleDef {
         name: "break",

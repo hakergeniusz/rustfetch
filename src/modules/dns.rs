@@ -4,7 +4,12 @@
 //! the resolvconf, dnsmasq and openresolv locations. IPv4 addresses print
 //! before IPv6 ones.
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 /// The nameserver entries of one resolv.conf file; None when it can't be
 /// read (which lets the caller fall through to the next candidate).
@@ -29,8 +34,8 @@ fn parse_resolv_content(content: &str) -> Vec<String> {
     servers
 }
 
-fn detect() -> Option<Vec<String>> {
-    let mut servers = from_conf("/etc/resolv.conf")?;
+fn detect() -> Result<Vec<String>, &'static str> {
+    let mut servers = from_conf("/etc/resolv.conf").ok_or("fopen(path, r) failed")?;
 
     // Managed by systemd-resolved or NetworkManager: their own resolv.conf
     // lists the real servers.
@@ -59,16 +64,16 @@ fn detect() -> Option<Vec<String>> {
             if let Some(fallback) = from_conf(path)
                 && !fallback.is_empty()
             {
-                return Some(fallback);
+                return Ok(fallback);
             }
         }
     }
 
-    Some(servers)
+    Ok(servers)
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Some(servers) = detect() else {
+    let Ok(servers) = detect() else {
         // ffPrintError is gated behind --show-errors, off by default.
         return Vec::new();
     };
@@ -89,6 +94,22 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         }
     }
     vec![Row::new("DNS", value.join(" "))]
+}
+
+
+
+/// ffGenerateDNSJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(servers) => {
+            let mut arr = Json::Array(Vec::new());
+            for server in servers {
+                arr.push_value(Json::Str(server));
+            }
+            JsonOutcome::Result(arr)
+        },
+    }
 }
 
 #[cfg(test)]

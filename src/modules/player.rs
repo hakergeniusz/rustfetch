@@ -5,6 +5,7 @@
 
 use crate::{
     instance::Instance,
+    json::JsonOutcome,
     modules::{Row, media},
 };
 
@@ -56,6 +57,13 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     }
 
     vec![Row::new("Media Player", pretty)]
+}
+
+
+
+/// ffGeneratePlayerJsonResult: the module is a Media alias.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    JsonOutcome::Error("Player module is an alias of Media module".to_string())
 }
 
 #[cfg(test)]
