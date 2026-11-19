@@ -12,6 +12,7 @@ use std::ffi::{CStr, c_char, c_int, c_void};
 
 use crate::{
     instance::Instance,
+    json::{Json, JsonOutcome},
     modules::{Row, colorize_percent},
     util,
 };
@@ -149,6 +150,8 @@ fn channel_width_to_mhz(width: u32) -> u16 {
 
 #[derive(Default)]
 struct WifiItem {
+    /// The interface name, upstream's inf.description.
+    inf_description: String,
     inf_status: String,
     status: String,
     ssid: String,
@@ -1318,7 +1321,8 @@ fn detect() -> Vec<WifiItem> {
                 continue;
             }
 
-            let mut item = WifiItem::default();
+            let mut item =
+                WifiItem { inf_description: if_name.clone(), ..WifiItem::default() };
 
             match util::read_file(&format!("/sys/class/net/{if_name}/operstate")) {
                 Some(state) if !state.is_empty() && state.as_bytes()[0] == b'u' => {
@@ -1434,6 +1438,46 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             Row::new(&key, item_value(&item, instance.color))
         })
         .collect()
+}
+
+/// ffGenerateWifiJsonResult; rates and quality carry the -DBL_MAX sentinel
+/// as null.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let mut arr = Json::Array(Vec::new());
+    for item in &detect() {
+        let mut obj = Json::obj();
+
+        let mut inf = Json::obj();
+        inf.push("description", item.inf_description.clone());
+        inf.push("status", item.inf_status.clone());
+        obj.push("inf", inf);
+
+        let mut conn = Json::obj();
+        conn.push("status", item.status.clone());
+        conn.push("ssid", item.ssid.clone());
+        conn.push("bssid", item.bssid.clone());
+        conn.push("protocol", item.protocol.clone());
+        conn.push("security", item.security.clone());
+        match item.signal_quality {
+            Some(quality) => conn.push("signalQuality", quality),
+            None => conn.push("signalQuality", Json::Null),
+        }
+        match item.rx_rate {
+            Some(rate) => conn.push("rxRate", rate),
+            None => conn.push("rxRate", Json::Null),
+        }
+        match item.tx_rate {
+            Some(rate) => conn.push("txRate", rate),
+            None => conn.push("txRate", Json::Null),
+        }
+        conn.push("channel", item.channel as u64);
+        conn.push("channelWidth", item.channel_width as u64);
+        conn.push("frequency", item.frequency as u64);
+        obj.push("conn", conn);
+
+        arr.push_value(obj);
+    }
+    JsonOutcome::Result(arr)
 }
 
 #[cfg(test)]

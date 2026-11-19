@@ -442,7 +442,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "wifi",
         run: wifi::run,
-        json: None,
+        json: Some(wifi::json),
     },
     ModuleDef {
         name: "sound",
