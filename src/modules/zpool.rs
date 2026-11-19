@@ -11,6 +11,7 @@ use std::ffi::{c_char, c_int, c_void};
 
 use crate::{
     instance::Instance,
+    json::{Json, JsonOutcome},
     modules::{Row, colorize_percent},
     util,
 };
@@ -34,8 +35,6 @@ type ZpoolCloseFn = unsafe extern "C" fn(*mut c_void);
 struct ZpoolItem {
     name: String,
     state: String,
-    /// Only reaches custom formats, which this port does not parse.
-    #[allow(dead_code)]
     guid: u64,
     used: u64,
     total: u64,
@@ -128,14 +127,13 @@ fn kmod_loaded(mod_name: &str) -> bool {
 
 fn detect() -> Result<Vec<ZpoolItem>, &'static str> {
     let Some(libzfs) = super::codec::load_library("zfs", 6) else {
-        // "libzfs.so.6 failed" is an error row, hidden by default.
-        return Err("Failed to load libzfs");
+        return Err("dlopen(libzfs.so) failed");
     };
     // SAFETY: the symbols come from the dlopen-ed libzfs; their signatures
     // are the ones in libzfs_simplified.h.
     unsafe {
         let Some(libzfs_init_raw) = super::codec::load_symbol(libzfs, "libzfs_init") else {
-            return Err("Failed to load libzfs_init()");
+            return Err("dlsym libzfs_init failed");
         };
         let libzfs_init: LibzfsInitFn = std::mem::transmute(libzfs_init_raw);
         let handle = libzfs_init();
@@ -147,14 +145,14 @@ fn detect() -> Result<Vec<ZpoolItem>, &'static str> {
         }
 
         let Some(fini_raw) = super::codec::load_symbol(libzfs, "libzfs_fini") else {
-            return Err("Failed to load libzfs_fini()");
+            return Err("dlsym libzfs_fini failed");
         };
         let libzfs_fini: LibzfsFiniFn = std::mem::transmute(fini_raw);
 
         let outcome = (|| {
             let Some(name_to_prop_raw) = super::codec::load_symbol(libzfs, "zpool_name_to_prop")
             else {
-                return Err("Failed to load zpool_name_to_prop()");
+                return Err("dlsym zpool_name_to_prop failed");
             };
             let name_to_prop: ZpoolNameToPropFn = std::mem::transmute(name_to_prop_raw);
 
@@ -173,24 +171,24 @@ fn detect() -> Result<Vec<ZpoolItem>, &'static str> {
                 let prop_name = std::ffi::CString::new(*prop_name).unwrap_or_default();
                 let id = name_to_prop(prop_name.as_ptr());
                 if id < 0 {
-                    return Err("Failed to query prop");
+                    return Err(format!("Failed to query prop: {}", prop_names[index]).leak());
                 }
                 props[index] = id;
             }
 
             let Some(iter_raw) = super::codec::load_symbol(libzfs, "zpool_iter") else {
-                return Err("Failed to load zpool_iter()");
+                return Err("dlsym zpool_iter failed");
             };
             let zpool_iter: ZpoolIterFn = std::mem::transmute(iter_raw);
             let Some(get_prop_int_raw) = super::codec::load_symbol(libzfs, "zpool_get_prop_int")
             else {
-                return Err("Failed to load zpool_get_prop_int()");
+                return Err("dlsym zpool_get_prop_int failed");
             };
             let Some(get_prop_raw) = super::codec::load_symbol(libzfs, "zpool_get_prop") else {
-                return Err("Failed to load zpool_get_prop()");
+                return Err("dlsym zpool_get_prop failed");
             };
             let Some(close_raw) = super::codec::load_symbol(libzfs, "zpool_close") else {
-                return Err("Failed to load zpool_close()");
+                return Err("dlsym zpool_close failed");
             };
 
             let mut result = Vec::new();
@@ -272,6 +270,32 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             Row::new(&key, item_value(&item, _instance.color))
         })
         .collect()
+}
+
+/// ffGenerateZpoolJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(items) => {
+            let mut arr = Json::Array(Vec::new());
+            for item in &items {
+                let mut obj = Json::obj();
+                obj.push("name", item.name.clone());
+                obj.push("state", item.state.clone());
+                obj.push("guid", item.guid);
+                obj.push("used", item.used);
+                obj.push("allocated", item.allocated);
+                obj.push("total", item.total);
+                match item.fragmentation {
+                    Some(frag) => obj.push("fragmentation", frag),
+                    None => obj.push("fragmentation", Json::Null),
+                }
+                obj.push("readOnly", item.read_only);
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
+    }
 }
 
 #[cfg(test)]

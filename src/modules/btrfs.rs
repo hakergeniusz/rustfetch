@@ -1,12 +1,13 @@
 //! `btrfs` module: mounted btrfs filesystems from /sys/fs/btrfs, ported
-//! from btrfs_linux.c. Only what the default output prints is parsed:
-//! the label, the per-device sizes and the data/metadata/system
-//! allocation profiles; features and generation are custom-format only.
+//! from btrfs_linux.c. The UUID-named directories carry the label, the
+//! per-device sizes, the enabled features and the data/metadata/system
+//! allocation profiles.
 
 use std::path::Path;
 
 use crate::{
     instance::Instance,
+    json::{Json, JsonOutcome},
     modules::{Row, colorize_percent},
     util,
 };
@@ -30,15 +31,28 @@ const PROFILES: [(&str, u64); 9] = [
 
 #[derive(Debug)]
 struct Allocation {
+    /// "data" / "metadata" / "system".
+    type_: &'static str,
+    /// "single" / "dup" / "raidN" / "unknown".
+    profile: &'static str,
+    copies: u64,
     total: u64,
     used: u64,
-    copies: u64,
 }
 
 #[derive(Debug)]
 struct Volume {
-    label: String,
+    uuid: String,
+    name: String,
+    devices: String,
+    features: String,
+    generation: u32,
+    node_size: u32,
+    sector_size: u32,
     total_size: u64,
+    /// global_rsv_reserved (used) and global_rsv_size (total).
+    global_reservation_used: u64,
+    global_reservation_total: u64,
     allocations: [Allocation; 3],
 }
 
@@ -51,14 +65,15 @@ fn read_u64(path: &Path) -> Option<u64> {
     util::read_file(path.to_str()?)?.trim().parse().ok()
 }
 
-/// The first profile directory present under allocation/<type>/.
-fn detect_profile(type_dir: &Path) -> u64 {
+/// The first profile directory present under allocation/<type>/, with the
+/// redundancy factor each contributes.
+fn detect_profile(type_dir: &Path) -> (&'static str, u64) {
     for (name, copies) in PROFILES {
-        if type_dir.join(name).exists() {
-            return copies;
+        if type_dir.join(name).is_dir() {
+            return (name, copies);
         }
     }
-    1 // "unknown" behaves like single
+    ("unknown", 1)
 }
 
 /// Missing files count as zero, like upstream's ignored error return.
@@ -66,20 +81,45 @@ fn detect_allocation(root: &Path) -> [Allocation; 3] {
     let alloc_dir = root.join("allocation");
     ["data", "metadata", "system"].map(|type_| {
         let type_dir = alloc_dir.join(type_);
+        let (profile, copies) = detect_profile(&type_dir);
         Allocation {
+            type_,
+            profile,
+            copies,
             total: read_u64(&type_dir.join("total_bytes")).unwrap_or(0),
             used: read_u64(&type_dir.join("bytes_used")).unwrap_or(0),
-            copies: detect_profile(&type_dir),
         }
     })
 }
 
-fn detect() -> Option<Vec<Volume>> {
+/// The comma-joined directory entry names, readdir order (dot entries
+/// skipped), like upstream's enumerateDevices/enumerateFeatures.
+fn join_dir_names(dir: &Path) -> String {
+    let mut joined = String::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            if !joined.is_empty() {
+                joined.push(',');
+            }
+            joined.push_str(&name);
+        }
+    }
+    joined
+}
+
+fn detect() -> Result<Vec<Volume>, &'static str> {
+    let Ok(entries) = std::fs::read_dir("/sys/fs/btrfs") else {
+        return Err("opendir(\"/sys/fs/btrfs\") == nullptr");
+    };
+
     let mut volumes = Vec::new();
-    for entry in std::fs::read_dir("/sys/fs/btrfs").ok()?.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.starts_with('.') || !is_uuid(&name) {
+    for entry in entries.flatten() {
+        let uuid = entry.file_name().to_string_lossy().into_owned();
+        if uuid.starts_with('.') || !is_uuid(&uuid) {
             continue;
         }
         let root = entry.path();
@@ -98,23 +138,37 @@ fn detect() -> Option<Vec<Volume>> {
             }
         }
 
-        let label = util::read_file(root.join("label").to_str()?)
+        let name = util::read_file(root.join("label").to_str().unwrap_or(""))
             .unwrap_or_default()
             .trim_end()
             .to_string();
         let allocations = detect_allocation(&root);
+        // global_rsv_reserved is the used part of the reservation,
+        // global_rsv_size its total.
+        let global_reservation_used =
+            read_u64(&root.join("allocation/global_rsv_reserved")).unwrap_or(0);
+        let global_reservation_total =
+            read_u64(&root.join("allocation/global_rsv_size")).unwrap_or(0);
 
         volumes.push(Volume {
-            label,
+            uuid,
+            name,
+            devices: join_dir_names(&root.join("devices")),
+            features: join_dir_names(&root.join("features")),
+            generation: read_u64(&root.join("generation")).unwrap_or(0) as u32,
+            node_size: read_u64(&root.join("nodesize")).unwrap_or(0) as u32,
+            sector_size: read_u64(&root.join("sectorsize")).unwrap_or(0) as u32,
             total_size,
+            global_reservation_used,
+            global_reservation_total,
             allocations,
         });
     }
-    Some(volumes)
+    Ok(volumes)
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
-    let Some(volumes) = detect() else {
+    let Ok(volumes) = detect() else {
         // "opendir(\"/sys/fs/btrfs\") == nullptr" is an error row, hidden
         // by default.
         return Vec::new();
@@ -127,10 +181,10 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     volumes
         .iter()
         .map(|volume| {
-            let key = if volume.label.is_empty() {
+            let key = if volume.name.is_empty() {
                 "BTRFS".to_string()
             } else {
-                format!("BTRFS ({})", volume.label)
+                format!("BTRFS ({})", volume.name)
             };
             let mut used = 0;
             let mut allocated = 0;
@@ -163,6 +217,45 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         .collect()
 }
 
+/// ffGenerateBtrfsJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(volumes) => {
+            let mut arr = Json::Array(Vec::new());
+            for volume in &volumes {
+                let mut obj = Json::obj();
+                obj.push("name", volume.name.clone());
+                obj.push("uuid", volume.uuid.clone());
+                obj.push("devices", volume.devices.clone());
+                obj.push("features", volume.features.clone());
+                obj.push("generation", volume.generation as u64);
+                obj.push("nodeSize", volume.node_size as u64);
+                obj.push("sectorSize", volume.sector_size as u64);
+                obj.push("totalSize", volume.total_size);
+                let mut reservation = Json::obj();
+                reservation.push("used", volume.global_reservation_used);
+                reservation.push("total", volume.global_reservation_total);
+                obj.push("globalReservation", reservation);
+
+                let mut allocation = Json::Array(Vec::new());
+                for alloc in &volume.allocations {
+                    let mut item = Json::obj();
+                    item.push("type", alloc.type_);
+                    item.push("profile", alloc.profile);
+                    item.push("copies", alloc.copies);
+                    item.push("used", alloc.used);
+                    item.push("total", alloc.total);
+                    allocation.push_value(item);
+                }
+                obj.push("allocation", allocation);
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -193,21 +286,9 @@ mod tests {
     #[test]
     fn totals_multiply_by_copies() {
         let allocations = [
-            super::Allocation {
-                total: 426283892736,
-                used: 346880049152,
-                copies: 1,
-            },
-            super::Allocation {
-                total: 11811160064,
-                used: 8458993664,
-                copies: 2,
-            },
-            super::Allocation {
-                total: 8388608,
-                used: 65536,
-                copies: 2,
-            },
+            super::Allocation { type_: "data", profile: "single", copies: 1, total: 426283892736, used: 346880049152 },
+            super::Allocation { type_: "metadata", profile: "dup", copies: 2, total: 11811160064, used: 8458993664 },
+            super::Allocation { type_: "system", profile: "dup", copies: 2, total: 8388608, used: 65536 },
         ];
         let mut used = 0;
         let mut allocated = 0;

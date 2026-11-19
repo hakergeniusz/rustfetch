@@ -402,7 +402,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "btrfs",
         run: btrfs::run,
-        json: None,
+        json: Some(btrfs::json),
     },
     ModuleDef {
         name: "physicaldisk",
@@ -452,7 +452,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "zpool",
         run: zpool::run,
-        json: None,
+        json: Some(zpool::json),
     },
     ModuleDef {
         name: "datetime",
