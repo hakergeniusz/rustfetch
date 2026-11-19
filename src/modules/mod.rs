@@ -317,22 +317,22 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "font",
         run: font::run,
-        json: None,
+        json: Some(font::json),
     },
     ModuleDef {
         name: "cursor",
         run: cursor::run,
-        json: None,
+        json: Some(cursor::json),
     },
     ModuleDef {
         name: "terminal",
         run: terminal::run,
-        json: None,
+        json: Some(terminal::json),
     },
     ModuleDef {
         name: "terminalfont",
         run: terminalfont::run,
-        json: None,
+        json: Some(terminalfont::json),
     },
     ModuleDef {
         name: "terminalsize",
