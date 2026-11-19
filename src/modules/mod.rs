@@ -307,12 +307,12 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "theme",
         run: theme::run,
-        json: None,
+        json: Some(theme::json),
     },
     ModuleDef {
         name: "icons",
         run: icons::run,
-        json: None,
+        json: Some(icons::json),
     },
     ModuleDef {
         name: "font",
@@ -382,7 +382,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "terminaltheme",
         run: terminaltheme::run,
-        json: None,
+        json: Some(terminaltheme::json),
     },
     ModuleDef {
         name: "top",

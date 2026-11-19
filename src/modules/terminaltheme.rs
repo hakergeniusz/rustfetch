@@ -3,7 +3,11 @@
 //! (non-canonical, 1s poll timeout); without a response the COLORFGBG
 //! environment variable maps onto the classic 16-color palette.
 
-use crate::{instance::Instance, modules::Row};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+};
 
 type Rgb = (u16, u16, u16);
 
@@ -265,4 +269,21 @@ mod tests {
         let color = color_from_palette(15);
         assert!(!color.dark);
     }
+}
+
+/// ffGenerateTerminalThemeJsonResult: {fg, bg} with r/g/b/dark each.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let Some((fg, bg)) = detect_by_escape().or_else(detect_by_env) else {
+        return JsonOutcome::Error("Failed to detect terminal theme".to_string());
+    };
+    let mut obj = Json::obj();
+    for (key, color) in [("fg", &fg), ("bg", &bg)] {
+        let mut channel = Json::obj();
+        channel.push("r", color.r as u64);
+        channel.push("g", color.g as u64);
+        channel.push("b", color.b as u64);
+        channel.push("dark", color.dark);
+        obj.push(key, channel);
+    }
+    JsonOutcome::Result(obj)
 }
