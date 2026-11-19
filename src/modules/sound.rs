@@ -1706,6 +1706,7 @@ mod tests {
     #[test]
     fn device_value_matches_the_default_format() {
         let device = SoundDevice {
+            identifier: "auto_null".into(),
             platform_api: "PipeWire 1.4.3".into(),
             name: "Dummy Output".into(),
             volume: 100,
