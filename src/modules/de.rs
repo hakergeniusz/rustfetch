@@ -1,7 +1,14 @@
-//! `de` module: desktop environment from XDG_CURRENT_DESKTOP, with version
-//! detection ported from fastfetch's per-DE sources.
+//! `de` module: desktop environment from the shared WM/DE detection
+//! (displayserver.rs), with version detection ported from
+//! detection/de/de_linux.c.
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    modules::displayserver,
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 /// Maps XDG_CURRENT_DESKTOP tokens to display names, matching fastfetch.
 const DESKTOPS: &[(&str, &str)] = &[
@@ -23,12 +30,15 @@ const DESKTOPS: &[(&str, &str)] = &[
     ("Deepin", "Deepin"),
 ];
 
-/// Version string for the desktop environment, when it can be detected.
-/// Mirrors fastfetch: an in-process D-Bus property read first (GNOME's
-/// org.gnome.Shell ShellVersion), a spawn of the DE's own binary otherwise.
+/// ffDetectDEVersion for the desktops this port supports; the GNOME and
+/// Cinnamon sources match upstream, the rest spawn the DE binary like
+/// upstream's fallback.
 fn de_version(name: &str) -> Option<String> {
-    if name == "Cinnamon" {
-        return std::env::var("CINNAMON_VERSION").ok();
+    if name == "Cinnamon"
+        && let Ok(value) = std::env::var("CINNAMON_VERSION")
+        && !value.is_empty()
+    {
+        return Some(value);
     }
 
     // fastfetch's getGnomeByDbus: "GNOME Shell 51.1" -> "51.1" without
@@ -47,8 +57,8 @@ fn de_version(name: &str) -> Option<String> {
     let (program, args): (&str, &[&str]) = match name {
         "GNOME" | "GNOME Classic" => ("gnome-shell", &["--version"]),
         "KDE Plasma" => ("plasmashell", &["--version"]),
-        "Xfce" => ("xfce4-session", &["--version"]),
-        "MATE" => ("mate-session", &["--version"]),
+        "Xfce4" | "Xfce" => ("xfce4-session", &["--version"]),
+        "Mate" | "MATE" => ("mate-session", &["--version"]),
         "LXQt" => ("lxqt-session", &["--version"]),
         "Budgie" => ("budgie-desktop", &["--version"]),
         _ => return None,
@@ -80,26 +90,30 @@ pub fn detect() -> Option<&'static str> {
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Ok(raw) = std::env::var("XDG_CURRENT_DESKTOP") else {
-        return Vec::new();
-    };
-
-    // The variable can be a colon-separated list; take the first entry.
-    let token = raw.split(':').next().unwrap_or("");
-
-    let name = DESKTOPS
-        .iter()
-        .find(|(key, _)| key.eq_ignore_ascii_case(token))
-        .map(|(_, pretty)| *pretty)
-        .unwrap_or(token);
-
-    if name.is_empty() {
+    let ds = displayserver::connect();
+    if ds.de_pretty_name.is_empty() {
+        // "No DE found" is an error row, hidden by default.
         return Vec::new();
     }
 
-    let value = match de_version(name) {
-        Some(version) => format!("{name} {version}"),
-        None => name.to_string(),
-    };
+    let mut value = ds.de_pretty_name.clone();
+    if let Some(version) = de_version(&ds.de_pretty_name) {
+        value.push(' ');
+        value.push_str(&version);
+    }
     vec![Row::new("Desktop Environment", value)]
+}
+
+/// ffGenerateDEJsonResult: process and pretty names from the shared
+/// detection plus ffDetectDEVersion.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let ds = displayserver::connect();
+    if ds.de_pretty_name.is_empty() {
+        return JsonOutcome::Error("No DE found".to_string());
+    }
+    let mut result = Json::obj();
+    result.push("processName", ds.de_process_name.clone());
+    result.push("prettyName", ds.de_pretty_name.clone());
+    result.push("version", de_version(&ds.de_pretty_name).unwrap_or_default());
+    JsonOutcome::Result(result)
 }

@@ -23,6 +23,7 @@ pub mod datetime;
 pub mod de;
 pub mod disk;
 pub mod diskio;
+pub mod displayserver;
 pub mod display;
 pub mod dns;
 pub mod editor;
@@ -291,17 +292,17 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "de",
         run: de::run,
-        json: None,
+        json: Some(de::json),
     },
     ModuleDef {
         name: "wm",
         run: wm::run,
-        json: None,
+        json: Some(wm::json),
     },
     ModuleDef {
         name: "wmtheme",
         run: wmtheme::run,
-        json: None,
+        json: Some(wmtheme::json),
     },
     ModuleDef {
         name: "theme",
