@@ -1,10 +1,24 @@
 //! `localip` module: interface addresses via getifaddrs(3), no spawning.
 //! fastfetch's defaults: IPv4 with prefix length, only the interface holding
-//! the default route (DEFAULT_ROUTE_ONLY).
+//! the default route (DEFAULT_ROUTE_ONLY). The filter chain matches
+//! detection/localip/localip_linux.c: running interfaces, no loopback,
+//! AF_INET/AF_INET6 only.
 
 use std::net::Ipv4Addr;
 
-use crate::{instance::Instance, modules::Row};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+};
+
+pub struct LocalIpResult {
+    pub name: String,
+    /// Whether the interface holds the IPv4 default route.
+    pub default_route_ipv4: bool,
+    /// "addr" or "addr/prefix" (the PREFIX_LEN default).
+    pub ipv4: String,
+}
 
 /// The interface owning the default route, from /proc/net/route (destination
 /// 00000000); fastfetch asks netlink for the same thing.
@@ -42,44 +56,98 @@ fn prefix_bits(netmask: *const libc::sockaddr, max: u8) -> u8 {
     }
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Some(route_iface) = default_route_iface() else {
-        return Vec::new();
-    };
+/// ffDetectLocalIps with the default options: IPv4 only, prefix length,
+/// default-route interfaces only.
+fn detect() -> Result<Vec<LocalIpResult>, &'static str> {
+    let route_iface = default_route_iface().unwrap_or_default();
 
     let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
     // SAFETY: getifaddrs allocates a list we own and freeifaddrs frees it.
     if unsafe { libc::getifaddrs(&mut ifap) } != 0 || ifap.is_null() {
-        return Vec::new();
+        return Err("getifaddrs(&ifAddrStruct) failed");
     }
 
-    let mut rows = Vec::new();
+    let mut results: Vec<LocalIpResult> = Vec::new();
     let mut cursor = ifap;
     while !cursor.is_null() {
         // SAFETY: cursor walks the list returned by getifaddrs until null.
         let ifa = unsafe { *cursor };
         cursor = ifa.ifa_next;
 
-        let name = unsafe { std::ffi::CStr::from_ptr(ifa.ifa_name) }.to_string_lossy().into_owned();
-        if name != route_iface || ifa.ifa_addr.is_null() {
+        if ifa.ifa_addr.is_null() {
+            continue;
+        }
+        // IFF_RUNNING
+        if ifa.ifa_flags & libc::IFF_RUNNING as u32 == 0 {
+            continue;
+        }
+        // IFF_LOOPBACK (the LOOP show-type bit is off by default)
+        if ifa.ifa_flags & libc::IFF_LOOPBACK as u32 != 0 {
+            continue;
+        }
+        // Only AF_INET (no MAC bit); IPv6 show-type is off by default.
+        // SAFETY: ifa_addr is a valid sockaddr of the family it reports.
+        if unsafe { (*ifa.ifa_addr).sa_family as i32 } != libc::AF_INET {
+            continue;
+        }
+        let name =
+            unsafe { std::ffi::CStr::from_ptr(ifa.ifa_name) }.to_string_lossy().into_owned();
+        // DEFAULT_ROUTE_ONLY with the IPv4 show bit.
+        if name != route_iface {
             continue;
         }
 
-        // SAFETY: ifa_addr is a valid sockaddr of the family it reports.
-        if unsafe { (*ifa.ifa_addr).sa_family as i32 } == libc::AF_INET {
-            let sin = unsafe { &*(ifa.ifa_addr as *const libc::sockaddr_in) };
-            let octets = u32::from_be(sin.sin_addr.s_addr).to_be_bytes();
-            let ip = Ipv4Addr::new(octets[0], octets[1], octets[2], octets[3]);
-            if !ip.is_loopback() && !ip.is_link_local() && !ip.is_unspecified() {
-                let prefix = prefix_bits(ifa.ifa_netmask, 32);
-                rows.push(Row::new(&format!("Local IP ({name})"), format!("{ip}/{prefix}")));
-            }
+        let sin = unsafe { &*(ifa.ifa_addr as *const libc::sockaddr_in) };
+        let octets = u32::from_be(sin.sin_addr.s_addr).to_be_bytes();
+        let ip = Ipv4Addr::new(octets[0], octets[1], octets[2], octets[3]);
+        let prefix = prefix_bits(ifa.ifa_netmask, 32);
+
+        // Multiple addresses share one adapter entry; without ALL_IPS the
+        // first one wins.
+        if results.iter().any(|result| result.name == name) {
+            continue;
         }
+        results.push(LocalIpResult {
+            default_route_ipv4: true,
+            name,
+            ipv4: format!("{ip}/{prefix}"),
+        });
     }
 
     // SAFETY: frees the list obtained by getifaddrs above.
     unsafe { libc::freeifaddrs(ifap) };
-    rows
+    Ok(results)
+}
+
+pub fn run(_instance: &Instance) -> Vec<Row> {
+    let Ok(results) = detect() else {
+        return Vec::new();
+    };
+    results
+        .iter()
+        .map(|ip| Row::new(&format!("Local IP ({})", ip.name), ip.ipv4.clone()))
+        .collect()
+}
+
+/// ffGenerateLocalIpJsonResult: name, defaultRoute.ipv4 and ipv4 for the
+/// default show type.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(results) => {
+            let mut arr = Json::Array(Vec::new());
+            for ip in &results {
+                let mut obj = Json::obj();
+                obj.push("name", ip.name.clone());
+                let mut default_route = Json::obj();
+                default_route.push("ipv4", ip.default_route_ipv4);
+                obj.push("defaultRoute", default_route);
+                obj.push("ipv4", ip.ipv4.clone());
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
+    }
 }
 
 #[cfg(test)]

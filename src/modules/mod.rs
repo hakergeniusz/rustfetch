@@ -432,7 +432,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "localip",
         run: localip::run,
-        json: None,
+        json: Some(localip::json),
     },
     ModuleDef {
         name: "dns",
