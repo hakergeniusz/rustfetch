@@ -213,6 +213,11 @@ fn detect_stats(disk: &mut DiskResult) {
     }
 
     // SYS_statx with STATX_BTIME; birth times before Linux existed are noise.
+    //
+    // The buffer must match the kernel UAPI struct exactly: the syscall has
+    // no buffer-size argument and always copies the full 256-byte struct,
+    // so a short buffer is a stack overflow (absorbed by debug builds'
+    // larger frames, fatal in release).
     #[repr(C)]
     struct StatxTimestamp {
         sec: i64,
@@ -237,7 +242,16 @@ fn detect_stats(disk: &mut DiskResult) {
         btime: StatxTimestamp,
         ctime: StatxTimestamp,
         mtime: StatxTimestamp,
+        rdev_major: u32,
+        rdev_minor: u32,
+        dev_major: u32,
+        dev_minor: u32,
+        mnt_id: u64,
+        // Everything newer kernels fill (dio read/write alignments, memcg
+        // id, future spares) lands in this tail.
+        spare: [u8; 104],
     }
+    const _: () = assert!(std::mem::size_of::<Statx>() == 256);
     let mut stx: Statx = unsafe { std::mem::zeroed() };
     // SAFETY: the syscall only writes into stx; c_path stays valid.
     let ret = unsafe {
