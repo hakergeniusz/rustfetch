@@ -472,7 +472,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "poweradapter",
         run: poweradapter::run,
-        json: None,
+        json: Some(poweradapter::json),
     },
     ModuleDef {
         name: "camera",
