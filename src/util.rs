@@ -326,6 +326,31 @@ pub fn dict_entries(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// ffTimeToFullStr: "<date>T<time>.<millis><±hhmm>" in the local timezone,
+/// e.g. "2026-11-18T20:37:36.116+0100".
+pub fn time_to_full_str(msec: u64) -> String {
+    if msec == 0 {
+        return String::new();
+    }
+    let seconds_since_epoch = (msec / 1000) as i64;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe { libc::localtime_r(&seconds_since_epoch, &mut tm) };
+    let offset = tm.tm_gmtoff.unsigned_abs();
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}{}{:02}{:02}",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday,
+        tm.tm_hour,
+        tm.tm_min,
+        tm.tm_sec,
+        msec % 1000,
+        if tm.tm_gmtoff < 0 { '-' } else { '+' },
+        offset / 3600,
+        (offset % 3600) / 60,
+    )
+}
+
 /// ffDurationAppendNum: "<N days, [N hours,] N mins>" for a duration in
 /// whole seconds. Seconds fold into minutes with a >= 30 bump, zero tails
 /// are omitted, and 100+ days carry the "(!)" marker. Sub-minute

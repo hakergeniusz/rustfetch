@@ -226,7 +226,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "uptime",
         run: uptime::run,
-        json: None,
+        json: Some(uptime::json),
     },
     ModuleDef {
         name: "users",
@@ -266,7 +266,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "packages",
         run: packages::run,
-        json: None,
+        json: Some(packages::json),
     },
     ModuleDef {
         name: "shell",
@@ -371,7 +371,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "memory",
         run: memory::run,
-        json: None,
+        json: Some(memory::json),
     },
     ModuleDef {
         name: "monitor",
@@ -391,7 +391,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "swap",
         run: swap::run,
-        json: None,
+        json: Some(swap::json),
     },
     ModuleDef {
         name: "disk",

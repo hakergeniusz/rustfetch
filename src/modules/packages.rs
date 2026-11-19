@@ -1,7 +1,14 @@
 //! `packages` module: installed package counts across package managers,
-//! detected from on-disk databases without spawning any process.
+//! detected from on-disk databases without spawning any process. The JSON
+//! result emits `all` plus every manager count above zero, in
+//! ffGeneratePackagesJsonResult's alphabetical field order.
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 /// Counts subdirectories of a directory (0 when missing).
 fn count_subdirs(path: &str) -> u64 {
@@ -79,7 +86,66 @@ fn flatpak_runtime_packages(base: &str) -> u64 {
         .unwrap_or(0)
 }
 
+/// The manager counts ffDetectPackages fills; only the managers this port
+/// detects are listed, the rest stay 0. `all` is their sum.
+#[derive(Default)]
+pub struct PackagesResult {
+    dpkg: u64,
+    flatpak_system: u64,
+    flatpak_user: u64,
+    pacman: u64,
+    apk: u64,
+    emerge: u64,
+    snap: u64,
+    pacman_branch: String,
+}
+
+impl PackagesResult {
+    /// result->all += ((uint32_t*) result)[i]: the sum of every count.
+    fn all(&self) -> u64 {
+        self.dpkg
+            + self.flatpak_system
+            + self.flatpak_user
+            + self.pacman
+            + self.apk
+            + self.emerge
+            + self.snap
+    }
+}
+
+fn detect() -> PackagesResult {
+    let mut counts = PackagesResult {
+        dpkg: count_prefixed_lines("/var/lib/dpkg/status", "Package: "),
+        flatpak_system: flatpak_app_packages("/var/lib/flatpak")
+            + flatpak_runtime_packages("/var/lib/flatpak"),
+        flatpak_user: std::env::var("HOME")
+            .map(|home| {
+                flatpak_app_packages(&format!("{home}/.local/share/flatpak"))
+                    + flatpak_runtime_packages(&format!("{home}/.local/share/flatpak"))
+            })
+            .unwrap_or(0),
+        pacman: count_subdirs("/var/lib/pacman/local"),
+        apk: count_prefixed_lines("/lib/apk/db/installed", "P:"),
+        emerge: count_nested_dirs("/var/db/pkg"),
+        snap: count_files_with_ext("/var/lib/snapd/snaps", "snap"),
+        pacman_branch: String::new(),
+    };
+    // Manjaro reports its update branch from pacman-mirrors.conf; the file
+    // existing without a Branch line means the default branch.
+    if let Some(content) = util::read_file("/etc/pacman-mirrors.conf") {
+        counts.pacman_branch = content
+            .lines()
+            .find_map(|line| {
+                let (key, value) = line.split_once('=')?;
+                (key.trim() == "Branch").then(|| value.trim().to_string())
+            })
+            .unwrap_or_else(|| "stable".to_string());
+    }
+    counts
+}
+
 pub fn run(_instance: &Instance) -> Vec<Row> {
+    let counts = detect();
     let mut any = false;
     let mut parts = Vec::new();
 
@@ -91,30 +157,48 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     };
 
     // managers in fastfetch's alphabetical print order
-    add(count_prefixed_lines("/var/lib/dpkg/status", "Package: "), "dpkg");
+    add(counts.dpkg, "dpkg");
 
-    let flatpak_system =
-        flatpak_app_packages("/var/lib/flatpak") + flatpak_runtime_packages("/var/lib/flatpak");
-    let flatpak_user = std::env::var("HOME")
-        .map(|home| {
-            flatpak_app_packages(&format!("{home}/.local/share/flatpak"))
-                + flatpak_runtime_packages(&format!("{home}/.local/share/flatpak"))
-        })
-        .unwrap_or(0);
-    if flatpak_user > 0 {
-        add(flatpak_system, "flatpak-system");
-        add(flatpak_user, "flatpak-user");
+    if counts.flatpak_user > 0 {
+        add(counts.flatpak_system, "flatpak-system");
+        add(counts.flatpak_user, "flatpak-user");
     } else {
-        add(flatpak_system, "flatpak");
+        add(counts.flatpak_system, "flatpak");
     }
 
-    add(count_subdirs("/var/lib/pacman/local"), "pacman");
-    add(count_prefixed_lines("/lib/apk/db/installed", "P:"), "apk");
-    add(count_nested_dirs("/var/db/pkg"), "portage");
-    add(count_files_with_ext("/var/lib/snapd/snaps", "snap"), "snap");
+    add(counts.pacman, "pacman");
+    add(counts.apk, "apk");
+    add(counts.emerge, "portage");
+    add(counts.snap, "snap");
 
     if !any {
         return Vec::new();
     }
     vec![Row::new("Packages", parts.join(", "))]
+}
+
+/// ffGeneratePackagesJsonResult: `all` plus each nonzero manager count,
+/// alphabetical, plus pacmanBranch when set.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let counts = detect();
+    let mut result = Json::obj();
+    result.push("all", counts.all());
+    let entries = [
+        ("apk", counts.apk),
+        ("dpkg", counts.dpkg),
+        ("emerge", counts.emerge),
+        ("flatpakSystem", counts.flatpak_system),
+        ("flatpakUser", counts.flatpak_user),
+        ("pacman", counts.pacman),
+        ("snap", counts.snap),
+    ];
+    for (name, count) in entries {
+        if count > 0 {
+            result.push(name, count);
+        }
+    }
+    if !counts.pacman_branch.is_empty() {
+        result.push("pacmanBranch", counts.pacman_branch);
+    }
+    JsonOutcome::Result(result)
 }
