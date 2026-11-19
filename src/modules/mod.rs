@@ -342,7 +342,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "cpu",
         run: cpu::run,
-        json: None,
+        json: Some(cpu::json),
     },
     ModuleDef {
         name: "cpucache",
