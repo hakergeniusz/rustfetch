@@ -4,6 +4,7 @@
 
 use crate::{
     instance::Instance,
+    json::JsonOutcome,
     modules::{Row, display},
 };
 
@@ -130,4 +131,9 @@ mod tests {
         edid[133] = 5;
         assert!(!super::display::hdr_compatible(&edid));
     }
+}
+
+/// ffGenerateMonitorJsonResult: the module is a Display alias.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    JsonOutcome::Error("Monitor module is an alias of Display module".to_string())
 }

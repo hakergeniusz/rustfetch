@@ -347,12 +347,12 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "cpucache",
         run: cpucache::run,
-        json: None,
+        json: Some(cpucache::json),
     },
     ModuleDef {
         name: "cpuusage",
         run: cpuusage::run,
-        json: None,
+        json: Some(cpuusage::json),
     },
     ModuleDef {
         name: "gpu",
@@ -362,12 +362,12 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "gamepad",
         run: gamepad::run,
-        json: None,
+        json: Some(gamepad::json),
     },
     ModuleDef {
         name: "mouse",
         run: mouse::run,
-        json: None,
+        json: Some(mouse::json),
     },
     ModuleDef {
         name: "memory",
@@ -377,7 +377,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "monitor",
         run: monitor::run,
-        json: None,
+        json: Some(monitor::json),
     },
     ModuleDef {
         name: "terminaltheme",

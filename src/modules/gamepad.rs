@@ -5,7 +5,12 @@
 
 use std::path::Path;
 
-use crate::{instance::Instance, modules::Row, modules::colorize_percent, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::{colorize_percent, Row},
+    util,
+};
 
 fn battery_percent(device_path: &Path) -> u8 {
     let Ok(supplies) = std::fs::read_dir(device_path.join("device/power_supply")) else {
@@ -39,7 +44,13 @@ fn battery_percent(device_path: &Path) -> u8 {
     0
 }
 
-fn detect() -> Vec<(String, u8)> {
+pub struct GamepadDevice {
+    pub name: String,
+    pub serial: String,
+    pub battery: u8,
+}
+
+fn detect() -> Vec<GamepadDevice> {
     let Ok(entries) = std::fs::read_dir("/sys/class/input") else {
         return Vec::new();
     };
@@ -52,7 +63,11 @@ fn detect() -> Vec<(String, u8)> {
         let Some(device_name) = util::read_trimmed_in(&entry.path(), "device/name") else {
             continue;
         };
-        devices.push((device_name, battery_percent(&entry.path())));
+        devices.push(GamepadDevice {
+            battery: battery_percent(&entry.path()),
+            serial: util::read_trimmed_in(&entry.path(), "device/uniq").unwrap_or_default(),
+            name: device_name,
+        });
     }
     devices
 }
@@ -67,7 +82,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     devices
         .iter()
         .enumerate()
-        .map(|(index, (name, battery))| {
+        .map(|(index, device)| {
             let index = if devices.len() == 1 { 0 } else { index + 1 };
             let key = if index == 0 {
                 "Gamepad".to_string()
@@ -75,10 +90,10 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 format!("Gamepad {index}")
             };
 
-            let mut value = name.clone();
+            let mut value = device.name.clone();
             // The gamepad percent config is the inverted {50, 20}.
-            if *battery > 0 && *battery <= 100 {
-                let pct = colorize_percent(*battery as f64, 50, 20, instance.color);
+            if device.battery > 0 && device.battery <= 100 {
+                let pct = colorize_percent(device.battery as f64, 50, 20, instance.color);
                 if value.is_empty() {
                     value = pct;
                 } else {
@@ -88,6 +103,21 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             Row::new(&key, value)
         })
         .collect()
+}
+
+/// ffGenerateGamepadJsonResult: 0 means "no battery reported".
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let devices = detect();
+    let mut arr = Json::Array(Vec::new());
+    for device in &devices {
+        let mut obj = Json::obj();
+        obj.push("serial", device.serial.clone());
+        obj.push("name", device.name.clone());
+        obj.push("battery", device.battery as u64);
+        obj.push("ignored", false);
+        arr.push_value(obj);
+    }
+    JsonOutcome::Result(arr)
 }
 
 #[cfg(test)]

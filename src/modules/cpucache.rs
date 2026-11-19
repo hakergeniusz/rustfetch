@@ -7,7 +7,12 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum CacheType {
@@ -21,6 +26,7 @@ struct CacheEntry {
     type_: CacheType,
     size: u64,
     num: u32,
+    line_size: u32,
 }
 
 /// sysfs writes sizes like "48K"; strtoul stops at the suffix.
@@ -30,7 +36,7 @@ fn parse_leading_u64(text: &str) -> Option<u64> {
 }
 
 /// ffCPUCacheAddItem: equal size+type caches accumulate into one entry.
-fn add_item(caches: &mut Vec<CacheEntry>, type_: CacheType, size: u64) {
+fn add_item(caches: &mut Vec<CacheEntry>, type_: CacheType, size: u64, line_size: u32) {
     if let Some(entry) = caches.iter_mut().find(|entry| entry.type_ == type_ && entry.size == size)
     {
         entry.num += 1;
@@ -39,11 +45,12 @@ fn add_item(caches: &mut Vec<CacheEntry>, type_: CacheType, size: u64) {
             type_,
             size,
             num: 1,
+            line_size,
         });
     }
 }
 
-fn parse_index(path: &Path) -> Option<(u32, u64, CacheType, String)> {
+fn parse_index(path: &Path) -> Option<(u32, u64, CacheType, u32, String)> {
     let level = parse_leading_u64(&util::read_trimmed_in(path, "level")?)? as u32;
     if !(1..=4).contains(&level) {
         return None;
@@ -59,8 +66,9 @@ fn parse_index(path: &Path) -> Option<(u32, u64, CacheType, String)> {
         'T' => CacheType::Trace,
         _ => return None,
     };
+    let line_size = parse_leading_u64(&util::read_trimmed_in(path, "coherency_line_size").unwrap_or_default()).unwrap_or(0) as u32;
     let shared_list = util::read_trimmed_in(path, "shared_cpu_list").unwrap_or_default();
-    Some((level, size_kb * 1024, type_, shared_list))
+    Some((level, size_kb * 1024, type_, line_size, shared_list))
 }
 
 fn detect() -> Vec<Vec<CacheEntry>> {
@@ -87,12 +95,12 @@ fn detect() -> Vec<Vec<CacheEntry>> {
             {
                 continue;
             }
-            if let Some((level, size, type_, shared_list)) = parse_index(&index.path()) {
+            if let Some((level, size, type_, line_size, shared_list)) = parse_index(&index.path()) {
                 // "[list]_level_size_type" — the shared list already pins
                 // down one physical instance.
                 let identity = format!("[{shared_list}]_{level}_{size}_{type_:?}");
                 if seen.insert(identity) {
-                    add_item(&mut result[(level - 1) as usize], type_, size);
+                    add_item(&mut result[(level - 1) as usize], type_, size, line_size);
                 }
             }
         }
@@ -137,15 +145,46 @@ mod tests {
         let mut caches = Vec::new();
         // Six distinct cache instances of the same size and type collapse
         // into "6x".
-        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024);
-        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024);
-        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024);
-        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024);
-        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024);
-        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024);
-        super::add_item(&mut caches, super::CacheType::Instruction, 32 * 1024);
+        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
+        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
+        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
+        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
+        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
+        super::add_item(&mut caches, super::CacheType::Data, 48 * 1024, 64);
+        super::add_item(&mut caches, super::CacheType::Instruction, 32 * 1024, 64);
         assert_eq!(caches.len(), 2);
         assert_eq!(caches[0].num, 6);
         assert_eq!(caches[1].num, 1);
     }
+}
+
+/// ffGenerateCPUCacheJsonResult: l1..l4 arrays, the prefix of non-empty
+/// levels only; items carry size, num, lineSize and the type string.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let levels = detect();
+    let mut caches = Json::obj();
+    for (index, level) in levels.iter().enumerate() {
+        if level.is_empty() {
+            break;
+        }
+        let mut arr = Json::Array(Vec::new());
+        for entry in level {
+            let mut obj = Json::obj();
+            obj.push("size", entry.size);
+            obj.push("num", entry.num as u64);
+            obj.push("lineSize", entry.line_size as u64);
+            obj.push(
+                "type",
+                match entry.type_ {
+                    CacheType::Data => "data",
+                    CacheType::Instruction => "instruction",
+                    CacheType::Unified => "unified",
+                    CacheType::Trace => "trace",
+                },
+            );
+            arr.push_value(obj);
+        }
+        caches.push(&format!("l{}", index + 1), arr);
+    }
+    JsonOutcome::Result(caches)
 }

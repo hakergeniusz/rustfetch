@@ -6,7 +6,12 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use crate::{instance::Instance, modules::Row, modules::colorize_percent, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::{colorize_percent, Row},
+    util,
+};
 
 const WAIT_MS: u64 = 200;
 
@@ -62,7 +67,7 @@ pub(crate) fn prepare() {
     }
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+fn detect() -> Result<Vec<f64>, &'static str> {
     // The baseline guard is released before any retry sleeps below.
     let times1 = {
         let mut baseline = match BASELINE.lock() {
@@ -79,7 +84,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             },
             None => {
                 let Some(times1) = read_times() else {
-                    return Vec::new();
+                    return Err("No CPU cores found");
                 };
                 std::thread::sleep(Duration::from_millis(WAIT_MS));
                 Some(times1)
@@ -87,7 +92,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         }
     };
     let Some(times1) = times1 else {
-        return Vec::new();
+        return Err("No CPU cores found");
     };
 
     // A core's time can stand still between two quick samples; retry like
@@ -102,25 +107,52 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                 }
                 std::thread::sleep(Duration::from_millis(WAIT_MS));
             },
-            None => return Vec::new(),
+            None => return Err("No CPU cores found"),
         }
     }
     let Some(times2) = times2 else {
-        return Vec::new();
+        return Err("CPU time did not increase. Try increasing wait time.");
     };
     if times1.len() != times2.len() {
+        return Err("Unexpected CPU usage result");
+    }
+
+    Ok(times1
+        .iter()
+        .zip(&times2)
+        .map(|((in_use1, total1), (in_use2, total2))| {
+            (*in_use2 - *in_use1) as f64 / (*total2 - *total1) as f64 * 100.0
+        })
+        .collect())
+}
+
+pub fn run(instance: &Instance) -> Vec<Row> {
+    let Ok(percentages) = detect() else {
+        return Vec::new();
+    };
+    if percentages.is_empty() {
         return Vec::new();
     }
 
-    let mut sum = 0.0;
-    for ((in_use1, total1), (in_use2, total2)) in times1.iter().zip(&times2) {
-        sum += (*in_use2 - *in_use1) as f64 / (*total2 - *total1) as f64 * 100.0;
-    }
-    let avg = sum / times2.len() as f64;
+    let avg = percentages.iter().sum::<f64>() / percentages.len() as f64;
     vec![Row::new(
         "CPU Usage",
-        colorize_percent(avg, 50, 80, _instance.color),
+        colorize_percent(avg, 50, 80, instance.color),
     )]
+}
+
+/// ffGenerateCPUUsageJsonResult: one percentage per core.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(percentages) => {
+            let mut arr = Json::Array(Vec::new());
+            for percent in percentages {
+                arr.push_value(Json::F64(percent));
+            }
+            JsonOutcome::Result(arr)
+        },
+    }
 }
 
 #[cfg(test)]
