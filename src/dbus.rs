@@ -5,7 +5,8 @@
 use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_void};
 use std::sync::OnceLock;
 
-const DBUS_BUS_SESSION: c_int = 0;
+pub const DBUS_BUS_SESSION: c_int = 0;
+pub const DBUS_BUS_SYSTEM: c_int = 1;
 const DBUS_TYPE_STRING: c_int = b's' as _;
 const DBUS_TYPE_OBJECT_PATH: c_int = b'o' as _;
 const DBUS_TYPE_BYTE: c_int = b'y' as _;
@@ -209,9 +210,20 @@ pub fn get_property_string(
     interface: &str,
     property: &str,
 ) -> Option<String> {
+    get_property_string_on_bus(DBUS_BUS_SESSION, dest, path, interface, property)
+}
+
+/// Same on an explicit bus; login managers live on the system bus.
+pub fn get_property_string_on_bus(
+    bus: std::ffi::c_int,
+    dest: &str,
+    path: &str,
+    interface: &str,
+    property: &str,
+) -> Option<String> {
     let api = dbus_api()?;
     unsafe {
-        let connection = (api.bus_get)(DBUS_BUS_SESSION, std::ptr::null_mut());
+        let connection = (api.bus_get)(bus, std::ptr::null_mut());
         if connection.is_null() {
             return None;
         }

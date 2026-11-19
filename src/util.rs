@@ -59,21 +59,6 @@ pub fn binary_extract_strings(
 
 /// Names of all processes visible in /proc (comm values, truncated to 15
 /// characters by the kernel). Shared by the wm and lm modules.
-pub fn process_comms() -> std::collections::HashSet<String> {
-    std::fs::read_dir("/proc")
-        .map(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .filter(|entry| {
-                    entry.file_name().to_string_lossy().chars().all(|c| c.is_ascii_digit())
-                })
-                .filter_map(|entry| read_trimmed_in(&entry.path(), "comm"))
-                .filter(|comm| !comm.is_empty())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 /// fastfetch's ffParsePropLinePointer for one line: matches `start` against
 /// the line case-insensitively with flexible whitespace (whitespace in the
 /// query matches any amount, even none), then returns the remainder

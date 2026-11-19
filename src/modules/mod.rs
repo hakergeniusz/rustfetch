@@ -257,7 +257,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "lm",
         run: lm::run,
-        json: None,
+        json: Some(lm::json),
     },
     ModuleDef {
         name: "processes",
