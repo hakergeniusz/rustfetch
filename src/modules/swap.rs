@@ -43,32 +43,12 @@ fn detect_by_proc_swaps() -> Option<Result<Vec<SwapResult>, ()>> {
             return Some(Err(()));
         };
         items.push(SwapResult {
-            name: decode_octal_escapes(name),
+            name: util::decode_octal_escapes(name),
             used: used * 1024,
             total: total * 1024,
         });
     }
     Some(Ok(items))
-}
-
-/// The kernel escapes backslashes in device names as \NNN octal triples.
-fn decode_octal_escapes(name: &str) -> String {
-    let bytes = name.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'\\' && index + 3 < bytes.len() {
-            let octal = std::str::from_utf8(&bytes[index + 1..index + 4]).unwrap_or("");
-            if let Ok(value) = u8::from_str_radix(octal, 8) {
-                out.push(value);
-                index += 4;
-                continue;
-            }
-        }
-        out.push(bytes[index]);
-        index += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// detectByProcMeminfo: one aggregate "Total" item, wrapping arithmetic.
@@ -159,9 +139,9 @@ mod tests {
 
     #[test]
     fn decodes_octal_escapes() {
-        assert_eq!(decode_octal_escapes("/dev/sda1"), "/dev/sda1");
-        assert_eq!(decode_octal_escapes("/dev/\\040dir"), "/dev/ dir");
-        assert_eq!(decode_octal_escapes("bad\\9escape"), "bad\\9escape");
+        assert_eq!(util::decode_octal_escapes("/dev/sda1"), "/dev/sda1");
+        assert_eq!(util::decode_octal_escapes("/dev/\\040dir"), "/dev/ dir");
+        assert_eq!(util::decode_octal_escapes("bad\\9escape"), "bad\\9escape");
     }
 
     #[test]

@@ -511,3 +511,45 @@ mod tests {
         assert_eq!(duration_parts(60).join(", "), "1 min");
     }
 }
+
+/// The kernel escapes spaces and control characters in /proc device names
+/// as \NNN octal triples; getmntent decodes them the same way.
+pub fn decode_octal_escapes(name: &str) -> String {
+    let bytes = name.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'\\' && index + 3 < bytes.len() {
+            let octal = std::str::from_utf8(&bytes[index + 1..index + 4]).unwrap_or("");
+            if let Ok(value) = u8::from_str_radix(octal, 8) {
+                out.push(value);
+                index += 4;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// fnmatch without the FNM_PATHNAME flag: '*' and '?' wildcards only.
+pub fn glob_match(pattern: &str, value: &str) -> bool {
+    fn inner(p: &[u8], v: &[u8]) -> bool {
+        match (p.first(), v.first()) {
+            (None, None) => true,
+            (Some(b'*'), _) => {
+                for i in 0..=v.len() {
+                    if inner(&p[1..], &v[i..]) {
+                        return true;
+                    }
+                }
+                false
+            },
+            (Some(b'?'), Some(_)) => inner(&p[1..], &v[1..]),
+            (Some(c), Some(d)) if c == d => inner(&p[1..], &v[1..]),
+            _ => false,
+        }
+    }
+    inner(pattern.as_bytes(), value.as_bytes())
+}

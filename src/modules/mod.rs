@@ -397,7 +397,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "disk",
         run: disk::run,
-        json: None,
+        json: Some(disk::json),
     },
     ModuleDef {
         name: "btrfs",
