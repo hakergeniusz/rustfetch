@@ -337,30 +337,103 @@ fn detect() -> Result<Vec<CodecResult>, &'static str> {
     detect_by_va_drm(&api)
 }
 
-/// ffPrintCodec: one Encoder row and one Decoder row per device; empty
-/// directions print "None".
-pub fn run(_instance: &Instance) -> Vec<Row> {
+/// Module options: showType both, splitGPU off (ffInitCodecOptions).
+#[derive(Default)]
+pub(crate) struct CodecOptions {
+    split_gpu: bool,
+    show_encoder: bool,
+    show_decoder: bool,
+}
+
+impl CodecOptions {
+    fn from_instance(instance: &Instance) -> Self {
+        let mut options = Self { show_encoder: true, show_decoder: true, ..Self::default() };
+        let Some(entry) = instance.entry else {
+            return options;
+        };
+        options.split_gpu = entry.get("splitGPU").and_then(crate::jsonc::Value::as_bool).unwrap_or(false);
+        match entry.get("showType").and_then(crate::jsonc::Value::as_str) {
+            Some("encoder") => {
+                options.show_encoder = true;
+                options.show_decoder = false;
+            },
+            Some("decoder") => {
+                options.show_encoder = false;
+                options.show_decoder = true;
+            },
+            Some("both") => {
+                options.show_encoder = true;
+                options.show_decoder = true;
+            },
+            _ => {},
+        }
+        options
+    }
+}
+
+/// printCodecLine: "Codec (Direction - gpu)" when the device string is
+/// non-empty, "Codec (Direction)" otherwise; empty lists print "None".
+fn codec_row(direction: &str, gpu: &str, types: CodecType) -> Row {
+    let mut value = String::new();
+    for type_ in VA_TYPES {
+        if types.0 & type_.0 != 0 {
+            if !value.is_empty() {
+                value.push_str(", ");
+            }
+            value.push_str(codec_type_name(type_));
+        }
+    }
+    if value.is_empty() {
+        value.push_str("None");
+    }
+    let key = if gpu.is_empty() {
+        format!("Codec ({direction})")
+    } else {
+        format!("Codec ({direction} - {gpu})")
+    };
+    Row::new(&key, value)
+}
+
+/// ffPrintCodec: with splitGPU, one Encoder/Decoder row per device; else
+/// the devices merged with an empty gpu string.
+pub fn run(instance: &Instance) -> Vec<Row> {
+    let options = CodecOptions::from_instance(instance);
     let Ok(results) = detect() else {
         // The load/detection error rows are hidden by default.
         return Vec::new();
     };
+    if results.is_empty() {
+        // "No hardware video acceleration found" is hidden by default.
+        return Vec::new();
+    }
 
     let mut rows = Vec::new();
-    for result in &results {
-        for (direction, types) in [("Encoder", result.encoders), ("Decoder", result.decoders)] {
-            let mut value = String::new();
-            for type_ in VA_TYPES {
-                if types.0 & type_.0 != 0 {
-                    if !value.is_empty() {
-                        value.push_str(", ");
-                    }
-                    value.push_str(codec_type_name(type_));
-                }
+    if options.split_gpu {
+        for result in &results {
+            if options.show_encoder {
+                rows.push(codec_row("Encoder", &result.gpu, result.encoders));
             }
-            if value.is_empty() {
-                value.push_str("None");
+            if options.show_decoder {
+                rows.push(codec_row("Decoder", &result.gpu, result.decoders));
             }
-            rows.push(Row::new(&format!("Codec ({direction})"), value));
+        }
+    } else {
+        let mut merged = CodecResult {
+            gpu: String::new(),
+            decoders: CodecType(0),
+            encoders: CodecType(0),
+            platform_api: "",
+        };
+        for result in &results {
+            merged.decoders.0 |= result.decoders.0;
+            merged.encoders.0 |= result.encoders.0;
+            merged.platform_api = result.platform_api;
+        }
+        if options.show_encoder {
+            rows.push(codec_row("Encoder", &merged.gpu, merged.encoders));
+        }
+        if options.show_decoder {
+            rows.push(codec_row("Decoder", &merged.gpu, merged.decoders));
         }
     }
     rows

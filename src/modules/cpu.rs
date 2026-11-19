@@ -260,32 +260,177 @@ pub fn detect() -> Result<CpuResult, &'static str> {
     Ok(cpu)
 }
 
-/// The module's text value: "name (cores) @ X GHz".
-fn format_value(cpu: &CpuResult) -> String {
-    let freq = if cpu.frequency_max > 0 {
-        let ghz = cpu.frequency_max as f64 / 1000.0;
-        let digits = if ghz >= 100.0 {
-            0
-        } else if ghz >= 10.0 {
-            1
-        } else {
-            2
-        };
-        format!(" @ {ghz:.digits$} GHz")
-    } else {
-        String::new()
-    };
-    format!("{} ({}){}", cpu.name, cpu.cores_logical, freq)
+/// Module options, ported from ffInitCPUOptions/ffParseCPUJsonObject: temp
+/// off, showPeCoreCount on, tempConfig {60, 80}.
+#[derive(Default)]
+pub(crate) struct CpuOptions {
+    temp: bool,
+    show_pe_core_count: bool,
+    temp_sensor: Option<String>,
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Ok(cpu) = detect() else {
-        return Vec::new();
+impl CpuOptions {
+    fn from_instance(instance: &Instance) -> Self {
+        let Some(entry) = instance.entry else {
+            return Self { show_pe_core_count: true, ..Self::default() };
+        };
+        Self {
+            temp: entry.get("temp").and_then(crate::jsonc::Value::as_bool).unwrap_or(false),
+            show_pe_core_count: entry
+                .get("showPeCoreCount")
+                .and_then(crate::jsonc::Value::as_bool)
+                .unwrap_or(true),
+            temp_sensor: entry
+                .get("tempSensor")
+                .and_then(crate::jsonc::Value::as_str)
+                .map(str::to_string),
+        }
+    }
+}
+
+/// readTempFile: millidegree Celsius value, unset when not parseable.
+fn read_temp_file(path: &std::path::Path) -> Option<f64> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let value = content.trim().parse::<f64>().ok()?;
+    Some(value / 1000.)
+}
+
+/// parseTZDir: thermal_zone type starting with cpu/soc (or x86_pkg_temp on
+/// x86) reading "temp".
+fn parse_tz_dir(dir: &std::path::Path) -> Option<f64> {
+    let kind = std::fs::read_to_string(dir.join("type")).ok()?;
+    let kind = kind.trim_end();
+    if !kind.starts_with("cpu")
+        && !kind.starts_with("soc")
+        && kind != "x86_pkg_temp"
+    {
+        return None;
+    }
+    read_temp_file(&dir.join("temp"))
+}
+
+/// parseHwmonDir: hwmon name containing "cpu", or k10temp/fam15h_power
+/// (AMD)/coretemp (Intel), reading "temp1_input".
+fn parse_hwmon_dir(dir: &std::path::Path) -> Option<f64> {
+    let name = std::fs::read_to_string(dir.join("name")).ok()?;
+    let name = name.trim_end();
+    if !name.contains("cpu")
+        && name != "k10temp"
+        && name != "fam15h_power"
+        && name != "coretemp"
+    {
+        return None;
+    }
+    read_temp_file(&dir.join("temp1_input"))
+}
+
+/// detectCPUTemp: an explicit tempSensor (hwmonN / thermal_zoneN /
+/// cputemp.N / absolute path; directory read of temp1_input or temp, file
+/// read otherwise), else the hwmon scan, else the thermal-zone scan.
+fn detect_cpu_temp(options: &CpuOptions) -> Option<f64> {
+    if let Some(sensor) = &options.temp_sensor {
+        let scan = |base: &str, file: &str| -> Option<f64> {
+            let dir = std::path::Path::new(base).join(sensor);
+            if dir.is_dir() {
+                read_temp_file(&dir.join(file))
+            } else {
+                read_temp_file(&std::path::Path::new(base).join(sensor))
+            }
+        };
+        let digits_after = |prefix: &str| sensor[prefix.len()..].chars().next().is_some_and(|c| c.is_ascii_digit());
+        return if sensor.starts_with("hwmon") && digits_after("hwmon") {
+            scan("/sys/class/hwmon/", "temp1_input")
+        } else if sensor.starts_with("thermal_zone") && digits_after("thermal_zone") {
+            scan("/sys/class/thermal/", "temp")
+        } else if sensor.starts_with("cputemp.") && digits_after("cputemp.") {
+            scan("/sys/class/platform/", "temp1_input")
+        } else if sensor.starts_with('/') {
+            let path = std::path::Path::new(sensor);
+            if path.is_dir() {
+                read_temp_file(&path.join("temp1_input"))
+            } else {
+                read_temp_file(path)
+            }
+        } else {
+            None
+        };
+    }
+
+    // Default: the first hwmon whose name matches, then thermal zones.
+    if let Ok(dir) = std::fs::read_dir("/sys/class/hwmon/") {
+        for entry in dir.flatten() {
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
+            if let Some(temp) = parse_hwmon_dir(&entry.path()) {
+                return Some(temp);
+            }
+        }
+    }
+    if let Ok(dir) = std::fs::read_dir("/sys/class/thermal/") {
+        for entry in dir.flatten() {
+            if let Some(temp) = parse_tz_dir(&entry.path()) {
+                return Some(temp);
+            }
+        }
+    }
+    None
+}
+
+/// The module's text value: "name (coreTypes|cores) @ freq - temp".
+fn format_value(cpu: &CpuResult, options: &CpuOptions, color: bool) -> String {
+    let mut value = String::new();
+    if !cpu.name.is_empty() {
+        value.push_str(&cpu.name);
+    } else if !cpu.vendor.is_empty() {
+        value.push_str(&cpu.vendor);
+        value.push_str(" CPU");
+    } else {
+        value.push_str("Unknown");
+    }
+
+    // showPeCoreCount: the per-frequency core counts, sorted by descending
+    // frequency, joined with "+" ("(4+2+6)"); else the online core count.
+    let mut core_types = cpu.core_types.clone();
+    core_types.retain(|&(count, _)| count != 0);
+    if options.show_pe_core_count && !core_types.is_empty() {
+        core_types.sort_by(|a, b| b.1.cmp(&a.1));
+        let joined = core_types
+            .iter()
+            .map(|&(count, _)| count.to_string())
+            .collect::<Vec<_>>()
+            .join("+");
+        value.push_str(&format!(" ({joined})"));
+    } else if cpu.cores_online > 1 {
+        value.push_str(&format!(" ({})", cpu.cores_online));
+    }
+
+    let freq = if cpu.frequency_max > 0 { cpu.frequency_max } else { cpu.frequency_base };
+    if freq > 0 {
+        value.push_str(" @ ");
+        value.push_str(&util::fmt_freq(freq));
+    }
+
+    if let Some(temperature) = cpu.temperature {
+        value.push_str(" - ");
+        value.push_str(&super::temps_num(temperature, 60, 80, color));
+    }
+    value
+}
+
+pub fn run(instance: &Instance) -> Vec<Row> {
+    let options = CpuOptions::from_instance(instance);
+    let mut cpu = match detect() {
+        Ok(cpu) => cpu,
+        Err(_) => return Vec::new(),
     };
+    if options.temp {
+        cpu.temperature = detect_cpu_temp(&options);
+    }
     if cpu.vendor.is_empty() && cpu.name.is_empty() && cpu.cores_online <= 1 {
         return Vec::new();
     }
-    vec![Row::new("CPU", format_value(&cpu))]
+    vec![Row::new("CPU", format_value(&cpu, &options, instance.color))]
 }
 
 /// ffGenerateCPUJsonResult.

@@ -22,8 +22,25 @@ const READWRITE: u8 = 1 << 5;
 const READONLY: u8 = 1 << 6;
 const UNUSED: u8 = 1 << 7;
 
-/// FF_PHYSICALDISK_TEMP_UNSET; the --temp option isn't exposed by this CLI.
+/// FF_PHYSICALDISK_TEMP_UNSET; set only when the config asks for temp.
 const TEMP_UNSET: f64 = f64::MIN;
+
+/// Module options: temp off by default, tempConfig {50, 70}.
+#[derive(Default)]
+pub(crate) struct PhysicalDiskOptions {
+    temp: bool,
+}
+
+impl PhysicalDiskOptions {
+    fn from_instance(instance: &Instance) -> Self {
+        let Some(entry) = instance.entry else {
+            return Self::default();
+        };
+        Self {
+            temp: entry.get("temp").and_then(crate::jsonc::Value::as_bool).unwrap_or(false),
+        }
+    }
+}
 
 #[derive(Default)]
 struct Disk {
@@ -34,9 +51,7 @@ struct Disk {
     revision: String,
     type_bits: u8,
     size: u64,
-    /// Only reachable with --temp, which this CLI doesn't expose; stays at
-    /// the UNSET sentinel and prints as JSON null.
-    #[allow(dead_code)]
+    /// The UNSET sentinel unless the config asked for the temperature.
     temperature: f64,
 }
 
@@ -51,9 +66,7 @@ fn attr_trimmed_right(dir: &Path, file: &str) -> Option<String> {
     Some(content.trim_end().to_string())
 }
 
-/// detectNvmeTemp over the hwmonN/temp1_input siblings (millidegrees); only
-/// reachable with --temp, so it stays unused for now.
-#[allow(dead_code)]
+/// detectNvmeTemp over the hwmonN/temp1_input siblings (millidegrees).
 fn detect_nvme_temp(device: &Path) -> f64 {
     for c in b'0'..=b'9' {
         let path = device.join(format!("hwmon{}/temp1_input", c as char));
@@ -85,7 +98,7 @@ fn append_nvme_namespace_suffix(name: &mut String, dev_name: &str) {
     }
 }
 
-fn parse_physical_disk(block_dir: &Path, dev_name: &str) -> Option<Disk> {
+fn parse_physical_disk(block_dir: &Path, dev_name: &str, options: &PhysicalDiskOptions) -> Option<Disk> {
     let size = first_byte_read_u64(block_dir, "size").unwrap_or(0) * 512;
 
     // The UNUSED hideType is on by default.
@@ -156,6 +169,10 @@ fn parse_physical_disk(block_dir: &Path, dev_name: &str) -> Option<Disk> {
     }
 
     if has_device && !is_virtio {
+        if options.temp {
+            disk.temperature = detect_nvme_temp(&device);
+        }
+
         // An unreadable rotational file keeps the '1' initializer: HDD.
         if first_byte(block_dir, "queue/rotational") != Some(b'0') {
             disk.type_bits |= HDD;
@@ -198,7 +215,7 @@ fn first_byte_read_u64(dir: &Path, file: &str) -> Option<u64> {
 }
 
 /// ffDetectPhysicalDisk over /sys/block.
-fn detect() -> Result<Vec<Disk>, &'static str> {
+fn detect(options: &PhysicalDiskOptions) -> Result<Vec<Disk>, &'static str> {
     let Ok(entries) = std::fs::read_dir("/sys/block/") else {
         return Err("opendir(\"/sys/block/\") == nullptr");
     };
@@ -209,15 +226,16 @@ fn detect() -> Result<Vec<Disk>, &'static str> {
         if dev_name.starts_with('.') {
             continue;
         }
-        if let Some(disk) = parse_physical_disk(&entry.path(), &dev_name) {
+        if let Some(disk) = parse_physical_disk(&entry.path(), &dev_name, options) {
             result.push(disk);
         }
     }
     Ok(result)
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Ok(mut result) = detect() else {
+pub fn run(instance: &Instance) -> Vec<Row> {
+    let options = PhysicalDiskOptions::from_instance(instance);
+    let Ok(mut result) = detect(&options) else {
         return Vec::new();
     };
     result.sort_by(|a, b| a.name.cmp(&b.name));
@@ -262,7 +280,10 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                 value.push(']');
             }
 
-            // The temperature stays unset (no --temp option), so no " - T°C".
+            if dev.temperature != TEMP_UNSET && !value.is_empty() {
+                value.push_str(" - ");
+                value.push_str(&super::temps_num(dev.temperature, 50, 70, instance.color));
+            }
             Row::new(&format!("Physical Disk ({key_name})"), value)
         })
         .collect()
@@ -270,8 +291,9 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
 
 /// ffGeneratePhysicalDiskJsonResult; unlike the text path it does not sort,
 /// keeping the sysfs scan order.
-pub fn json(_instance: &Instance) -> JsonOutcome {
-    let Ok(result) = detect() else {
+pub fn json(instance: &Instance) -> JsonOutcome {
+    let options = PhysicalDiskOptions::from_instance(instance);
+    let Ok(result) = detect(&options) else {
         return JsonOutcome::Error("opendir(\"/sys/block/\") == nullptr".to_string());
     };
 

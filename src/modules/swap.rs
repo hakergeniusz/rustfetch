@@ -100,11 +100,44 @@ fn aggregate_value(storage: &SwapResult, total_count: usize, color: bool) -> Str
     )
 }
 
+/// Module options: separate off (ffInitSwapOptions).
+#[derive(Default)]
+pub(crate) struct SwapOptions {
+    separate: bool,
+}
+
+impl SwapOptions {
+    fn from_instance(instance: &Instance) -> Self {
+        let Some(entry) = instance.entry else {
+            return Self::default();
+        };
+        Self {
+            separate: entry.get("separate").and_then(crate::jsonc::Value::as_bool).unwrap_or(false),
+        }
+    }
+}
+
 pub fn run(instance: &Instance) -> Vec<Row> {
+    let options = SwapOptions::from_instance(instance);
     let Ok(items) = detect() else {
         // Detection errors are hidden rows by default.
         return Vec::new();
     };
+
+    if options.separate && !items.is_empty() {
+        // One "Swap (device)" row per swap entry.
+        return items
+            .iter()
+            .map(|item| {
+                let key = if item.name.is_empty() {
+                    "Swap".to_string()
+                } else {
+                    format!("Swap ({})", item.name)
+                };
+                Row::new(&key, aggregate_value(item, items.len(), instance.color))
+            })
+            .collect();
+    }
 
     // Without the `separate` option all devices are summed into one row.
     let mut total = SwapResult { name: String::new(), used: 0, total: 0 };
