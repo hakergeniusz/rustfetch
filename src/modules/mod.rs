@@ -407,7 +407,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "physicaldisk",
         run: physicaldisk::run,
-        json: None,
+        json: Some(physicaldisk::json),
     },
     ModuleDef {
         name: "physicalmemory",
