@@ -11,6 +11,7 @@ use std::ffi::c_void;
 
 use crate::{
     instance::Instance,
+    json::{Json, JsonOutcome},
     modules::{Row, colorize_percent},
     util,
 };
@@ -19,15 +20,12 @@ const VOLUME_UNKNOWN: u8 = 255;
 
 #[derive(Default)]
 struct SoundDevice {
-    // The is-main/is-active flags and the platform api only reach custom
-    // formats, which this port does not parse.
-    #[allow(dead_code)]
+    /// The sink name / "hw:N"; the identifier the JSON result reports.
+    identifier: String,
     platform_api: String,
     name: String,
     volume: u8,
-    #[allow(dead_code)]
     is_main: bool,
-    #[allow(dead_code)]
     is_active: bool,
 }
 
@@ -75,6 +73,8 @@ const PA_RECV_TIMEOUT_MS: u64 = 2000;
 const MSG_NOSIGNAL: i32 = 0x4000;
 
 struct PulseSinkInfo {
+    /// The sink's own name, reported as the device identifier.
+    name: String,
     description: Option<String>,
     volume: u32,
     mute: bool,
@@ -528,13 +528,18 @@ fn send_with_credentials(fd: i32, data: &[u8]) -> bool {
             iov_base: data.as_ptr() as *mut c_void,
             iov_len: data.len(),
         };
-        // cmsghdr carries size_t alignment; a u64 array guarantees it.
-        let mut control = [0u64; 8]; // CMSG_SPACE(sizeof(ucred)) and more
+        // Exactly CMSG_SPACE(sizeof(ucred)): the kernel walks the control
+        // buffer as a cmsg chain, so trailing slack would parse as a
+        // malformed second header (EINVAL).
+        const CREDENTIALS_SPACE: usize = unsafe {
+        libc::CMSG_SPACE(std::mem::size_of::<libc::ucred>() as libc::c_uint)
+    } as usize;
+        let mut control = [0u8; CREDENTIALS_SPACE];
         let mut message: libc::msghdr = std::mem::zeroed();
         message.msg_iov = &iov as *const libc::iovec as *mut libc::iovec;
         message.msg_iovlen = 1;
         message.msg_control = control.as_mut_ptr().cast();
-        message.msg_controllen = control.len();
+        message.msg_controllen = std::mem::size_of_val(&control);
 
         let cmsg = &mut *(libc::CMSG_FIRSTHDR(&message) as *mut libc::cmsghdr);
         cmsg.cmsg_level = libc::SOL_SOCKET;
@@ -866,6 +871,7 @@ fn read_sink_info(
         .map(|port| is_port_available(reader, version, port_count, ports_offset, &port))
         .unwrap_or(false);
     Some(PulseSinkInfo {
+        name: String::from_utf8_lossy(&sink_name).trim_end().to_string(),
         description: description.map(|description| description.into_owned()),
         volume,
         mute,
@@ -876,6 +882,7 @@ fn read_sink_info(
 
 fn append_sink(devices: &mut Vec<SoundDevice>, server_name: &str, sink: &PulseSinkInfo) {
     devices.push(SoundDevice {
+        identifier: sink.name.clone(),
         platform_api: server_name.to_string(),
         name: sink
             .description
@@ -1369,6 +1376,7 @@ fn append_alsa_card(
         // The default soundType is MAIN: only the main output is reported.
         devices.push(SoundDevice {
             // "hw:0" is how the card is named everywhere else in ALSA.
+            identifier: format!("hw:{card}"),
             platform_api: "ALSA".to_string(),
             name,
             volume,
@@ -1516,6 +1524,40 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             Row::new(&key, value)
         })
         .collect()
+}
+
+/// ffGenerateSoundJsonResult; volume keeps the 255 "unknown" sentinel as
+/// null.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(devices) => {
+            let mut arr = Json::Array(Vec::new());
+            for device in &devices {
+                let mut obj = Json::obj();
+                obj.push("name", device.name.clone());
+                obj.push("identifier", device.identifier.clone());
+                obj.push("platformApi", device.platform_api.clone());
+
+                let mut type_arr = Json::Array(Vec::new());
+                if device.is_main {
+                    type_arr.push_value("main");
+                }
+                if device.is_active {
+                    type_arr.push_value("active");
+                }
+                obj.push("type", type_arr);
+
+                if device.volume != VOLUME_UNKNOWN {
+                    obj.push("volume", device.volume as u64);
+                } else {
+                    obj.push("volume", Json::Null);
+                }
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
+    }
 }
 
 #[cfg(test)]

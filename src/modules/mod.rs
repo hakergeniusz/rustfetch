@@ -447,7 +447,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "sound",
         run: sound::run,
-        json: None,
+        json: Some(sound::json),
     },
     ModuleDef {
         name: "zpool",
