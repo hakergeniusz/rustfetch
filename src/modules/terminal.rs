@@ -1,26 +1,28 @@
 //! `terminal` module: terminal emulator name and version, ported from
 //! detection/terminalshell/terminalshell.c, terminalshell_linux.c and
-//! modules/terminal/terminal.c. The process tree is walked from our own
-//! pid skipping shells and wrappers — the union of the upstream shell and
-//! terminal skip lists, since upstream starts at the detected shell's
-//! parent; environment fallbacks (SSH_TTY, KITTY_*, Windows Terminal,
-//! ConEmu, Alacritty, konsole, gnome-terminal, TERM_PROGRAM,
-//! LC_TERMINAL, TERM/ttyname) apply when the walk fails or lands on a
-//! login/init process. Version detection dispatches per-terminal getters
-//! (exe spawns, ELF .rodata scans, escape-sequence queries) with
-//! TERM_PROGRAM_VERSION/LC_TERMINAL_VERSION as the generic fallback; the
-//! value is the pretty name plus the version when one is found.
+//! modules/terminal/terminal.c. The process tree is walked in two stages
+//! like upstream: getShellInfo from our parent until the user's shell,
+//! then getTerminalInfo from the shell's parent to the first process that
+//! is not a known shell or wrapper; environment fallbacks (SSH_TTY,
+//! KITTY_*, Windows Terminal, ConEmu, Alacritty, konsole, gnome-terminal,
+//! TERM_PROGRAM, LC_TERMINAL, TERM/ttyname) apply when the walk fails or
+//! lands on a login/init process. Version detection dispatches
+//! per-terminal getters (exe spawns, ELF .rodata scans, escape-sequence
+//! queries) with TERM_PROGRAM_VERSION/LC_TERMINAL_VERSION as the generic
+//! fallback; the value is the pretty name plus the version when one is
+//! found.
 
 use std::ffi::CStr;
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
-/// Shells and wrappers skipped while walking up the process tree — the
-/// upstream terminal walk list (getTerminalInfo) plus the shell walk's
-/// extras (getShellInfo) and our own process, since this walk starts at
-/// our own pid.
+/// Shells and wrappers skipped by getTerminalInfo.
 const SKIPPED: &[&str] = &[
-    // shells (getTerminalInfo)
     "sh",
     "ash",
     "bash",
@@ -40,7 +42,6 @@ const SKIPPED: &[&str] = &[
     "elvish",
     "oil.ovm",
     "xonsh",
-    // wrappers between us and the terminal (both walks)
     "sudo",
     "su",
     "login",
@@ -49,24 +50,6 @@ const SKIPPED: &[&str] = &[
     "proot",
     "script",
     "run-parts",
-    // shell-walk extras (getShellInfo)
-    "strace",
-    "gdb",
-    "lldb",
-    "lldb-mi",
-    "ltrace",
-    "perf",
-    "guake-wrapped",
-    "time",
-    "valgrind",
-    "fastfetch",
-    "flashfetch",
-    "mise",
-    "mise-shim",
-    "atuin",
-    // our own process, plus common invokers
-    "rustfetch",
-    "nohup",
 ];
 
 fn is_skipped(name: &str) -> bool {
@@ -140,23 +123,6 @@ fn process_exe_info(pid: u32, comm: &str) -> (String, String, String) {
     (exe, exe_name, exe_path)
 }
 
-/// The walked terminal process: comm and its pid, from our own pid upward.
-fn walk() -> Option<(String, u32)> {
-    let mut pid = std::process::id();
-    for _ in 0..32 {
-        if pid <= 1 {
-            return None;
-        }
-        let (comm, ppid) = process_basic_info(pid)?;
-        if is_skipped(&comm) {
-            pid = ppid;
-            continue;
-        }
-        return Some((comm, pid));
-    }
-    None
-}
-
 fn basename(exe: &str) -> String {
     exe.rsplit('/').next().unwrap_or(exe).to_string()
 }
@@ -207,7 +173,7 @@ fn substr_before_last_c(s: &str, c: char) -> &str {
 
 /// Spawn and capture one stream; a nonzero exit is fine, exit 127 (command
 /// not found) and abnormal exits are errors, like ffProcessReadOutput.
-fn process_capture(argv: &[&str], stderr: bool) -> Option<String> {
+pub(crate) fn process_capture(argv: &[&str], stderr: bool) -> Option<String> {
     let mut command = std::process::Command::new(argv[0]);
     command.args(&argv[1..]).env("LANG", "C.UTF-8");
     let output = command.output().ok()?;
@@ -292,7 +258,7 @@ fn scan_rodata(section: &[u8], min_len: usize, matcher: &mut dyn FnMut(&str) -> 
 /// ffBinaryExtractStrings: scan the .rodata section of an ELF file. None
 /// means the file or its section headers could not be parsed; either way
 /// the caller only checks what the matcher captured.
-fn binary_extract_strings(
+pub(crate) fn binary_extract_strings(
     path: &str,
     min_len: usize,
     matcher: &mut dyn FnMut(&str) -> bool,
@@ -532,7 +498,7 @@ fn parse_kitty_response(buf: &[u8]) -> (usize, Option<String>) {
 }
 
 /// The kitty hex payload, decoded pair by pair like the upstream loop.
-fn hex_decode(payload: &[u8]) -> String {
+pub(crate) fn hex_decode(payload: &[u8]) -> String {
     let mut out = Vec::with_capacity(payload.len() / 2);
     for pair in payload.as_chunks::<2>().0 {
         let text = std::str::from_utf8(pair).unwrap_or_default();
@@ -550,7 +516,7 @@ fn hex_decode(payload: &[u8]) -> String {
 /// The per-chunk parser: (assigned parameters, value when complete).
 type ResponseParser<'a, T> = &'a mut dyn FnMut(&[u8]) -> (usize, Option<T>);
 
-fn terminal_response<T>(
+pub(crate) fn terminal_response<T>(
     request: &[u8],
     n_params: usize,
     parse: ResponseParser<'_, T>,
@@ -1109,10 +1075,10 @@ fn get_terminal_version(process_name: &str, exe: &str) -> String {
 
 // ---- detection assembly ----
 
-/// ttyname of stdout, for the sshd pretty name.
-fn tty_name() -> String {
+/// ttyname of an fd.
+fn tty_name_fd(fd: i32) -> String {
     unsafe {
-        let ptr = libc::ttyname(1);
+        let ptr = libc::ttyname(fd);
         if ptr.is_null() {
             return String::new();
         }
@@ -1120,17 +1086,146 @@ fn tty_name() -> String {
     }
 }
 
+/// Wrapper processes the shell walk skips; a process whose name equals the
+/// user's shell stops the walk instead.
+const SHELL_SKIPPED: &[&str] = &[
+    "sh", "sudo", "su", "strace", "gdb", "lldb", "lldb-mi", "login", "ltrace", "perf",
+    "guake-wrapped", "time", "clifm", "valgrind", "fastfetch", "flashfetch", "mise", "mise-shim",
+    "atuin", "proot", "script", "run-parts",
+];
+
+fn shell_is_skipped(name: &str) -> bool {
+    SHELL_SKIPPED.contains(&name)
+        || name.contains("debug")
+        || name.contains("command-not-")
+        || name.ends_with(".sh")
+}
+
+/// getShellInfo: walk up from our parent until the user's shell (or any
+/// non-wrapper) is reached; returns that process's ppid, 0 when the walk
+/// hit init or failed. The terminal walk starts there.
+fn shell_ppid() -> u32 {
+    let user_shell = crate::platform::platform().user_shell.clone();
+    let user_shell_name = user_shell.rsplit('/').next().unwrap_or("").to_string();
+
+    let mut ppid: u32 = 0;
+    let mut pid = unsafe { libc::getppid() } as u32;
+    while pid > 1 {
+        let Some((comm, parent)) = process_basic_info(pid) else {
+            break;
+        };
+        ppid = parent;
+        if comm != user_shell_name && shell_is_skipped(&comm) {
+            pid = parent;
+            continue;
+        }
+        break;
+    }
+    if pid > 1 {
+        ppid
+    } else {
+        0
+    }
+}
+
+/// getTerminalInfo: walk up from the shell's parent to the first process
+/// that is not a known shell or wrapper. Returns (pid, ppid, comm).
+fn terminal_walk(start: u32) -> Option<(u32, u32, String)> {
+    let mut pid = start;
+    while pid > 1 {
+        let Some((comm, parent)) = process_basic_info(pid) else {
+            break;
+        };
+        if is_skipped(&comm) {
+            pid = parent;
+            continue;
+        }
+        return Some((pid, parent, comm));
+    }
+    None
+}
+
+pub struct TerminalResult {
+    pub process_name: String,
+    pub exe: String,
+    pub exe_name: String,
+    pub exe_path: String,
+    pub pid: u32,
+    pub ppid: u32,
+    pub pretty_name: String,
+    pub version: String,
+    pub tty: String,
+}
+
+impl Default for TerminalResult {
+    fn default() -> Self {
+        Self {
+            process_name: String::new(),
+            exe: String::new(),
+            exe_name: String::new(),
+            exe_path: String::new(),
+            pid: 0,
+            ppid: 0,
+            pretty_name: String::new(),
+            version: String::new(),
+            // The result's tty is stdout's, taken before anything else.
+            tty: tty_name_fd(1),
+        }
+    }
+}
+
+/// getTerminalInfoByPidEnv: fill all fields from a pid in the environment;
+/// the pid is recorded even when the process can't be read.
+fn terminal_info_by_pid_env(result: &mut TerminalResult, var: &str) -> bool {
+    let Some(pid_text) = std::env::var(var).ok() else {
+        return false;
+    };
+    // strtol(value, nullptr, 10): a leading number is enough.
+    let trimmed = pid_text.trim_start();
+    let end = trimmed
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(trimmed.len());
+    let pid: i64 = trimmed[..end].parse().unwrap_or(0);
+    result.pid = pid as u32;
+    let Some((comm, parent)) = process_basic_info(pid as u32) else {
+        return false;
+    };
+    result.ppid = parent;
+    (result.exe, result.exe_name, result.exe_path) = process_exe_info(pid as u32, &comm);
+    result.process_name = comm;
+    true
+}
+
 /// getTerminalFromEnv: the env fallbacks when the walk failed or landed on
-/// a login/init process. Returns (processName, exe, exeName, exePath).
-fn terminal_from_env() -> Option<(String, String, String, String)> {
+/// a login/init process (which resets everything, pid included).
+fn terminal_from_env(result: &mut TerminalResult) {
+    if !result.process_name.is_empty() {
+        let gated = result.process_name.starts_with("login")
+            || result.process_name == "(login)"
+            || result.process_name == "systemd"
+            || result.process_name == "init"
+            || result.process_name == "(init)"
+            || result.process_name == "SessionLeader"
+            || result.process_name == "0";
+        if !gated {
+            return;
+        }
+        result.process_name.clear();
+        result.exe.clear();
+        result.exe_name.clear();
+        result.exe_path.clear();
+        result.pid = 0;
+        result.ppid = 0;
+    }
+
     let term: String;
     if let Some(ssh_tty) = std::env::var_os("SSH_TTY") {
         term = ssh_tty.to_string_lossy().into_owned();
     } else if std::env::var_os("KITTY_PID").is_some()
         || std::env::var_os("KITTY_INSTALLATION_DIR").is_some()
     {
-        if let Some(found) = terminal_info_by_pid_env("KITTY_PID") {
-            return Some(found);
+        if terminal_info_by_pid_env(result, "KITTY_PID") {
+            return;
         }
         term = "kitty".to_string();
     } else if std::env::var_os("WT_SESSION").is_some()
@@ -1159,95 +1254,43 @@ fn terminal_from_env() -> Option<(String, String, String, String)> {
         let value = std::env::var_os("TERM").map(|t| t.to_string_lossy().into_owned());
         match value {
             Some(t) if !t.is_empty() && t != "linux" => term = t,
-            // TTY
-            _ => term = tty_name(),
+            // TTY (stdin here; the result field uses stdout)
+            _ => term = tty_name_fd(0),
         }
     }
-    let exe_name = basename(&term);
-    Some((term.clone(), term, exe_name, String::new()))
+
+    if !term.is_empty() {
+        result.exe_name = basename(&term);
+        result.exe = term.clone();
+        result.process_name = term;
+    }
 }
 
-/// getTerminalInfoByPidEnv: fill all fields from a pid in the environment.
-fn terminal_info_by_pid_env(var: &str) -> Option<(String, String, String, String)> {
-    let pid_text = std::env::var(var).ok()?;
-    // strtol(value, nullptr, 10): a leading number is enough.
-    let end = pid_text
-        .trim_start()
-        .find(|c: char| !c.is_ascii_digit())
-        .unwrap_or(pid_text.trim_start().len());
-    let pid: u32 = pid_text.trim_start()[..end].parse().ok()?;
-    let (comm, _) = process_basic_info(pid)?;
-    let (exe, exe_name, exe_path) = process_exe_info(pid, &comm);
-    Some((comm, exe, exe_name, exe_path))
-}
-
-/// The raw terminal process name, shared with the terminalfont dispatch.
-pub fn detect_raw() -> Option<String> {
-    if let Some((comm, _)) = walk() {
-        let gated = comm.starts_with("login")
-            || comm == "(login)"
-            || comm == "systemd"
-            || comm == "init"
-            || comm == "(init)"
-            || comm == "SessionLeader"
-            || comm == "0";
-        if !gated {
-            return Some(comm);
-        }
-    }
-    terminal_from_env().map(|(name, _, _, _)| name)
-}
-
-/// setTerminalInfoDetails + fftsGetTerminalVersion: pretty name and
-/// version for the walked-or-env terminal.
-fn detect() -> Option<(String, String)> {
-    let mut process_name = String::new();
-    let mut exe = String::new();
-    let mut exe_name = String::new();
-    let mut exe_path = String::new();
-
-    if let Some((comm, pid)) = walk() {
-        let gated = comm.starts_with("login")
-            || comm == "(login)"
-            || comm == "systemd"
-            || comm == "init"
-            || comm == "(init)"
-            || comm == "SessionLeader"
-            || comm == "0";
-        if !gated {
-            (exe, exe_name, exe_path) = process_exe_info(pid, &comm);
-            process_name = comm;
-        }
-    }
-    if process_name.is_empty() {
-        let (name, name_exe, name_exe_name, name_exe_path) = terminal_from_env()?;
-        process_name = name;
-        exe = name_exe;
-        exe_name = name_exe_name;
-        exe_path = name_exe_path;
-    }
-
+/// setTerminalInfoDetails: unwrap Nixpkgs hashes and pick the pretty name.
+fn set_terminal_info_details(result: &mut TerminalResult) {
     // For Nixpkgs. Ref: #510 and nixpkgs PR #249428
-    if process_name.starts_with('.') && exe_path.starts_with("/nix/store") {
-        process_name = process_name[1..].to_string();
-        if exe_name.len() < 15 {
-            process_name = substr_before_last_c(&process_name, '-').to_string();
+    if result.process_name.starts_with('.') && result.exe_path.starts_with("/nix/store") {
+        result.process_name = result.process_name[1..].to_string();
+        if result.exe_name.len() < 15 {
+            result.process_name = substr_before_last_c(&result.process_name, '-').to_string();
         }
     }
 
-    let tty = tty_name();
-    let pretty_name = if process_name == "wezterm-gui" {
+    let process_name = result.process_name.clone();
+    let exe_name = result.exe_name.clone();
+    let exe_path = result.exe_path.clone();
+    result.pretty_name = if process_name == "wezterm-gui" {
         "WezTerm".to_string()
     } else if process_name.starts_with("tmux:") {
         "tmux".to_string()
     } else if process_name.starts_with("screen-") {
         "screen".to_string()
+    } else if (process_name == "sshd" || process_name.starts_with("sshd-"))
+        && !result.tty.is_empty()
+    {
+        result.tty.clone()
     } else if process_name == "sshd" || process_name.starts_with("sshd-") {
-        if tty.is_empty() {
-            "sshd".to_string()
-        } else {
-            tty
-        }
+        "sshd".to_string()
     } else if process_name.starts_with("gnome-terminal") {
         "GNOME Terminal".to_string()
     } else if process_name.starts_with("kgx") {
@@ -1264,25 +1307,80 @@ fn detect() -> Option<(String, String)> {
         // unwrapped
         exe_name
     } else {
-        process_name.clone()
+        process_name
     };
+}
 
-    let version =
-        get_terminal_version(&process_name, if exe_path.is_empty() { &exe } else { &exe_path });
-    Some((pretty_name, version))
+/// ffDetectTerminal: shell walk → terminal walk → env fallbacks, then the
+/// details and version. Memoized like upstream's cache entry.
+pub fn detect_full() -> &'static TerminalResult {
+    static CACHE: std::sync::OnceLock<TerminalResult> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| {
+        let mut result = TerminalResult::default();
+
+        let parent = shell_ppid();
+        if parent != 0
+            && let Some((pid, ppid, comm)) = terminal_walk(parent)
+        {
+            result.pid = pid;
+            result.ppid = ppid;
+            (result.exe, result.exe_name, result.exe_path) = process_exe_info(pid, &comm);
+            result.process_name = comm;
+        }
+        terminal_from_env(&mut result);
+
+        if !result.process_name.is_empty() {
+            set_terminal_info_details(&mut result);
+            let exe_for_version = if result.exe_path.is_empty() {
+                result.exe.clone()
+            } else {
+                result.exe_path.clone()
+            };
+            result.version =
+                get_terminal_version(&result.process_name, &exe_for_version);
+        }
+        result
+    })
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Some((pretty_name, version)) = detect() else {
+    let result = detect_full();
+    if result.process_name.is_empty() {
         // "Couldn't detect terminal" is an error row, hidden by default.
         return Vec::new();
-    };
-    let value = if version.is_empty() {
-        pretty_name
+    }
+    let value = if result.version.is_empty() {
+        result.pretty_name.clone()
     } else {
-        format!("{pretty_name} {version}")
+        format!("{} {}", result.pretty_name, result.version)
     };
     vec![Row::new("Terminal", value)]
+}
+
+/// The detailed process name, shared with the terminalfont dispatch until
+/// it reads ffDetectTerminal directly.
+pub fn detect_raw() -> Option<String> {
+    let result = detect_full();
+    (!result.process_name.is_empty()).then(|| result.process_name.clone())
+}
+
+/// ffGenerateTerminalJsonResult: the nine fields in upstream order.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let result = detect_full();
+    if result.process_name.is_empty() {
+        return JsonOutcome::Error("Couldn't detect terminal".to_string());
+    }
+    let mut obj = Json::obj();
+    obj.push("processName", result.process_name.clone());
+    obj.push("exe", result.exe.clone());
+    obj.push("exeName", result.exe_name.clone());
+    obj.push("exePath", result.exe_path.clone());
+    obj.push("pid", result.pid as u64);
+    obj.push("ppid", result.ppid as u64);
+    obj.push("prettyName", result.pretty_name.clone());
+    obj.push("version", result.version.clone());
+    obj.push("tty", result.tty.clone());
+    JsonOutcome::Result(obj)
 }
 
 #[cfg(test)]
