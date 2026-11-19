@@ -749,6 +749,45 @@ pub fn list_modules() {
 /// percentNdigits=0 default and colored by the module's own green/yellow
 /// thresholds, compared before rounding. Modules where a high value is good
 /// (battery, physicaldisk) set green > yellow, which inverts the bands.
+/// ffTempsAppendNum with the display defaults: 1 digit, no space before
+/// °C, threshold colors (dark-terminal light-yellow/light-red variants).
+pub(crate) fn temps_num(celsius: f64, green: u8, yellow: u8, color: bool) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    if color {
+        let (yellow_code, red_code) = if terminal_light() { ("33", "31") } else { ("93", "91") };
+        let code = if green <= yellow {
+            if celsius > yellow as f64 {
+                red_code
+            } else if celsius > green as f64 {
+                yellow_code
+            } else {
+                "32"
+            }
+        } else if celsius < yellow as f64 {
+            red_code
+        } else if celsius < green as f64 {
+            yellow_code
+        } else {
+            "32"
+        };
+        let _ = write!(out, "\x1b[{code}m");
+    }
+    let _ = write!(out, "{celsius:.1}°C");
+    if color {
+        out.push_str("\x1b[m");
+    }
+    out
+}
+
+/// terminalLightTheme: the env-only terminal theme detection's background
+/// darkness (upstream forces the env path at display init for speed).
+pub(crate) fn terminal_light() -> bool {
+    use std::sync::OnceLock;
+    static LIGHT: OnceLock<bool> = OnceLock::new();
+    *LIGHT.get_or_init(crate::modules::terminaltheme::terminal_is_light_by_env)
+}
+
 pub fn colorize_percent(pct: f64, green: u8, yellow: u8, color: bool) -> String {
     let text = format!("{pct:.0}");
     let code = if green <= yellow {
@@ -850,9 +889,11 @@ fn prepare_rate_modules(jobs: &[PresetJob]) {
 /// Runs the selected modules (or the default preset when no structure was
 /// given) in structure order.
 ///
-/// Modules are independent of each other, so each one runs in its own
-/// scoped thread: the slow data sources (gdbus, gsettings, process scans)
-/// overlap instead of adding up. Rows are emitted in structure order.
+/// Like upstream, jobs run one after another on the calling thread: the
+/// dlopen-heavy backends (NVML, VA-API, NSS) and glibc's loader/exit locks
+/// deadlock when initialized concurrently, and upstream's watchdog-thread
+/// network timeouts assume a single-threaded walk. Rows are emitted in
+/// structure order.
 pub fn collect(
     selected: &[String],
     structure_given: bool,
@@ -862,39 +903,41 @@ pub fn collect(
     let jobs = build_jobs(selected, structure_given, config);
     prepare_rate_modules(&jobs);
 
-    let results: Vec<Vec<Row>> = std::thread::scope(|scope| {
-        // Structure order wins: `-s b:os:a` prints rows in exactly that
-        // order, like fastfetch's structure loop. Duplicates allowed.
-        // Unknown tokens are the hidden "<no implementation provided>"
-        // error rows and never print.
-        jobs.iter()
-            .map(|job| match job {
-                PresetJob::Module(module) => scope.spawn(move || (module.run)(instance)),
-                PresetJob::ModuleOpts { def, opts } => {
-                    // Each object entry runs with its own options: the job
-                    // thread gets a private instance carrying the entry.
-                    let mut instance = instance.clone();
-                    instance.entry = Some(opts);
-                    scope.spawn(move || (def.run)(&instance))
-                },
-                // The hidden "<no implementation provided>" error row.
-                PresetJob::Unknown(_) => scope.spawn(std::vec::Vec::new),
-                PresetJob::Custom(text) => scope.spawn(move || custom::render_rows(text, instance)),
-                PresetJob::Command {
+    let mut rows = Vec::new();
+    // Structure order wins: `-s b:os:a` prints rows in exactly that
+    // order, like fastfetch's structure loop. Duplicates allowed.
+    // Unknown tokens are the hidden "<no implementation provided>"
+    // error rows and never print.
+    for job in &jobs {
+        match job {
+            PresetJob::Module(module) => rows.extend((module.run)(instance)),
+            PresetJob::ModuleOpts { def, opts } => {
+                // Each object entry runs with its own options: the job
+                // gets a private instance carrying the entry.
+                let mut instance = instance.clone();
+                instance.entry = Some(opts);
+                rows.extend((def.run)(&instance));
+            },
+            // The hidden "<no implementation provided>" error row.
+            PresetJob::Unknown(_) => {},
+            PresetJob::Custom(text) => rows.extend(custom::render_rows(text, instance)),
+            PresetJob::Command {
+                text,
+                shell,
+                param,
+                split_lines,
+            } => {
+                rows.extend(command::run_text(
                     text,
                     shell,
-                    param,
-                    split_lines,
-                } => scope.spawn(move || {
-                    command::run_text(text, shell, param.as_deref(), *split_lines, instance)
-                }),
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .map(|handle| handle.join().unwrap_or_default())
-            .collect()
-    });
-    results.into_iter().flatten().collect()
+                    param.as_deref(),
+                    *split_lines,
+                    instance,
+                ));
+            },
+        }
+    }
+    rows
 }
 
 /// --format json: one {type, result|error} item per structure entry, in
@@ -908,48 +951,43 @@ pub fn collect_json(
     let jobs = build_jobs(selected, structure_given, config);
     prepare_rate_modules(&jobs);
 
-    std::thread::scope(|scope| {
-        jobs.iter()
-            .map(|job| match job {
-                PresetJob::Module(module) => scope.spawn(move || JsonItem {
-                    type_name: canonical_type(module.name).to_string(),
-                    // A module without a ported generator still prints the
-                    // fixed upstream error for generator-less modules.
-                    outcome: module.json.map_or(JsonOutcome::Unsupported, |json| (json)(instance)),
-                }),
-                PresetJob::ModuleOpts { def, opts } => {
-                    let mut instance = instance.clone();
-                    instance.entry = Some(opts);
-                    scope.spawn(move || JsonItem {
-                        type_name: canonical_type(def.name).to_string(),
-                        outcome: def.json.map_or(JsonOutcome::Unsupported, |json| (json)(&instance)),
-                    })
-                },
-                PresetJob::Unknown(token) => scope.spawn(move || JsonItem {
-                    type_name: token.clone(),
-                    outcome: JsonOutcome::Error("Unknown module type".to_string()),
-                }),
-                PresetJob::Custom(text) => {
-                    scope.spawn(move || JsonItem {
-                        type_name: "Custom".to_string(),
-                        outcome: custom::json(text, instance),
-                    })
-                },
-                PresetJob::Command {
-                    text,
-                    shell,
-                    param,
-                    split_lines,
-                } => scope.spawn(move || JsonItem {
-                    type_name: "Command".to_string(),
-                    outcome: command::json(text, shell, param.as_deref(), *split_lines, instance),
-                }),
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .filter_map(|handle| handle.join().ok())
-            .collect()
-    })
+    let mut items = Vec::new();
+    for job in &jobs {
+        match job {
+            PresetJob::Module(module) => items.push(JsonItem {
+                type_name: canonical_type(module.name).to_string(),
+                // A module without a ported generator still prints the
+                // fixed upstream error for generator-less modules.
+                outcome: module.json.map_or(JsonOutcome::Unsupported, |json| (json)(instance)),
+            }),
+            PresetJob::ModuleOpts { def, opts } => {
+                let mut instance = instance.clone();
+                instance.entry = Some(opts);
+                items.push(JsonItem {
+                    type_name: canonical_type(def.name).to_string(),
+                    outcome: def.json.map_or(JsonOutcome::Unsupported, |json| (json)(&instance)),
+                });
+            },
+            PresetJob::Unknown(token) => items.push(JsonItem {
+                type_name: token.clone(),
+                outcome: JsonOutcome::Error("Unknown module type".to_string()),
+            }),
+            PresetJob::Custom(text) => items.push(JsonItem {
+                type_name: "Custom".to_string(),
+                outcome: custom::json(text, instance),
+            }),
+            PresetJob::Command {
+                text,
+                shell,
+                param,
+                split_lines,
+            } => items.push(JsonItem {
+                type_name: "Command".to_string(),
+                outcome: command::json(text, shell, param.as_deref(), *split_lines, instance),
+            }),
+        }
+    }
+    items
 }
 
 #[cfg(test)]
