@@ -83,7 +83,6 @@ pub mod zpool;
 use crate::{
     instance::Instance,
     json::JsonOutcome,
-    util,
 };
 
 /// How a row should be rendered.
@@ -568,6 +567,10 @@ pub const DEFAULT_PRESET: &[&str] = &[
 /// config-supplied custom text / shell command row.
 pub enum PresetJob {
     Module(&'static ModuleDef),
+    ModuleOpts {
+        def: &'static ModuleDef,
+        opts: &'static crate::jsonc::Value,
+    },
     /// A structure/config token that selects no module. Text mode hides it
     /// (the hidden "<no implementation provided>" error row); JSON mode
     /// emits {"type": <token as written>, "error": "Unknown module type"}.
@@ -588,183 +591,69 @@ fn module_job(name: &str) -> Option<PresetJob> {
         .map(PresetJob::Module)
 }
 
-fn preset_from_fastfetch_config() -> Option<Vec<PresetJob>> {
-    // fastfetch resolves the config dir via XDG_CONFIG_HOME, falling back
-    // to $HOME/.config.
-    let home = std::env::var_os("HOME")?;
-    let mut config = match std::env::var_os("XDG_CONFIG_HOME") {
-        Some(dir) if !dir.is_empty() => std::path::PathBuf::from(dir),
-        _ => std::path::PathBuf::from(home).join(".config"),
-    };
-    config.push("fastfetch/config.jsonc");
-    preset_from_fastfetch_config_content(&util::read_file(config.to_str()?)?)
-}
+/// Shared empty options object for object entries that only carry "type".
+static EMPTY_OBJECT: crate::jsonc::Value = crate::jsonc::Value::Object(Vec::new());
 
-/// Parses the "modules" array out of a fastfetch config's JSONC content.
-/// Array items are module name strings or objects; custom objects carry
-/// their format text through, other objects run their type's module with
-/// the options dropped.
-fn preset_from_fastfetch_config_content(content: &str) -> Option<Vec<PresetJob>> {
-    // strip comments, then take the array following "modules"
-    let mut cleaned = String::with_capacity(content.len());
-    let mut in_string = false;
-    let mut chars = content.chars().peekable();
-    while let Some(c) = chars.next() {
-        if in_string {
-            if c == '"' {
-                in_string = false;
-            }
-            cleaned.push(c);
-            continue;
-        }
-        if c == '"' {
-            in_string = true;
-            cleaned.push(c);
-        } else if c == '/' && chars.peek() == Some(&'/') {
-            for skipped in chars.by_ref() {
-                if skipped == '\n' {
-                    cleaned.push('\n');
-                    break;
-                }
-            }
-        } else if c == '/' && chars.peek() == Some(&'*') {
-            chars.next();
-            while let Some(skipped) = chars.next() {
-                if skipped == '*' && chars.peek() == Some(&'/') {
-                    chars.next();
-                    break;
-                }
-            }
-        } else {
-            cleaned.push(c);
-        }
-    }
-
-    let modules_pos = cleaned.find("\"modules\"")?;
-    let rest = &cleaned[modules_pos..];
-    let start = rest.find('[')?;
-    let depth_end = rest[start..]
-        .char_indices()
-        .scan(0i32, |depth, (i, c)| {
-            *depth += match c {
-                '[' => 1,
-                ']' => -1,
-                _ => 0,
-            };
-            Some((*depth, i))
-        })
-        .find(|(depth, _)| *depth == 0)
-        .map(|(_, i)| i + start)?;
-    let array = &rest[start + 1..depth_end];
-
-    let chars: Vec<char> = array.chars().collect();
-    let mut jobs = Vec::new();
-    let mut i = 0;
-    while i < chars.len() {
-        match chars[i] {
-            ',' | ' ' | '\n' | '\t' | '\r' => i += 1,
-            '"' => {
-                let (name, next) = read_json_string(&chars, i);
-                i = next;
-                jobs.push(module_job(&name).unwrap_or(PresetJob::Unknown(name)));
-            },
-            '{' => {
-                // Object item: {"type": "custom", "format": "..."} or
-                // {"type": "<module>", ...} with the options dropped.
-                let depth_end = chars[i..]
-                    .iter()
-                    .scan(0i32, |depth, &c| {
-                        *depth += match c {
-                            '{' => 1,
-                            '}' => -1,
-                            _ => 0,
-                        };
-                        Some(*depth)
-                    })
-                    .position(|depth| depth == 0)
-                    .map(|offset| i + offset)?;
-                let object: String = chars[i..=depth_end].iter().collect();
-                let type_ = json_string_field(&object, "type").unwrap_or_default();
-                if type_.eq_ignore_ascii_case("custom") {
+/// Maps one config modules-array entry onto a job. Object entries with
+/// type `custom`/`command` decode their text options here; every other
+/// object entry keeps its options for the module to read off the
+/// per-job instance.
+fn entry_job(entry: &crate::config::Entry) -> PresetJob {
+    match entry {
+        crate::config::Entry::Simple(name) => {
+            module_job(name).unwrap_or(PresetJob::Unknown(name.clone()))
+        },
+        crate::config::Entry::Object { type_, opts } => {
+            let opts = (*opts).unwrap_or(&EMPTY_OBJECT);
+            match type_.to_ascii_lowercase().as_str() {
+                "custom" => {
                     // A custom without a format still prints its empty row.
-                    let format = json_string_field(&object, "format").unwrap_or_default();
-                    jobs.push(PresetJob::Custom(format));
-                } else if type_.eq_ignore_ascii_case("command") {
+                    let format = opts
+                        .get("format")
+                        .and_then(crate::jsonc::Value::as_str)
+                        .unwrap_or_default();
+                    PresetJob::Custom(format.to_string())
+                },
+                "command" => {
                     // fastfetch's defaults: /bin/sh -c, splitLines off.
-                    jobs.push(PresetJob::Command {
-                        text: json_string_field(&object, "text").unwrap_or_default(),
-                        shell: json_string_field(&object, "shell")
-                            .unwrap_or_else(|| "/bin/sh".to_string()),
-                        param: match json_string_field(&object, "param") {
-                            Some(param) => Some(param),
-                            None => Some("-c".to_string()),
-                        },
-                        split_lines: json_bool_field(&object, "splitLines").unwrap_or(false),
-                    });
-                } else {
-                    jobs.push(module_job(&type_).unwrap_or(PresetJob::Unknown(type_)));
-                }
-                i = depth_end + 1;
-            },
-            _ => i += 1,
-        }
-    }
-    (!jobs.is_empty()).then_some(jobs)
-}
-
-/// Reads a JSON string starting at the opening quote; \escapes decode.
-fn read_json_string(chars: &[char], start: usize) -> (String, usize) {
-    let mut out = String::new();
-    let mut i = start + 1;
-    while i < chars.len() {
-        match chars[i] {
-            '\\' if i + 1 < chars.len() => {
-                out.push(match chars[i + 1] {
-                    'n' => '\n',
-                    't' => '\t',
-                    'r' => '\r',
-                    'b' => '\u{8}',
-                    'f' => '\u{c}',
-                    other => other,
-                });
-                i += 2;
-            },
-            '"' => return (out, i + 1),
-            c => {
-                out.push(c);
-                i += 1;
-            },
-        }
-    }
-    (out, i)
-}
-
-/// Finds `"name": true/false` inside a JSON object's text.
-fn json_bool_field(object: &str, name: &str) -> Option<bool> {
-    let needle = format!("\"{name}\"");
-    let pos = object.find(&needle)? + needle.len();
-    let rest = object[pos..].trim_start().strip_prefix(':')?.trim_start();
-    if rest.starts_with("true") {
-        Some(true)
-    } else if rest.starts_with("false") {
-        Some(false)
-    } else {
-        None
+                    PresetJob::Command {
+                        text: opts
+                            .get("text")
+                            .and_then(crate::jsonc::Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        shell: opts
+                            .get("shell")
+                            .and_then(crate::jsonc::Value::as_str)
+                            .unwrap_or("/bin/sh")
+                            .to_string(),
+                        param: Some(
+                            opts.get("param")
+                                .and_then(crate::jsonc::Value::as_str)
+                                .unwrap_or("-c")
+                                .to_string(),
+                        ),
+                        split_lines: opts
+                            .get("splitLines")
+                            .and_then(crate::jsonc::Value::as_bool)
+                            .unwrap_or(false),
+                    }
+                },
+                _ => match module_job(type_) {
+                    Some(PresetJob::Module(def)) => PresetJob::ModuleOpts { def, opts },
+                    Some(other) => other,
+                    None => PresetJob::Unknown(type_.clone()),
+                },
+            }
+        },
     }
 }
 
-/// Finds `"name": "value"` inside a JSON object's text.
-fn json_string_field(object: &str, name: &str) -> Option<String> {
-    let needle = format!("\"{name}\"");
-    let pos = object.find(&needle)? + needle.len();
-    let rest = object[pos..].trim_start();
-    let rest = rest.strip_prefix(':')?.trim_start();
-    let chars: Vec<char> = rest.chars().collect();
-    if chars.first() != Some(&'"') {
-        return None;
-    }
-    let (value, _) = read_json_string(&chars, 0);
-    Some(value)
+/// The jobs for a loaded config document: the modules array takes over
+/// the structure, an absent array prints nothing, and a walk error
+/// truncates the list at the entry that failed.
+fn preset_jobs_from_config(config: &crate::config::Config) -> Vec<PresetJob> {
+    config.entries.iter().map(entry_job).collect()
 }
 
 /// The `--list-modules` table: module names and descriptions are the
@@ -889,18 +778,20 @@ pub fn colorize_percent(pct: f64, green: u8, yellow: u8, color: bool) -> String 
 /// preset. Unknown tokens become Unknown jobs (hidden rows in text mode,
 /// "Unknown module type" items in JSON mode); empty -s tokens are unknown
 /// tokens too, like fastfetch's getdelim walk.
-fn build_jobs(selected: &[String], structure_given: bool) -> Vec<PresetJob> {
-    let mut jobs: Vec<PresetJob> = if !structure_given && selected.is_empty() {
-        preset_from_fastfetch_config().unwrap_or_else(|| {
-            DEFAULT_PRESET.iter().filter_map(|name| module_job(name)).collect()
-        })
-    } else {
+fn build_jobs(selected: &[String], structure_given: bool, config: Option<&crate::config::Config>) -> Vec<PresetJob> {
+    let mut jobs: Vec<PresetJob> = if structure_given {
         // Module names match case-insensitively (ffStrEqualsIgnCase); anything
-        // else keeps the token verbatim for the JSON path.
+        // else keeps the token verbatim for the JSON path. A `-s` structure
+        // ignores the config's modules entirely, like upstream's
+        // `structure.length == 0 && configDoc` gate.
         selected
             .iter()
             .map(|name| module_job(name).unwrap_or(PresetJob::Unknown(name.clone())))
             .collect()
+    } else if let Some(config) = config.filter(|config| config.document_loaded) {
+        preset_jobs_from_config(config)
+    } else {
+        DEFAULT_PRESET.iter().filter_map(|name| module_job(name)).collect()
     };
     // The structureDisabled check runs before parsing each token, and
     // ffStrbufSeparatedContainIgnCaseNS answers "an empty list contains
@@ -928,8 +819,15 @@ pub struct JsonItem {
 
 fn prepare_rate_modules(jobs: &[PresetJob]) {
     let wants = |name: &str| {
-        jobs.iter()
-            .any(|job| matches!(job, PresetJob::Module(module) if module.name == name))
+        jobs.iter().any(|job| {
+            matches!(
+                job,
+                PresetJob::Module(module) if module.name == name
+            ) || matches!(
+                job,
+                PresetJob::ModuleOpts { def, .. } if def.name == name
+            )
+        })
     };
 
     // The rate modules sample counters twice; start the clock before the
@@ -955,8 +853,13 @@ fn prepare_rate_modules(jobs: &[PresetJob]) {
 /// Modules are independent of each other, so each one runs in its own
 /// scoped thread: the slow data sources (gdbus, gsettings, process scans)
 /// overlap instead of adding up. Rows are emitted in structure order.
-pub fn collect(selected: &[String], structure_given: bool, instance: &Instance) -> Vec<Row> {
-    let jobs = build_jobs(selected, structure_given);
+pub fn collect(
+    selected: &[String],
+    structure_given: bool,
+    config: Option<&crate::config::Config>,
+    instance: &Instance,
+) -> Vec<Row> {
+    let jobs = build_jobs(selected, structure_given, config);
     prepare_rate_modules(&jobs);
 
     let results: Vec<Vec<Row>> = std::thread::scope(|scope| {
@@ -967,6 +870,13 @@ pub fn collect(selected: &[String], structure_given: bool, instance: &Instance) 
         jobs.iter()
             .map(|job| match job {
                 PresetJob::Module(module) => scope.spawn(move || (module.run)(instance)),
+                PresetJob::ModuleOpts { def, opts } => {
+                    // Each object entry runs with its own options: the job
+                    // thread gets a private instance carrying the entry.
+                    let mut instance = instance.clone();
+                    instance.entry = Some(opts);
+                    scope.spawn(move || (def.run)(&instance))
+                },
                 // The hidden "<no implementation provided>" error row.
                 PresetJob::Unknown(_) => scope.spawn(std::vec::Vec::new),
                 PresetJob::Custom(text) => scope.spawn(move || custom::render_rows(text, instance)),
@@ -989,8 +899,13 @@ pub fn collect(selected: &[String], structure_given: bool, instance: &Instance) 
 
 /// --format json: one {type, result|error} item per structure entry, in
 /// structure order. Unknown tokens print their verbatim spelling.
-pub fn collect_json(selected: &[String], structure_given: bool, instance: &Instance) -> Vec<JsonItem> {
-    let jobs = build_jobs(selected, structure_given);
+pub fn collect_json(
+    selected: &[String],
+    structure_given: bool,
+    config: Option<&crate::config::Config>,
+    instance: &Instance,
+) -> Vec<JsonItem> {
+    let jobs = build_jobs(selected, structure_given, config);
     prepare_rate_modules(&jobs);
 
     std::thread::scope(|scope| {
@@ -1002,6 +917,14 @@ pub fn collect_json(selected: &[String], structure_given: bool, instance: &Insta
                     // fixed upstream error for generator-less modules.
                     outcome: module.json.map_or(JsonOutcome::Unsupported, |json| (json)(instance)),
                 }),
+                PresetJob::ModuleOpts { def, opts } => {
+                    let mut instance = instance.clone();
+                    instance.entry = Some(opts);
+                    scope.spawn(move || JsonItem {
+                        type_name: canonical_type(def.name).to_string(),
+                        outcome: def.json.map_or(JsonOutcome::Unsupported, |json| (json)(&instance)),
+                    })
+                },
                 PresetJob::Unknown(token) => scope.spawn(move || JsonItem {
                     type_name: token.clone(),
                     outcome: JsonOutcome::Error("Unknown module type".to_string()),
@@ -1037,6 +960,7 @@ mod preset_tests {
         jobs.iter()
             .map(|job| match job {
                 PresetJob::Module(module) => module.name.to_string(),
+                PresetJob::ModuleOpts { def, .. } => format!("opts:{}", def.name),
                 PresetJob::Unknown(token) => format!("unknown:{token}"),
                 PresetJob::Custom(text) => format!("custom:{text}"),
                 PresetJob::Command { text, .. } => format!("command:{text}"),
@@ -1080,9 +1004,9 @@ mod preset_tests {
     ],
 }
 "#;
-        let Some(jobs) = super::preset_from_fastfetch_config_content(config) else {
-            panic!("config with modules array should parse");
-        };
+        let config = crate::config::for_test(config);
+        assert!(config.document_loaded);
+        let jobs = super::preset_jobs_from_config(&config);
         assert_eq!(
             job_names(&jobs),
             [
@@ -1092,29 +1016,33 @@ mod preset_tests {
                 "host",
                 "break",
                 "custom:hello {#red}world",
-                "os",
+                "opts:os",
                 "colors",
             ]
         );
 
-        assert!(super::preset_from_fastfetch_config_content("{\"other\": []}").is_none());
+        // A loaded document with no modules key prints nothing (upstream:
+        // printJsonConfig returns early) instead of the default preset.
+        let config = crate::config::for_test(r#"{"logo": null}"#);
+        assert!(config.document_loaded);
+        assert!(config.logo_none);
+        assert!(super::preset_jobs_from_config(&config).is_empty());
     }
 
     #[test]
     fn custom_without_format_still_prints() {
-        let config = r#"{"modules": [{"type": "custom"}]}"#;
-        let Some(jobs) = super::preset_from_fastfetch_config_content(config) else {
-            panic!("custom object should parse");
-        };
-        assert_eq!(job_names(&jobs), ["custom:"]);
+        let config = crate::config::for_test(r#"{"modules": [{"type": "custom"}]}"#);
+        let jobs = super::preset_jobs_from_config(&config);
+        // An object carrying only "type" behaves like the bare string; the
+        // custom module's default (empty) format prints the same empty row.
+        assert_eq!(job_names(&jobs), ["custom"]);
     }
 
     #[test]
     fn command_job_carries_options() {
-        let config = r#"{"modules": [{"type": "command", "text": "echo hi", "splitLines": true}]}"#;
-        let Some(jobs) = super::preset_from_fastfetch_config_content(config) else {
-            panic!("command object should parse");
-        };
+        let config =
+            crate::config::for_test(r#"{"modules": [{"type": "command", "text": "echo hi", "splitLines": true}]}"#);
+        let jobs = super::preset_jobs_from_config(&config);
         match &jobs[0] {
             PresetJob::Command {
                 text,

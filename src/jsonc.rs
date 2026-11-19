@@ -44,6 +44,7 @@ impl Value {
         }
     }
 
+    #[allow(dead_code)] // used as module option decoding grows
     pub fn as_int(&self) -> Option<i64> {
         match self {
             Value::Int(i) => Some(*i),
@@ -69,6 +70,7 @@ impl Value {
         matches!(self, Value::Object(_))
     }
 
+    #[allow(dead_code)] // used as module option decoding grows
     pub fn is_array(&self) -> bool {
         matches!(self, Value::Array(_))
     }

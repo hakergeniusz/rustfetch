@@ -17,8 +17,8 @@ pub struct LogoColors {
 
 pub struct Instance {
     /// display.c:957 — `!isatty(stdout) || NO_COLOR is set (even empty)`,
-    /// or an explicit `--pipe`. Gates {#color} tokens in custom formats
-    /// even in JSON mode.
+    /// or an explicit `--pipe` / config `display.pipe`. Gates {#color}
+    /// tokens in custom formats even in JSON mode.
     pub pipe: bool,
     /// True when ANSI escape sequences may be printed (interactive tty,
     /// colors not disabled via `--pipe` or `NO_COLOR`; unlike many tools,
@@ -33,17 +33,45 @@ pub struct Instance {
     /// The raw `--logo` value: "none" and "small" are logo types, anything
     /// else is a builtin name (upstream splits them into logoOptions).
     pub logo_source: Option<String>,
+    /// `logo.padding.top` from the config; blank key-column lines inserted
+    /// above the logo block.
+    pub padding_top: Option<u32>,
+    /// The current config entry's object (per-job: each module job gets a
+    /// clone carrying its own entry), read by modules with config options.
+    pub entry: Option<&'static crate::jsonc::Value>,
     /// Memoized GSettings/dconf reads per (schema, key), filled lazily by the
     /// GTK modules. A Mutex because modules run in parallel threads.
     pub gnome_settings: Mutex<HashMap<String, Option<String>>>,
 }
 
+impl Clone for Instance {
+    fn clone(&self) -> Self {
+        Self {
+            pipe: self.pipe,
+            color: self.color,
+            logo_colors: self.logo_colors.clone(),
+            distro_id: self.distro_id.clone(),
+            distro_like: self.distro_like.clone(),
+            logo_source: self.logo_source.clone(),
+            padding_top: self.padding_top,
+            entry: self.entry,
+            gnome_settings: Mutex::new(self.gnome_settings.lock().unwrap_or_else(|e| e.into_inner()).clone()),
+        }
+    }
+}
+
 impl Instance {
-    pub fn new(cli: &Cli) -> Self {
+    pub fn new(cli: &Cli, config_pipe: bool, padding_top: Option<u32>) -> Self {
         // display.c:957 — --pipe defaults to !isatty(stdout) || NO_COLOR
-        // (getenv, so an empty value counts too); --pipe false overrides.
+        // (getenv, so an empty value counts too); --pipe false overrides;
+        // config display.pipe applies unless the command line said
+        // something (the config loads before the option pass).
         let pipe = cli.pipe
-            .unwrap_or_else(|| !std::io::stdout().is_terminal() || std::env::var_os("NO_COLOR").is_some());
+            .unwrap_or(if config_pipe {
+                true
+            } else {
+                !std::io::stdout().is_terminal() || std::env::var_os("NO_COLOR").is_some()
+            });
         let color = !pipe && cli.format == Format::Standard;
 
         let mut distro_id = None;
@@ -66,6 +94,8 @@ impl Instance {
             distro_id,
             distro_like,
             logo_source: cli.logo.clone(),
+            padding_top,
+            entry: None,
             gnome_settings: Mutex::new(HashMap::new()),
             logo_colors: OnceLock::new(),
         }

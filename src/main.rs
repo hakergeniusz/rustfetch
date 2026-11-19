@@ -1,6 +1,7 @@
 //! rustfetch: fastfetch, rewritten in Rust.
 
 mod cli;
+mod config;
 mod cpu_tables;
 mod cpu_x86;
 mod ffont;
@@ -67,16 +68,34 @@ fn main() {
         std::process::exit(481);
     }
 
-    let instance = instance::Instance::new(&cli);
+    // The config loads before the option-derived state (Instance), like
+    // upstream's two argv passes; errors exit inside the loader.
+    let mut config_loaded = false;
+    let config = match &cli.config {
+        Some(value) => Some(config::load_explicit(value, &mut config_loaded)),
+        None => config::load_automatic(config_loaded),
+    };
+
+    // `logo: null` disables the logo unless --logo said something (the
+    // option pass runs after the config, like upstream).
+    if config.as_ref().is_some_and(|config| config.logo_none) && cli.logo.is_none() {
+        cli.logo = Some("none".to_string());
+    }
+
+    let instance = instance::Instance::new(
+        &cli,
+        config.as_ref().is_some_and(|config| config.pipe),
+        config.as_ref().and_then(|config| config.padding_top),
+    );
 
     if cli.format == cli::Format::Json {
-        let items = modules::collect_json(&cli.modules, structure_given, &instance);
+        let items = modules::collect_json(&cli.modules, structure_given, config.as_ref(), &instance);
         render::print_json(&items);
         return;
     }
 
     let (logo, colors) = logo::load(&cli, &instance);
     let _ = instance.logo_colors.set(colors);
-    let rows = modules::collect(&cli.modules, structure_given, &instance);
+    let rows = modules::collect(&cli.modules, structure_given, config.as_ref(), &instance);
     render::print(&logo, &rows, &cli, &instance);
 }

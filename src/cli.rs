@@ -23,6 +23,11 @@ pub struct Cli {
     /// Only show these modules, e.g. `rustfetch -s os cpu memory`
     pub modules: Vec<String>,
 
+    /// Config file or preset to load, like fastfetch's `-c all`;
+    /// `none` skips config loading entirely
+    #[arg(short, long)]
+    pub config: Option<String>,
+
     /// List all available modules and exit
     #[arg(short, long)]
     pub list_modules: bool,

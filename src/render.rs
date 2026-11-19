@@ -86,8 +86,14 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) 
     }
 
     let key_color = instance.logo_colors.get().and_then(|colors| colors.key);
-    let logo_lines: Vec<(String, usize)> =
+    let mut logo_lines: Vec<(String, usize)> =
         logo.as_ref().map(|logo| colorize(logo, color)).unwrap_or_default();
+    // logo.padding.top pushes the whole logo block down: the first rows
+    // print on key-column-width blank lines, like the reference's
+    // `-c all` output.
+    if let Some(top) = instance.padding_top {
+        logo_lines.splice(0..0, std::iter::repeat((String::new(), 0)).take(top as usize));
+    }
 
     // fastfetch's padding model: defaults are 0 left / 4 right; --padding N
     // sets both sides. The key column sits at logo width + left + right.

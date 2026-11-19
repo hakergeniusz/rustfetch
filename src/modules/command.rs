@@ -117,7 +117,7 @@ mod tests {
 
     fn instance() -> crate::instance::Instance {
         use clap::Parser as _;
-        crate::instance::Instance::new(&crate::cli::Cli::parse_from(["rustfetch"]))
+        crate::instance::Instance::new(&crate::cli::Cli::parse_from(["rustfetch"]), false, None)
     }
 
     #[test]
