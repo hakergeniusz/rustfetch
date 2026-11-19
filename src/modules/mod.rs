@@ -146,7 +146,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "title",
         run: title::run,
-        json: None,
+        json: Some(title::json),
     },
     ModuleDef {
         name: "separator",
@@ -156,7 +156,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "os",
         run: os::run,
-        json: None,
+        json: Some(os::json),
     },
     ModuleDef {
         name: "opencl",
@@ -176,7 +176,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "host",
         run: host::run,
-        json: None,
+        json: Some(host::json),
     },
     ModuleDef {
         name: "bios",
@@ -216,7 +216,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "kernel",
         run: kernel::run,
-        json: None,
+        json: Some(kernel::json),
     },
     ModuleDef {
         name: "initsystem",

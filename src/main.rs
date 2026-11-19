@@ -7,6 +7,7 @@ mod json;
 mod logo;
 mod logo_data;
 mod modules;
+mod platform;
 mod render;
 mod settings;
 mod util;

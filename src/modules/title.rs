@@ -1,14 +1,20 @@
 //! `title` module: user@host, ported from title.c. Each part is bold and
 //! colored with the logo's title color (colorAt defaults to unset, so the
 //! @ stays plain); the renderer prints the keyless row's leading reset.
+//! The identity fields come from the platform struct (passwd + uname),
+//! which ffGenerateTitleJsonResult serializes verbatim.
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    platform,
+};
 
 pub fn run(instance: &Instance) -> Vec<Row> {
-    let user = std::env::var("USER")
-        .or_else(|_| std::env::var("LOGNAME"))
-        .unwrap_or_else(|_| "unknown".to_string());
-    let host = util::read_trimmed("/etc/hostname").unwrap_or_else(|| "unknown".to_string());
+    let platform = platform::platform();
+    let user = &platform.user_name;
+    let host = &platform.host_name;
 
     // appendText: bold, then the logo title color, then reset.
     let color = instance.logo_colors.get().and_then(|colors| colors.title);
@@ -25,6 +31,22 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         out
     };
 
-    let value = format!("{}@{}", wrap(&user), wrap(&host));
+    let value = format!("{}@{}", wrap(user), wrap(host));
     vec![Row::bare(value)]
+}
+
+/// ffGenerateTitleJsonResult: the platform identity, in its fixed order.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let platform = platform::platform();
+    let mut result = Json::obj();
+    result.push("userId", platform.uid as u64);
+    result.push("userName", platform.user_name.clone());
+    result.push("fullUserName", platform.full_user_name.clone());
+    result.push("hostName", platform.host_name.clone());
+    result.push("homeDir", platform.home_dir.clone());
+    result.push("exePath", platform.exe_path.clone());
+    result.push("userShell", platform.user_shell.clone());
+    result.push("pid", platform.pid as u64);
+    result.push("cwd", platform.cwd.clone());
+    JsonOutcome::Result(result)
 }

@@ -1,12 +1,25 @@
-//! `kernel` module: kernel type and release.
+//! `kernel` module: kernel type and release from uname, which
+//! ffGenerateKernelJsonResult serializes with the page size.
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    platform,
+};
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Some(release) = util::read_trimmed("/proc/sys/kernel/osrelease") else {
-        return Vec::new();
-    };
-    let kind = util::read_trimmed("/proc/sys/kernel/ostype").unwrap_or_else(|| "Linux".to_string());
+    let sysinfo = &platform::platform().sysinfo;
+    vec![Row::new("Kernel", format!("{} {}", sysinfo.name, sysinfo.release))]
+}
 
-    vec![Row::new("Kernel", format!("{kind} {release}"))]
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let sysinfo = &platform::platform().sysinfo;
+    let mut result = Json::obj();
+    result.push("architecture", sysinfo.architecture.clone());
+    result.push("name", sysinfo.name.clone());
+    result.push("release", sysinfo.release.clone());
+    result.push("version", sysinfo.version.clone());
+    result.push("pageSize", sysinfo.page_size);
+    JsonOutcome::Result(result)
 }
