@@ -282,7 +282,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "display",
         run: display::run,
-        json: None,
+        json: Some(display::json),
     },
     ModuleDef {
         name: "brightness",
