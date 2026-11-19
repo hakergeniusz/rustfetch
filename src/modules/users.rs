@@ -3,11 +3,20 @@
 //! older one); when utmp found nobody, the systemd files under /run/systemd
 //! are queried instead (Debian-family systems stopped updating utmp).
 
-use crate::{instance::Instance, modules::Row, util};
+use std::net::{Ipv4Addr, Ipv6Addr};
+
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 struct User {
     name: String,
     host: String,
+    session_name: String,
+    client_ip: String,
     login_time_ms: u64,
 }
 
@@ -39,19 +48,43 @@ fn detect_by_utmp() -> Vec<User> {
             if let Some(user) = users.iter_mut().find(|user| user.name == name) {
                 if login_time_ms > user.login_time_ms {
                     user.host = c_array_str(&entry.ut_host);
+                    user.session_name = c_array_str(&entry.ut_line);
+                    fill_utmp_ip(user, entry);
                     user.login_time_ms = login_time_ms;
                 }
             } else {
-                users.push(User {
+                let mut user = User {
                     name,
                     host: c_array_str(&entry.ut_host),
+                    session_name: c_array_str(&entry.ut_line),
+                    client_ip: String::new(),
                     login_time_ms,
-                });
+                };
+                fill_utmp_ip(&mut user, entry);
+                users.push(user);
             }
         }
         libc::endutxent();
     }
     users
+}
+
+/// fillUtmpIpAddr: ut_addr_v6 as IPv6 when bytes 1..4 are set, else IPv4
+/// when the first byte is set. The string forms match inet_ntop (Rust's
+/// Ipv6Addr Display is the RFC 5952 compressed form).
+fn fill_utmp_ip(user: &mut User, entry: &libc::utmpx) {
+    // ut_addr_v6 is an int32[4] that inet_ntop reads as raw bytes: the IPv4
+    // address is the little-endian byte image of the first int32.
+    let addr_bytes = entry.ut_addr_v6[0].to_le_bytes();
+    let is_ipv6 = entry.ut_addr_v6[1..4].iter().any(|&b| b != 0);
+    if is_ipv6 {
+        let mut octets = [0u8; 16];
+        octets[..4].copy_from_slice(&addr_bytes);
+        user.client_ip = Ipv6Addr::from(octets).to_string();
+    } else if entry.ut_addr_v6[0] != 0 {
+        let [a, b, c, d] = addr_bytes;
+        user.client_ip = Ipv4Addr::new(a, b, c, d).to_string();
+    }
 }
 
 /// NAME=, STATE= and REALTIME= out of one /run/systemd/users/<uid> file.
@@ -79,6 +112,8 @@ fn detect_user(path: &std::path::Path) -> Option<User> {
     Some(User {
         name: name?,
         host: String::new(),
+        session_name: String::new(),
+        client_ip: String::new(),
         login_time_ms,
     })
 }
@@ -118,7 +153,7 @@ fn fill_session(user: &mut User, session_path: &std::path::Path) {
     } else {
         user.host = remote_host.trim_start_matches('[').trim_end_matches(']').to_string();
     }
-    let _ = tty;
+    user.session_name = if tty.is_empty() { service } else { tty };
 }
 
 /// `%F %T` of the login time, like ffTimeToShortStr.
@@ -202,6 +237,28 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             Row::new(&key, value)
         })
         .collect()
+}
+
+/// ffGenerateUsersJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let Ok(users) = detect().ok_or("opendir(\"/run/systemd/users/\") failed") else {
+        return JsonOutcome::Error("opendir(\"/run/systemd/users/\") failed".to_string());
+    };
+    let mut arr = Json::Array(Vec::new());
+    for user in &users {
+        let mut obj = Json::obj();
+        obj.push("name", user.name.clone());
+        obj.push("hostName", user.host.clone());
+        obj.push("sessionName", user.session_name.clone());
+        obj.push("clientIp", user.client_ip.clone());
+        if user.login_time_ms > 0 {
+            obj.push("loginTime", util::time_to_full_str(user.login_time_ms));
+        } else {
+            obj.push("loginTime", Json::Null);
+        }
+        arr.push_value(obj);
+    }
+    JsonOutcome::Result(arr)
 }
 
 #[cfg(test)]

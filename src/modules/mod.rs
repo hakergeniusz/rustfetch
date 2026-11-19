@@ -232,7 +232,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "users",
         run: users::run,
-        json: None,
+        json: Some(users::json),
     },
     ModuleDef {
         name: "tpm",
