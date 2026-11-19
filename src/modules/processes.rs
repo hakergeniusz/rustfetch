@@ -1,16 +1,21 @@
 //! `processes` module: running process and thread counts from /proc,
 //! skipping kernel threads like fastfetch (PF_KTHREAD flag in stat field 9).
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 /// kernel include/linux/sched.h
 const PF_KTHREAD: u64 = 0x0020_0000;
 
 /// (flags, num_threads) are stat fields 9 and 20; after the comm, field 3
 /// starts, so they sit at token indexes 6 and 17.
-pub fn run(_instance: &Instance) -> Vec<Row> {
+fn detect() -> Result<(u64, u64), &'static str> {
     let Ok(entries) = std::fs::read_dir("/proc") else {
-        return Vec::new();
+        return Err("opendir(\"/proc\") failed");
     };
 
     let mut processes = 0u64;
@@ -43,6 +48,13 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         threads += tokens[17].parse::<u64>().unwrap_or(0);
     }
 
+    Ok((processes, threads))
+}
+
+pub fn run(_instance: &Instance) -> Vec<Row> {
+    let Ok((processes, threads)) = detect() else {
+        return Vec::new();
+    };
     if processes == 0 {
         return Vec::new();
     }
@@ -53,4 +65,17 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         processes.to_string()
     };
     vec![Row::new("Processes", value)]
+}
+
+/// ffGenerateProcessesJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok((processes, threads)) => {
+            let mut obj = Json::obj();
+            obj.push("processes", processes);
+            obj.push("threads", threads);
+            JsonOutcome::Result(obj)
+        },
+    }
 }

@@ -252,7 +252,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "keyboard",
         run: keyboard::run,
-        json: None,
+        json: Some(keyboard::json),
     },
     ModuleDef {
         name: "lm",
@@ -262,7 +262,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "processes",
         run: processes::run,
-        json: None,
+        json: Some(processes::json),
     },
     ModuleDef {
         name: "packages",
@@ -277,7 +277,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "editor",
         run: editor::run,
-        json: None,
+        json: Some(editor::json),
     },
     ModuleDef {
         name: "display",
@@ -337,7 +337,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "terminalsize",
         run: terminalsize::run,
-        json: None,
+        json: Some(terminalsize::json),
     },
     ModuleDef {
         name: "cpu",

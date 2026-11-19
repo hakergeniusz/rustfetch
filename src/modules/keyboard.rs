@@ -4,26 +4,40 @@
 //! KEY word has KEY_A (filters media remotes); the name comes from the
 //! "N: Name=" line.
 
-use crate::{instance::Instance, modules::Row};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+};
 
 const EV_REP: u64 = 20;
 const KEY_A: u64 = 30;
 
-fn detect() -> Vec<String> {
+fn detect() -> Vec<KeyboardDevice> {
     detect_of(&std::fs::read_to_string("/proc/bus/input/devices").unwrap_or_default())
 }
 
-fn detect_of(content: &str) -> Vec<String> {
+pub struct KeyboardDevice {
+    pub name: String,
+    pub serial: String,
+}
+
+fn detect_of(content: &str) -> Vec<KeyboardDevice> {
     let mut devices = Vec::new();
     let mut name = String::new();
+    let mut serial = String::new();
     let mut skip_entry = false;
 
     for line in content.lines() {
         if line.is_empty() {
             if !skip_entry && !name.is_empty() {
-                devices.push(name.clone());
+                devices.push(KeyboardDevice {
+                    name: name.clone(),
+                    serial: serial.clone(),
+                });
             }
             name.clear();
+            serial.clear();
             skip_entry = false;
             continue;
         }
@@ -33,6 +47,8 @@ fn detect_of(content: &str) -> Vec<String> {
 
         if let Some(rest) = line.strip_prefix("N: Name=") {
             name = rest.trim().trim_matches('"').to_string();
+        } else if let Some(rest) = line.strip_prefix("U: Uniq=") {
+            serial = rest.trim().to_string();
         } else if let Some(rest) = line.strip_prefix("H: Handlers=") {
             if !rest.split(' ').any(|handler| handler == "kbd") {
                 // No kbd handler: not a keyboard.
@@ -66,7 +82,8 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     devices
         .iter()
         .enumerate()
-        .map(|(index, name)| {
+        .map(|(index, device)| {
+            let name = &device.name;
             let index = if devices.len() > 1 { index + 1 } else { 0 };
             let key = if index == 0 {
                 "Keyboard".to_string()
@@ -106,6 +123,23 @@ B: EV=120013
 B: KEY=c 0 0 40000000
 
 ";
-        assert_eq!(super::detect_of(devices), ["AT Translated Set 2 keyboard", "Real Keyboard"]);
+        let devices = super::detect_of(devices);
+        let names: Vec<&str> = devices.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, ["AT Translated Set 2 keyboard", "Real Keyboard"]);
     }
+}
+
+/// ffGenerateKeyboardJsonResult: ignored is false (the ignores list is a
+/// module option this CLI does not expose).
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let devices = detect();
+    let mut arr = Json::Array(Vec::new());
+    for device in &devices {
+        let mut obj = Json::obj();
+        obj.push("serial", device.serial.clone());
+        obj.push("name", device.name.clone());
+        obj.push("ignored", false);
+        arr.push_value(obj);
+    }
+    JsonOutcome::Result(arr)
 }

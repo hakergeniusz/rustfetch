@@ -1,7 +1,11 @@
 //! `terminalsize` module: terminal dimensions via ioctl, fastfetch format
 //! ("179 columns x 41 rows (1920x1440px)").
 
-use crate::{instance::Instance, modules::Row};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+};
 
 fn winsize() -> Option<(u16, u16, u16, u16)> {
     let mut ws = libc::winsize {
@@ -31,4 +35,17 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     }
 
     vec![Row::new("Terminal Size", value)]
+}
+
+/// ffGenerateTerminalSizeJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let Some((columns, rows, width, height)) = winsize() else {
+        return JsonOutcome::Error("Failed to detect terminal size".to_string());
+    };
+    let mut obj = Json::obj();
+    obj.push("columns", columns as u64);
+    obj.push("rows", rows as u64);
+    obj.push("width", width as u64);
+    obj.push("height", height as u64);
+    JsonOutcome::Result(obj)
 }

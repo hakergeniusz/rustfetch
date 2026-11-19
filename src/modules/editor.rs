@@ -3,7 +3,12 @@
 //! through $PATH (absolute values verbatim), and the version comes from the
 //! binary's embedded strings (nvim, vim, nano) or a `--version` spawn.
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 fn extract_nvim_version(line: &str) -> Option<String> {
     let rest = line.strip_prefix("NVIM v")?;
@@ -63,32 +68,43 @@ fn version_spawn(path: &str, exe: &str) -> Option<String> {
     Some(first[start..end].to_string())
 }
 
-fn detect() -> Option<(String, Option<String>)> {
+pub struct EditorResult {
+    /// Which env var supplied the command ("VISUAL" or "EDITOR").
+    pub editor_type: &'static str,
+    pub name: String,
+    pub path: String,
+    pub exe: String,
+    pub version: String,
+}
+
+fn detect() -> Result<EditorResult, &'static str> {
+    let mut editor_type = "VISUAL";
     let mut name = std::env::var("VISUAL").unwrap_or_default();
     if name.is_empty() {
+        editor_type = "EDITOR";
         name = std::env::var("EDITOR").unwrap_or_default();
     }
     if name.is_empty() {
-        return None;
+        return Err("$VISUAL or $EDITOR not set");
     }
 
     // $EDITOR carries shell command lines sometimes ("code -w").
     let name_end = name.find([' ', '\t', '\n', '\x0b', '\x0c', '\r']).unwrap_or(name.len());
     name.truncate(name_end);
     if name.is_empty() {
-        return None;
+        return Err("$VISUAL or $EDITOR not set");
     }
 
-    let path = find_in_path(&name)?;
+    let path = find_in_path(&name).ok_or("Failed to determine the executable name")?;
     let path = match std::fs::canonicalize(&path) {
         // A resolved snap path is the read-only mount; keep the original.
         Ok(real) if real.to_string_lossy().ends_with("/snap") => path,
         Ok(real) => real,
-        Err(_) => return None,
+        Err(_) => return Err("Failed to determine the executable name"),
     };
     let exe = path.to_string_lossy().rsplit('/').next().unwrap_or("").to_string();
     if exe.is_empty() {
-        return None;
+        return Err("Failed to determine the executable name");
     }
 
     let version = match exe.as_str() {
@@ -112,19 +128,42 @@ fn detect() -> Option<(String, Option<String>)> {
     }
     .or_else(|| version_spawn(&path.to_string_lossy(), &exe));
 
-    Some((exe, version))
+    Ok(EditorResult {
+        editor_type,
+        name,
+        path: path.to_string_lossy().into_owned(),
+        exe,
+        version: version.unwrap_or_default(),
+    })
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Some((exe, version)) = detect() else {
+    let Ok(editor) = detect() else {
         // ffPrintError is gated behind --show-errors, off by default.
         return Vec::new();
     };
-    let value = match version {
-        Some(version) => format!("{exe} {version}"),
-        None => exe,
+    let value = if editor.version.is_empty() {
+        editor.exe.clone()
+    } else {
+        format!("{} {}", editor.exe, editor.version)
     };
     vec![Row::new("Editor", value)]
+}
+
+/// ffGenerateEditorJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(editor) => {
+            let mut obj = Json::obj();
+            obj.push("type", editor.editor_type);
+            obj.push("name", editor.name.clone());
+            obj.push("path", editor.path.clone());
+            obj.push("exe", editor.exe.clone());
+            obj.push("version", editor.version.clone());
+            JsonOutcome::Result(obj)
+        },
+    }
 }
 
 #[cfg(test)]
