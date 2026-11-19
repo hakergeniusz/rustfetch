@@ -3,7 +3,12 @@
 //! Cinnamon, MATE), then the Qt sources (Plasma's appletsrc, LXQt's pcmanfm).
 //! Only the file's basename is printed.
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 /// ffDetectWallpaper's per-DE settings keys.
 fn from_settings_daemon(instance: &Instance) -> Option<String> {
@@ -42,16 +47,25 @@ fn from_lxqt() -> Option<String> {
         .flatten()
 }
 
-pub fn run(instance: &Instance) -> Vec<Row> {
-    let value =
-        from_settings_daemon(instance)
-            .or_else(from_kde)
-            .or_else(from_lxqt)
-            .map(|wallpaper| {
-                // picture-uri is often a file:// URL
-                let wallpaper = wallpaper.strip_prefix("file://").unwrap_or(&wallpaper);
-                wallpaper.rsplit('/').next().unwrap_or(wallpaper).to_string()
-            });
+fn detect(instance: &Instance) -> Option<String> {
+    from_settings_daemon(instance)
+        .or_else(from_kde)
+        .or_else(from_lxqt)
+        .map(|wallpaper| wallpaper.strip_prefix("file://").unwrap_or(&wallpaper).to_string())
+}
 
-    value.map(|value| vec![Row::new("Wallpaper", value)]).unwrap_or_default()
+pub fn run(instance: &Instance) -> Vec<Row> {
+    detect(instance).map(|wallpaper| {
+        // picture-uri is often a file:// URL; only the basename prints.
+        let basename = wallpaper.rsplit('/').next().unwrap_or(&wallpaper).to_string();
+        vec![Row::new("Wallpaper", basename)]
+    }).unwrap_or_default()
+}
+
+/// ffGenerateWallpaperJsonResult: the full path, no basename cleanup.
+pub fn json(instance: &Instance) -> JsonOutcome {
+    match detect(instance) {
+        Some(path) => JsonOutcome::Result(path.into()),
+        None => JsonOutcome::Error("Failed to detect the current wallpaper path".to_string()),
+    }
 }

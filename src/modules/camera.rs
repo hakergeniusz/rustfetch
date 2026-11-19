@@ -4,7 +4,11 @@
 
 use std::ffi::CString;
 
-use crate::{instance::Instance, modules::Row};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+};
 
 const VIDIOC_QUERYCAP: libc::c_ulong = 0x8068_5600;
 const VIDIOC_G_FMT: libc::c_ulong = 0xc0d0_5604;
@@ -63,7 +67,15 @@ fn c_string(bytes: &[u8]) -> String {
     String::from_utf8_lossy(&bytes[..end]).into_owned()
 }
 
-fn detect() -> Vec<(String, String, u32, u32)> {
+pub struct CameraDevice {
+    pub name: String,
+    pub id: String,
+    pub colorspace: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+fn detect() -> Result<Vec<CameraDevice>, &'static str> {
     let mut result = Vec::new();
     for i in 0..=9u8 {
         let path = format!("/dev/video{i}");
@@ -76,7 +88,10 @@ fn detect() -> Vec<(String, String, u32, u32)> {
             if errno == libc::ENOENT {
                 break;
             }
-            continue; // ENXIO: the node exists but no driver is bound
+            if errno == libc::ENXIO {
+                continue; // the node exists but no driver is bound
+            }
+            return Err("Failed to open /dev/videoN");
         }
 
         let mut cap = V4l2Capability {
@@ -101,18 +116,21 @@ fn detect() -> Vec<(String, String, u32, u32)> {
             continue;
         }
 
-        result.push((
-            c_string(&cap.card),
-            colorspace_name(pix_u32(&fmt, 24)).to_string(),
-            pix_u32(&fmt, 0),
-            pix_u32(&fmt, 4),
-        ));
+        result.push(CameraDevice {
+            id: c_string(&cap.bus_info),
+            colorspace: colorspace_name(pix_u32(&fmt, 24)).to_string(),
+            width: pix_u32(&fmt, 0),
+            height: pix_u32(&fmt, 4),
+            name: c_string(&cap.card),
+        });
     }
-    result
+    Ok(result)
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let cameras = detect();
+    let Ok(cameras) = detect() else {
+        return Vec::new();
+    };
     if cameras.is_empty() {
         // "No camera found" is an error row, hidden by default.
         return Vec::new();
@@ -121,7 +139,10 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     cameras
         .iter()
         .enumerate()
-        .map(|(index, (name, colorspace, width, height))| {
+        .map(|(index, dev)| {
+            let name = &dev.name;
+            let colorspace = &dev.colorspace;
+            let (width, height) = (dev.width, dev.height);
             let index = if cameras.len() == 1 { 0 } else { index + 1 };
             let key = if index == 0 {
                 "Camera".to_string()
@@ -132,7 +153,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             if !colorspace.is_empty() {
                 value.push_str(&format!(" - {colorspace}"));
             }
-            if *width > 0 && *height > 0 {
+            if width > 0 && height > 0 {
                 value.push_str(&format!(" ({width}x{height} px)"));
             }
             Row::new(&key, value)
@@ -154,5 +175,26 @@ mod tests {
     fn truncates_c_strings() {
         let bytes = b"USB Camera\0rest";
         assert_eq!(super::c_string(bytes), "USB Camera");
+    }
+}
+
+/// ffGenerateCameraJsonResult: vendor is never filled on Linux detection.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(cameras) => {
+            let mut arr = Json::Array(Vec::new());
+            for dev in &cameras {
+                let mut obj = Json::obj();
+                obj.push("name", dev.name.clone());
+                obj.push("vendor", "");
+                obj.push("colorSpace", dev.colorspace.clone());
+                obj.push("id", dev.id.clone());
+                obj.push("width", dev.width as u64);
+                obj.push("height", dev.height as u64);
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
     }
 }

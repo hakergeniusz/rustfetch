@@ -222,7 +222,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "initsystem",
         run: initsystem::run,
-        json: None,
+        json: Some(initsystem::json),
     },
     ModuleDef {
         name: "uptime",
@@ -477,12 +477,12 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "camera",
         run: camera::run,
-        json: None,
+        json: Some(camera::json),
     },
     ModuleDef {
         name: "wallpaper",
         run: wallpaper::run,
-        json: None,
+        json: Some(wallpaper::json),
     },
     ModuleDef {
         name: "media",

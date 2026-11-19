@@ -6,12 +6,17 @@
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 /// The resolved name and version of pid 1, memoized so parallel module
 /// threads don't duplicate the binary scan.
 /// The resolved pid 1 name and its optional version.
-type InitResult = Option<(String, Option<String>)>;
+type InitResult = Option<InitSystemResult>;
 type VersionExtractor = Box<dyn Fn(&str) -> Option<String>>;
 
 static RESULT: OnceLock<Mutex<InitResult>> = OnceLock::new();
@@ -82,23 +87,27 @@ fn version_spawn(name: &str, exe: &str) -> Option<String> {
     extract(&String::from_utf8_lossy(&output.stdout))
 }
 
-fn detect() -> Option<(String, Option<String>)> {
-    let (name, _) = super::terminal::process_basic_info(1)?;
+pub struct InitSystemResult {
+    pub name: String,
+    pub exe: String,
+    pub version: String,
+    pub pid: u64,
+}
 
-    // /proc/1/exe is not readable for a user on some systems; the name from
-    // stat stands in when it is.
-    let mut exe = std::fs::read_link("/proc/1/exe")
-        .ok()
-        .map(|path| path.to_string_lossy().into_owned());
-    if let Some(path) = &exe
-        && path.starts_with('/')
-    {
-        // Old systems symlink /sbin/init.
-        if let Ok(real) = std::fs::canonicalize(path) {
-            exe = Some(real.to_string_lossy().into_owned());
+fn detect() -> Option<InitSystemResult> {
+    let (comm, _) = super::terminal::process_basic_info(1)?;
+
+    // ffProcessGetInfoLinux: arg0 from the cmdline (systemd's is /sbin/init);
+    // /proc/1/exe itself is not readable for a user.
+    let (mut exe, _, _) = super::terminal::process_exe_info(1, &comm);
+    let mut name = comm;
+    if exe.starts_with('/') {
+        // In some old systems, /sbin/init is a symlink.
+        if let Ok(real) = std::fs::canonicalize(&exe) {
+            exe = real.to_string_lossy().into_owned();
+            name = exe.rsplit('/').next().unwrap_or(&exe).to_string();
         }
     }
-    let exe = exe.unwrap_or_default();
 
     let version = match name.as_str() {
         "systemd" => if exe.is_empty() {
@@ -114,7 +123,12 @@ fn detect() -> Option<(String, Option<String>)> {
         "dinit" | "shepherd" => version_spawn(&name, &exe),
         _ => None,
     };
-    Some((name, version))
+    Some(InitSystemResult {
+        name,
+        exe,
+        version: version.unwrap_or_default(),
+        pid: 1,
+    })
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
@@ -125,15 +139,40 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     if cell.is_none() {
         *cell = detect();
     }
-    let Some((name, version)) = cell.as_ref() else {
+    let Some(result) = cell.as_ref() else {
         return Vec::new();
     };
 
-    let value = match version {
-        Some(version) => format!("{name} {version}"),
-        None => name.clone(),
+    let value = if result.version.is_empty() {
+        result.name.clone()
+    } else {
+        format!("{} {}", result.name, result.version)
     };
     vec![Row::new("Init System", value)]
+}
+
+/// ffGenerateInitSystemJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let mut cell = match result_cell().lock() {
+        Ok(cell) => cell,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if cell.is_none() {
+        *cell = detect();
+    }
+    match cell.as_ref() {
+        Some(result) => {
+            let mut obj = Json::obj();
+            obj.push("name", result.name.clone());
+            obj.push("exe", result.exe.clone());
+            obj.push("version", result.version.clone());
+            obj.push("pid", result.pid);
+            JsonOutcome::Result(obj)
+        },
+        // ffDetectInitSystem's failure ("Failed to detect the init system
+        // process") prints an error row, hidden by default.
+        None => JsonOutcome::Error("Failed to detect the init system process".to_string()),
+    }
 }
 
 #[cfg(test)]
