@@ -182,12 +182,12 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "bios",
         run: bios::run,
-        json: None,
+        json: Some(bios::json),
     },
     ModuleDef {
         name: "bootmgr",
         run: bootmgr::run,
-        json: None,
+        json: Some(bootmgr::json),
     },
     ModuleDef {
         name: "bluetooth",
@@ -202,12 +202,12 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "board",
         run: board::run,
-        json: None,
+        json: Some(board::json),
     },
     ModuleDef {
         name: "chassis",
         run: chassis::run,
-        json: None,
+        json: Some(chassis::json),
     },
     ModuleDef {
         name: "codec",
@@ -237,7 +237,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "tpm",
         run: tpm::run,
-        json: None,
+        json: Some(tpm::json),
     },
     ModuleDef {
         name: "version",

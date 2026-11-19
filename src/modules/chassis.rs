@@ -4,7 +4,12 @@
 //! Asahi devicetree files as the non-SMBIOS fallback. The version is
 //! appended when set; unset values print nothing (the OEM didn't set it).
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 /// SMBIOS 7.4.1 System Enclosure or Chassis Types.
 fn chassis_type_to_string(type_: u32) -> Option<&'static str> {
@@ -59,7 +64,14 @@ fn is_set(value: &str) -> bool {
     !value.is_empty() && !value.eq_ignore_ascii_case("none")
 }
 
-fn detect() -> Option<(String, String)> {
+pub struct ChassisResult {
+    pub chassis_type: String,
+    pub vendor: String,
+    pub version: String,
+    pub serial: String,
+}
+
+fn detect() -> Option<ChassisResult> {
     // The /sys/class/dmi/id files need root; /sys/devices/virtual/dmi/id are
     // world-readable aliases with serials filtered.
     let mut type_ = smbios_value("/sys/devices/virtual/dmi/id/chassis_type")
@@ -94,29 +106,57 @@ fn detect() -> Option<(String, String)> {
                 type_ = first.to_uppercase().collect::<String>() + chars.as_str();
             }
         }
-        return Some((type_, vendor));
+        return Some(ChassisResult {
+            chassis_type: type_,
+            vendor,
+            version: String::new(),
+            serial: String::new(),
+        });
     }
 
     let version = smbios_value("/sys/devices/virtual/dmi/id/chassis_version").unwrap_or_default();
-    Some((type_, version))
+    let serial = smbios_value("/sys/devices/virtual/dmi/id/chassis_serial").unwrap_or_default();
+    let vendor = smbios_value("/sys/devices/virtual/dmi/id/chassis_vendor").unwrap_or_default();
+    Some(ChassisResult {
+        chassis_type: type_,
+        vendor,
+        version,
+        serial,
+    })
 }
 
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Some((type_, version)) = detect() else {
+    let Some(chassis) = detect() else {
         return Vec::new();
     };
-    if type_.is_empty() {
+    if chassis.chassis_type.is_empty() {
         // "chassis_type is not set by O.E.M." is an error row, hidden by
         // default.
         return Vec::new();
     }
 
-    let value = if version.is_empty() {
-        type_
+    let value = if chassis.version.is_empty() {
+        chassis.chassis_type.clone()
     } else {
-        format!("{type_} ({version})")
+        format!("{} ({})", chassis.chassis_type, chassis.version)
     };
     vec![Row::new("Chassis", value)]
+}
+
+/// ffGenerateChassisJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    let Some(chassis) = detect() else {
+        return JsonOutcome::Error("chassis_type is not set by O.E.M.".to_string());
+    };
+    if chassis.chassis_type.is_empty() {
+        return JsonOutcome::Error("chassis_type is not set by O.E.M.".to_string());
+    }
+    let mut obj = Json::obj();
+    obj.push("type", chassis.chassis_type);
+    obj.push("vendor", chassis.vendor);
+    obj.push("version", chassis.version);
+    obj.push("serial", chassis.serial);
+    JsonOutcome::Result(obj)
 }
 
 #[cfg(test)]

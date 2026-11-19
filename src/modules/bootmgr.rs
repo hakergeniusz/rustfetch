@@ -4,7 +4,11 @@
 //! path device node form the value. Requires mounted, readable efivars
 //! (root-owned efivars files make the error row, hidden by default).
 
-use crate::{instance::Instance, modules::Row};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+};
 
 const EFIVARS_PREFIX: &str = "/sys/firmware/efi/efivars/";
 const EFI_GLOBAL_GUID: &str = "8be4df61-93ca-11d2-aa0d-00e098032b8c";
@@ -79,38 +83,77 @@ fn fill_load_option(option: &[u8]) -> (String, String) {
     (name, firmware)
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Ok(current) = std::fs::read(format!("{EFIVARS_PREFIX}BootCurrent-{EFI_GLOBAL_GUID}"))
-    else {
-        // "Failed to read efivar: BootCurrent" is an error row, hidden by
-        // default.
-        return Vec::new();
+pub struct BootmgrResult {
+    pub name: String,
+    pub firmware: String,
+    pub order: u16,
+    pub secure_boot: bool,
+}
+
+/// ffDetectBootmgr.
+fn detect() -> Result<BootmgrResult, &'static str> {
+    let current = std::fs::read(format!("{EFIVARS_PREFIX}BootCurrent-{EFI_GLOBAL_GUID}"));
+    let Ok(current) = current else {
+        return Err("Failed to read efivar: BootCurrent");
     };
     if current.len() != 6 {
-        return Vec::new();
+        return Err("Failed to read efivar: BootCurrent");
     }
     let order = u16::from_le_bytes([current[4], current[5]]);
 
-    let Ok(boot_entry) =
-        std::fs::read(format!("{EFIVARS_PREFIX}Boot{order:04X}-{EFI_GLOBAL_GUID}"))
-    else {
-        // "Failed to read efivar: Boot####" is an error row, hidden by
-        // default.
-        return Vec::new();
+    let boot_entry = std::fs::read(format!("{EFIVARS_PREFIX}Boot{order:04X}-{EFI_GLOBAL_GUID}"));
+    let Ok(boot_entry) = boot_entry else {
+        return Err("Failed to read efivar: Boot####");
     };
     if boot_entry.len() < 5 + LOAD_OPTION_SIZE || boot_entry.len() >= 2048 {
-        return Vec::new();
+        return Err("Failed to read efivar: Boot####");
     }
 
     let (name, firmware) = fill_load_option(&boot_entry[4..]);
-    let firmware_name = firmware.rsplit('\\').next().unwrap_or_default();
 
-    let mut value = name;
+    let mut secure_boot = false;
+    if let Ok(secure) = std::fs::read(format!("{EFIVARS_PREFIX}SecureBoot-{EFI_GLOBAL_GUID}")) {
+        if secure.len() >= 5 {
+            secure_boot = secure[4] == 1;
+        }
+    }
+
+    Ok(BootmgrResult {
+        name,
+        firmware,
+        order,
+        secure_boot,
+    })
+}
+
+pub fn run(_instance: &Instance) -> Vec<Row> {
+    let Ok(bootmgr) = detect() else {
+        // The efivar read failures are error rows, hidden by default.
+        return Vec::new();
+    };
+    let firmware_name = bootmgr.firmware.rsplit('\\').next().unwrap_or_default();
+
+    let mut value = bootmgr.name;
     if !firmware_name.is_empty() {
         value.push_str(" - ");
         value.push_str(firmware_name);
     }
     vec![Row::new("Boot Manager", value)]
+}
+
+/// ffGenerateBootmgrJsonResult.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(bootmgr) => {
+            let mut obj = Json::obj();
+            obj.push("name", bootmgr.name);
+            obj.push("firmware", bootmgr.firmware);
+            obj.push("order", bootmgr.order as u64);
+            obj.push("secureBoot", bootmgr.secure_boot);
+            JsonOutcome::Result(obj)
+        },
+    }
 }
 
 #[cfg(test)]

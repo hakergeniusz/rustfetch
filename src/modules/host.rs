@@ -45,7 +45,7 @@ fn is_smbios_value_set(value: &str) -> bool {
 
 /// ffGetSmbiosValue: try the /sys/devices path, then /sys/class, trimming
 /// trailing whitespace and rejecting garbage values; empty on failure.
-fn get_smbios_value(devices_path: &str, class_path: &str) -> String {
+pub(crate) fn get_smbios_value(devices_path: &str, class_path: &str) -> String {
     for path in [devices_path, class_path] {
         if let Some(value) = util::read_trimmed(path).filter(|value| is_smbios_value_set(value)) {
             return value;
