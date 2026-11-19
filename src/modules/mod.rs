@@ -522,7 +522,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "logo",
         run: logo::run,
-        json: None,
+        json: Some(logo::json),
     },
 ];
 

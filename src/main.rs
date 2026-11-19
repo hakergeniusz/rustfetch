@@ -9,6 +9,7 @@ mod instance;
 mod json;
 mod logo;
 mod logo_data;
+mod logo_entries;
 mod modules;
 mod platform;
 mod render;

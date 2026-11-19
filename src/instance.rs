@@ -30,6 +30,9 @@ pub struct Instance {
     pub distro_id: Option<String>,
     /// `ID_LIKE=` entries from /etc/os-release, lowercased.
     pub distro_like: Vec<String>,
+    /// The raw `--logo` value: "none" and "small" are logo types, anything
+    /// else is a builtin name (upstream splits them into logoOptions).
+    pub logo_source: Option<String>,
     /// Memoized GSettings/dconf reads per (schema, key), filled lazily by the
     /// GTK modules. A Mutex because modules run in parallel threads.
     pub gnome_settings: Mutex<HashMap<String, Option<String>>>,
@@ -62,6 +65,7 @@ impl Instance {
             color,
             distro_id,
             distro_like,
+            logo_source: cli.logo.clone(),
             gnome_settings: Mutex::new(HashMap::new()),
             logo_colors: OnceLock::new(),
         }
