@@ -8,7 +8,12 @@
 //! at all. The upstream temperature option is off by default and this
 //! port has no flag for it, so temperature stays unset.
 
-use crate::{instance::Instance, modules::Row, util};
+use crate::{
+    instance::Instance,
+    json::{Json, JsonOutcome},
+    modules::Row,
+    util,
+};
 
 // FFBatteryStatus bits, in the printer's append order.
 const STATUS_UNKNOWN: u8 = 1 << 0;
@@ -19,22 +24,17 @@ const STATUS_CHARGING: u8 = 1 << 4;
 const STATUS_DISCHARGING: u8 = 1 << 5;
 const STATUS_CRITICAL: u8 = 1 << 6;
 
-struct BatteryResult {
-    #[allow(dead_code)]
-    manufacturer: String,
-    #[allow(dead_code)]
-    manufacture_date: String,
-    model_name: String,
-    #[allow(dead_code)]
-    technology: String,
-    #[allow(dead_code)]
-    serial: String,
-    status: u8,
-    capacity: f64,
-    #[allow(dead_code)]
-    cycle_count: u32,
+pub struct BatteryResult {
+    pub manufacturer: String,
+    pub manufacture_date: String,
+    pub model_name: String,
+    pub technology: String,
+    pub serial: String,
+    pub status: u8,
+    pub capacity: f64,
+    pub cycle_count: u32,
     /// Seconds until empty, -1 if unknown (upstream int32_t timeRemaining).
-    time_remaining: i32,
+    pub time_remaining: i32,
 }
 
 /// ffStrbufToSInt: the leading integer or the default.
@@ -159,10 +159,13 @@ fn parse_battery(path: &std::path::Path, id: &str, ac_connected: &mut bool) -> O
     })
 }
 
-fn detect() -> Option<Vec<BatteryResult>> {
+fn detect() -> Result<Vec<BatteryResult>, &'static str> {
     let mut results = Vec::new();
     let mut ac_connected = false;
-    for entry in std::fs::read_dir("/sys/class/power_supply").ok()?.filter_map(Result::ok) {
+    let Ok(entries) = std::fs::read_dir("/sys/class/power_supply") else {
+        return Err("opendir(\"/sys/class/power_supply/\") == nullptr");
+    };
+    for entry in entries.filter_map(Result::ok) {
         let id = entry.file_name().to_string_lossy().into_owned();
         if id.starts_with('.') {
             continue;
@@ -176,7 +179,7 @@ fn detect() -> Option<Vec<BatteryResult>> {
             battery.status |= STATUS_AC_CONNECTED;
         }
     }
-    Some(results)
+    Ok(results)
 }
 
 /// The status text pieces, in ffPrintBattery's append order.
@@ -229,7 +232,7 @@ fn item_value(battery: &BatteryResult, color: bool) -> String {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
-    let Some(results) = detect() else {
+    let Ok(results) = detect() else {
         // "opendir(...) == nullptr" is an error row, hidden by default.
         return Vec::new();
     };
@@ -248,6 +251,41 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             Row::new(&key, item_value(battery, instance.color))
         })
         .collect()
+}
+
+/// ffGenerateBatteryJsonResult: the status array uses the generator's
+/// append order; the temperature needs the --temp option (always unset
+/// here) and a non-positive time remaining prints null.
+pub fn json(_instance: &Instance) -> JsonOutcome {
+    match detect() {
+        Err(error) => JsonOutcome::Error(error.to_string()),
+        Ok(results) => {
+            let mut arr = Json::Array(Vec::new());
+            for battery in &results {
+                let mut obj = Json::obj();
+                obj.push("capacity", battery.capacity);
+                obj.push("manufacturer", battery.manufacturer.clone());
+                obj.push("manufactureDate", battery.manufacture_date.clone());
+                obj.push("modelName", battery.model_name.clone());
+                obj.push("technology", battery.technology.clone());
+                obj.push("serial", battery.serial.clone());
+                obj.push("temperature", Json::Null);
+                obj.push("cycleCount", battery.cycle_count as u64);
+                if battery.time_remaining > 0 {
+                    obj.push("timeRemaining", battery.time_remaining as i64);
+                } else {
+                    obj.push("timeRemaining", Json::Null);
+                }
+                let mut status = Json::Array(Vec::new());
+                for text in status_texts(battery.status) {
+                    status.push_value(Json::Str(text.to_string()));
+                }
+                obj.push("status", status);
+                arr.push_value(obj);
+            }
+            JsonOutcome::Result(arr)
+        },
+    }
 }
 
 #[cfg(test)]
