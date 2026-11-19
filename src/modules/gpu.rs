@@ -19,9 +19,9 @@ const PCI_IDS_PATHS: &[&str] = &[
 ];
 
 // FF_GPU_TYPE values.
-const GPU_TYPE_UNKNOWN: u8 = 0;
-const GPU_TYPE_INTEGRATED: u8 = 1;
-const GPU_TYPE_DISCRETE: u8 = 2;
+pub(crate) const GPU_TYPE_UNKNOWN: u8 = 0;
+pub(crate) const GPU_TYPE_INTEGRATED: u8 = 1;
+pub(crate) const GPU_TYPE_DISCRETE: u8 = 2;
 
 /// ffGPUPciAddr2Id.
 const fn pci_addr_to_id(domain: u64, bus: u64, device: u64, function: u64) -> u64 {
@@ -29,7 +29,7 @@ const fn pci_addr_to_id(domain: u64, bus: u64, device: u64, function: u64) -> u6
 }
 
 /// ffGPUGetVendorString: the short vendor name for a PCI vendor id.
-const fn vendor_string(vendor_id: u16) -> Option<&'static str> {
+pub(crate) const fn vendor_string(vendor_id: u16) -> Option<&'static str> {
     Some(match vendor_id {
         0x106b => "Apple",
         0x1002 | 0x1022 | 0x1dd8 => "AMD",
@@ -546,6 +546,75 @@ pub fn json(_instance: &Instance) -> JsonOutcome {
             JsonOutcome::Result(arr)
         },
     }
+}
+
+/// The dedicated/shared memory object the opencl and vulkan nested GPU
+/// objects carry (unset sizes are null).
+fn gpu_memory_json(gpu: &GpuResult) -> Json {
+    let mut memory = Json::obj();
+    let mut dedicated = Json::obj();
+    match gpu.dedicated_total {
+        Some(total) => dedicated.push("total", total),
+        None => dedicated.push("total", Json::Null),
+    }
+    match gpu.dedicated_used {
+        Some(used) => dedicated.push("used", used),
+        None => dedicated.push("used", Json::Null),
+    }
+    memory.push("dedicated", dedicated);
+    let mut shared = Json::obj();
+    match gpu.shared_total {
+        Some(total) => shared.push("total", total),
+        None => shared.push("total", Json::Null),
+    }
+    match gpu.shared_used {
+        Some(used) => shared.push("used", used),
+        None => shared.push("used", Json::Null),
+    }
+    memory.push("shared", shared);
+    memory
+}
+
+/// The GPU object inside the opencl JSON result: type/vendor/name/driver/
+/// platformApi/coreCount/frequency/memory/deviceId. Unlike the GPU module's
+/// result, an unknown type prints as "Unknown".
+pub(crate) fn gpu_opencl_json(gpu: &GpuResult) -> Json {
+    let mut obj = Json::obj();
+    match gpu.gpu_type {
+        GPU_TYPE_INTEGRATED => obj.push("type", "Integrated"),
+        GPU_TYPE_DISCRETE => obj.push("type", "Discrete"),
+        _ => obj.push("type", "Unknown"),
+    }
+    obj.push("vendor", gpu.vendor.clone());
+    obj.push("name", gpu.name.clone());
+    obj.push("driver", gpu.driver.clone());
+    obj.push("platformApi", gpu.platform_api.clone());
+    match gpu.core_count {
+        Some(count) => obj.push("coreCount", count as i64),
+        None => obj.push("coreCount", Json::Null),
+    }
+    obj.push("frequency", gpu.frequency as u64);
+    obj.push("memory", gpu_memory_json(gpu));
+    obj.push("deviceId", gpu.device_id);
+    obj
+}
+
+/// The GPU object inside the vulkan JSON result: deviceId sits before the
+/// memory and the compute fields are absent.
+pub(crate) fn gpu_vulkan_json(gpu: &GpuResult) -> Json {
+    let mut obj = Json::obj();
+    match gpu.gpu_type {
+        GPU_TYPE_INTEGRATED => obj.push("type", "Integrated"),
+        GPU_TYPE_DISCRETE => obj.push("type", "Discrete"),
+        _ => obj.push("type", "Unknown"),
+    }
+    obj.push("vendor", gpu.vendor.clone());
+    obj.push("name", gpu.name.clone());
+    obj.push("driver", gpu.driver.clone());
+    obj.push("platformApi", gpu.platform_api.clone());
+    obj.push("deviceId", gpu.device_id);
+    obj.push("memory", gpu_memory_json(gpu));
+    obj
 }
 
 #[cfg(test)]

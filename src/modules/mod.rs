@@ -162,7 +162,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "opencl",
         run: opencl::run,
-        json: None,
+        json: Some(opencl::json),
     },
     ModuleDef {
         name: "opengl",
@@ -172,7 +172,7 @@ pub const REGISTRY: &[ModuleDef] = &[
     ModuleDef {
         name: "vulkan",
         run: vulkan::run,
-        json: None,
+        json: Some(vulkan::json),
     },
     ModuleDef {
         name: "host",
