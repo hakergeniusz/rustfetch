@@ -184,6 +184,9 @@ fn finalize(result: &mut VulkanResult, instance: (u32, u32, u32), api: (u32, u32
 
 /// detectVulkan.
 fn detect() -> Result<VulkanResult, &'static str> {
+    // FF_SUPPRESS_IO: some drivers (nvdc) print messages to stdout while
+    // instances are created.
+    let _guard = crate::util::SuppressIoGuard::new();
     let Some(vulkan) = super::codec::load_library("vulkan", 2) else {
         return Err("dlopen(libvulkan.so) failed");
     };

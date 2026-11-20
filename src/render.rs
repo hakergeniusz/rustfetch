@@ -77,7 +77,45 @@ fn row_line(row: &Row, key_color: Option<&str>, color: bool) -> String {
             }
         },
         (_, Kind::Raw) => row.value.clone(),
+        // Late rows expand into regular ones before reaching here.
+        (_, Kind::Late(_)) => String::new(),
     }
+}
+
+/// The fixed two-column layout of one Chars render, shared by the row
+/// emissions: fastfetch's padding model (0 left / 4 right — the
+/// --logo-padding overrides are not parsed yet), the key column the rows
+/// start at, and the styling flags.
+struct CharsLayout<'a> {
+    pad_left: usize,
+    key_column: usize,
+    key_color: Option<&'a str>,
+    color: bool,
+}
+
+/// Prints one info row against the next unconsumed logo line, standing in
+/// for ffPrintLogoAndKey's ffLogoPrintLine + key sequence.
+fn emit_chars_row(
+    out: &mut BufWriter<std::io::StdoutLock<'_>>,
+    logo_lines: &[(String, usize)],
+    logo_index: &mut usize,
+    layout: &CharsLayout<'_>,
+    row: &Row,
+) {
+    if let Some((text, width)) = logo_lines.get(*logo_index) {
+        let _ = write!(out, "{:width$}", "", width = layout.pad_left);
+        let _ = write!(out, "{text}");
+        let _ = write!(
+            out,
+            "{:width$}",
+            "",
+            width = layout.key_column - layout.pad_left - width
+        );
+    } else {
+        let _ = write!(out, "{:width$}", "", width = layout.key_column);
+    }
+    *logo_index += 1;
+    let _ = writeln!(out, "{}", row_line(row, layout.key_color, layout.color));
 }
 
 pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
@@ -124,7 +162,24 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
                 logo_height = y as usize;
                 let _ = write!(out, "\x1b[H");
             }
+            let mut visible = 0usize;
             for row in rows {
+                if let Kind::Late(late) = row.kind {
+                    // Deferred detection runs at the row's position: flush
+                    // the rows already rendered so the detection's /dev/tty
+                    // queries land in the stream like upstream's print-time
+                    // ffDetect calls.
+                    let _ = out.flush();
+                    for produced in late(instance) {
+                        visible += 1;
+                        if logo_width > 0 {
+                            let _ = write!(out, "\x1b[{}C", logo_width);
+                        }
+                        let _ = writeln!(out, "{}", row_line(&produced, key_color, color));
+                    }
+                    continue;
+                }
+                visible += 1;
                 // ffLogoPrintLine with an empty cache: the cursor moves
                 // right by logoWidth instead of printing spaces.
                 if logo_width > 0 {
@@ -133,8 +188,8 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
                 let _ = writeln!(out, "{}", row_line(row, key_color, color));
             }
             // ffLogoPrintRemaining's empty-cache tail.
-            if rows.len() <= logo_height {
-                for _ in 0..logo_height - rows.len() + 1 {
+            if visible <= logo_height {
+                for _ in 0..logo_height - visible + 1 {
                     let _ = writeln!(out);
                 }
             }
@@ -162,27 +217,34 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
                 _ => 0,
             };
             let key_column = if has_logo { logo_width + pad_right } else { 0 };
+            let layout = CharsLayout { pad_left, key_column, key_color, color };
 
-            let total = logo_lines.len().max(rows.len());
-            for i in 0..total {
-                if i < logo_lines.len() {
-                    let (text, width) = &logo_lines[i];
-                    let _ = write!(out, "{:width$}", "", width = pad_left);
-                    let _ = write!(out, "{text}");
-                    // lines past the last info row are printed bare, like fastfetch's
-                    // ffLogoPrintRemaining (no key-column fill)
-                    if i < rows.len() {
-                        let _ = write!(out, "{:width$}", "", width = key_column - pad_left - width);
+            let mut logo_index = 0usize;
+            let mut visible = 0usize;
+            for row in rows {
+                if let Kind::Late(late) = row.kind {
+                    // Deferred detection runs at the row's position: flush
+                    // the rows already rendered so the detection's /dev/tty
+                    // queries land in the stream like upstream's print-time
+                    // ffDetect calls.
+                    let _ = out.flush();
+                    for produced in late(instance) {
+                        visible += 1;
+                        emit_chars_row(&mut out, &logo_lines, &mut logo_index, &layout, &produced);
                     }
-                } else {
-                    let _ = write!(out, "{:width$}", "", width = key_column);
+                    continue;
                 }
-
-                if i < rows.len() {
-                    let _ = writeln!(out, "{}", row_line(&rows[i], key_color, color));
-                } else {
-                    let _ = writeln!(out);
-                }
+                visible += 1;
+                emit_chars_row(&mut out, &logo_lines, &mut logo_index, &layout, row);
+            }
+            // lines past the last info row are printed bare, like fastfetch's
+            // ffLogoPrintRemaining (no key-column fill)
+            while logo_index < logo_lines.len() {
+                let (text, _width) = &logo_lines[logo_index];
+                let _ = write!(out, "{:width$}", "", width = pad_left);
+                let _ = write!(out, "{text}");
+                let _ = writeln!(out);
+                logo_index += 1;
             }
             if color && has_logo {
                 // ffLogoPrintRemaining ends the logo block with a reset even when
@@ -192,7 +254,7 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
             // ffLogoPrintRemaining's tail: an empty logo cache (logo none) still
             // closes with one newline when no rows were printed, from its
             // keysHeight <= logoHeight branch.
-            if logo_lines.is_empty() && rows.is_empty() {
+            if logo_lines.is_empty() && visible == 0 {
                 let _ = writeln!(out);
             }
         },

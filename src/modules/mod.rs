@@ -92,6 +92,11 @@ pub enum Kind {
     Value,
     /// Printed verbatim; the module owns any escape sequences.
     Raw,
+    /// A placeholder whose detection (and its /dev/tty queries, like
+    /// upstream's print-time ffDetect calls) runs when the renderer
+    /// reaches the row's position, expanding into the real rows — or
+    /// none, when the error row is hidden.
+    Late(fn(&Instance) -> Vec<Row>),
 }
 
 pub struct Row {
@@ -125,6 +130,16 @@ impl Row {
             key: None,
             value: value.into(),
             kind: Kind::Raw,
+        }
+    }
+
+    /// A detection deferred to print time, like fastfetch's printModule
+    /// entry points that detect as they print.
+    pub fn late(late: fn(&Instance) -> Vec<Row>) -> Self {
+        Self {
+            key: None,
+            value: String::new(),
+            kind: Kind::Late(late),
         }
     }
 }

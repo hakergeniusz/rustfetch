@@ -107,41 +107,7 @@ fn hex_color(text: &[u8], mut position: usize) -> Option<(Rgb, usize)> {
 /// detectByEscapeCode: query fg (10) and bg (11) through /dev/tty.
 fn detect_by_escape() -> Option<(Color, Color)> {
     let request = b"\x1b]10;?\x1b\\\x1b]11;?\x1b\\";
-    let path = c"/dev/tty";
-    let flags = libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC;
-    let fd = unsafe { libc::open(path.as_ptr(), flags) };
-    if fd < 0 {
-        return None;
-    }
-
-    let mut result = None;
-    unsafe {
-        let mut old_term: libc::termios = std::mem::zeroed();
-        if libc::tcgetattr(fd, &mut old_term) == 0 {
-            let mut new_term = old_term;
-            new_term.c_lflag &= !(libc::ICANON | libc::ECHO);
-            if libc::tcsetattr(fd, libc::TCSAFLUSH, &new_term) == 0 {
-                let mut written = 0usize;
-                while written < request.len() {
-                    let n = libc::write(
-                        fd,
-                        request[written..].as_ptr().cast(),
-                        request.len() - written,
-                    );
-                    if n <= 0 {
-                        break;
-                    }
-                    written += n as usize;
-                }
-                if written == request.len() {
-                    result = read_response(fd);
-                }
-                libc::tcsetattr(fd, libc::TCSAFLUSH, &old_term);
-            }
-        }
-        libc::close(fd);
-    }
-    let (fg_raw, bg_raw) = result?;
+    let (fg_raw, bg_raw) = crate::tty::response(request, parse_response)?;
 
     // Values above 0x100 are 16-bit; scale down like detectByEscapeCode.
     let scale = |color: &mut (u16, u16, u16)| {
@@ -173,36 +139,6 @@ fn detect_by_escape() -> Option<(Color, Color)> {
     Some((fg, bg))
 }
 
-/// Read and parse with the chunking of ffGetTerminalResponse: poll up to
-/// 1s, parse what arrived, wait again when the response was incomplete.
-fn read_response(fd: i32) -> Option<(Rgb, Rgb)> {
-    let mut buffer = Vec::with_capacity(1024);
-    loop {
-        let mut poll_fd = libc::pollfd {
-            fd,
-            events: libc::POLLIN,
-            revents: 0,
-        };
-        if unsafe { libc::poll(&mut poll_fd, 1, 1000) } <= 0 {
-            return None;
-        }
-        let mut chunk = [0u8; 1024];
-        let n = unsafe { libc::read(fd, chunk.as_mut_ptr().cast(), chunk.len()) };
-        if n <= 0 {
-            return None;
-        }
-        buffer.extend_from_slice(&chunk[..n as usize]);
-
-        // Parse what arrived so far, like the vsscanf-per-chunk loop.
-        if let Some(colors) = parse_response(&buffer) {
-            return Some(colors);
-        }
-        if buffer.len() > 4096 {
-            return None;
-        }
-    }
-}
-
 /// The OSC 10/11 response: two rgb triplets after their markers.
 fn parse_response(text: &[u8]) -> Option<(Rgb, Rgb)> {
     let start = find_marker(text, b"10;rgb:")? + b"10;rgb:".len();
@@ -218,7 +154,15 @@ pub(crate) fn terminal_is_light_by_env() -> bool {
     detect_by_env().is_some_and(|(_, bg)| !bg.dark)
 }
 
+/// The module detects at print time like ffPrintTerminalTheme, so the OSC
+/// queries reach /dev/tty at the row's position.
 pub fn run(_instance: &Instance) -> Vec<Row> {
+    vec![Row::late(print)]
+}
+
+/// The deferred ffPrintTerminalTheme: detection, then the row or the
+/// hidden error (nothing at all, like ffPrintError with showErrors off).
+fn print(_instance: &Instance) -> Vec<Row> {
     let Some((fg, bg)) = detect_by_escape().or_else(detect_by_env) else {
         // "Failed to detect terminal theme" is an error row, hidden by default.
         return Vec::new();
@@ -237,8 +181,6 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     );
     vec![Row::new("Terminal Theme", value)]
 }
-
-
 
 /// ffGenerateTerminalThemeJsonResult: {fg, bg} with r/g/b/dark each.
 pub fn json(_instance: &Instance) -> JsonOutcome {

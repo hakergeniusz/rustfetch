@@ -331,6 +331,9 @@ fn detect_by_va_drm(api: &VaApi) -> Result<Vec<CodecResult>, &'static str> {
 /// ffDetectCodecNative reduced to the DRM path: load the libraries, walk
 /// /dev/dri, and surface the upstream error when nothing initializes.
 fn detect() -> Result<Vec<CodecResult>, &'static str> {
+    // FF_SUPPRESS_IO: libva prints driver-probing noise ("libva error: …")
+    // straight to stderr while initializing DRM displays.
+    let _guard = crate::util::SuppressIoGuard::new();
     let Some(api) = VaApi::load() else {
         return Err("dlopen(libva.so) failed");
     };

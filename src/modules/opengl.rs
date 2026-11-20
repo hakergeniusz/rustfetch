@@ -124,6 +124,8 @@ pub struct OpenGLResult {
 /// ffDetectOpenGL via EGL: a surfaceless 1x1 pbuffer context answers the
 /// four glGetString queries; the library string records the EGL version.
 fn detect() -> Result<OpenGLResult, &'static str> {
+    // FF_SUPPRESS_IO: EGL driver probing can print to stdout/stderr.
+    let _guard = crate::util::SuppressIoGuard::new();
     let Some(egl) = super::codec::load_library("EGL", 1) else {
         return Err("dlopen(libEGL.so) failed");
     };

@@ -75,7 +75,15 @@ fn parse_size(text: &[u8], marker: &[u8]) -> Option<(u16, u16)> {
     Some((first, second))
 }
 
+/// The module detects at print time like ffPrintTerminalSize, so the CSI
+/// query escapes reach /dev/tty at the row's position.
 pub fn run(_instance: &Instance) -> Vec<Row> {
+    vec![Row::late(print)]
+}
+
+/// The deferred ffPrintTerminalSize: detection, then the row or the
+/// hidden error (nothing at all, like ffPrintError with showErrors off).
+fn print(_instance: &Instance) -> Vec<Row> {
     let Some((cols, rows, width_px, height_px)) = detect(false) else {
         // The error row is hidden by default, like upstream's ffPrintError.
         return Vec::new();

@@ -1,5 +1,6 @@
 //! Small filesystem and formatting helpers shared by all modules.
 
+use std::io::Write as _;
 use std::path::Path;
 
 /// Reads a whole file into a String, returning None when it cannot be read.
@@ -430,6 +431,67 @@ pub fn fmt_freq(mhz: u32) -> String {
     }
     let ghz = mhz as f64 / 1000.0;
     format!("{ghz:.2} GHz")
+}
+
+/// ffSuppressIO (io_unix.c): point stdout and stderr at /dev/null so noisy
+/// third-party libraries (libva, Vulkan ICD loaders, EGL) cannot pollute
+/// the output during detection. The original fds and the null fd are
+/// captured once on the first suppress, like upstream's statics.
+pub fn suppress_io(suppress: bool) -> bool {
+    static ORIGINALS: std::sync::OnceLock<(i32, i32, i32)> = std::sync::OnceLock::new();
+    let originals = if suppress {
+        Some(ORIGINALS.get_or_init(|| unsafe {
+            (
+                libc::dup(libc::STDOUT_FILENO),
+                libc::dup(libc::STDERR_FILENO),
+                libc::open(c"/dev/null".as_ptr(), libc::O_WRONLY | libc::O_CLOEXEC),
+            )
+        }))
+    } else {
+        // Unsuppress before any suppress: nothing to restore, still fine.
+        ORIGINALS.get()
+    };
+    let Some(&(orig_out, orig_err, null_fd)) = originals else {
+        return true;
+    };
+    if null_fd == -1 {
+        return false;
+    }
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+    unsafe {
+        libc::dup2(
+            if suppress { null_fd } else { orig_out },
+            libc::STDOUT_FILENO,
+        );
+        libc::dup2(
+            if suppress { null_fd } else { orig_err },
+            libc::STDERR_FILENO,
+        );
+    }
+    true
+}
+
+/// RAII wrapper around unsuppress, standing in for ffSuppressIO's
+/// gnu::cleanup attribute: suppression ends when the guard drops.
+pub struct SuppressIoGuard;
+
+impl SuppressIoGuard {
+    /// Returns None (instead of a guard) when the suppression failed, so
+    /// callers keep ffSuppressIO's bool without needing a Drop restore.
+    pub fn new() -> Option<Self> {
+        if crate::util::suppress_io(true) {
+            Some(Self)
+        } else {
+            None
+        }
+    }
+}
+
+impl Drop for SuppressIoGuard {
+    fn drop(&mut self) {
+        crate::util::suppress_io(false);
+    }
 }
 
 #[cfg(test)]
