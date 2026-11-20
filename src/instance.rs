@@ -32,6 +32,9 @@ pub struct Instance {
     pub logo_source: Option<String>,
     /// `ID=` from /etc/os-release, lowercased.
     pub distro_id: Option<String>,
+    /// `PRETTY_NAME=` from /etc/os-release, tried by the logo detection
+    /// after the id (upstream's os->name).
+    pub distro_name: Option<String>,
     /// `ID_LIKE=` entries from /etc/os-release, lowercased.
     pub distro_like: Vec<String>,
     /// The title/key colors fastfetch derives from the logo definition
@@ -56,6 +59,7 @@ impl Clone for Instance {
             color: self.color,
             logo_colors: self.logo_colors.clone(),
             distro_id: self.distro_id.clone(),
+            distro_name: self.distro_name.clone(),
             distro_like: self.distro_like.clone(),
             logo_none: self.logo_none,
             logo_small: self.logo_small,
@@ -82,11 +86,13 @@ impl Instance {
         let color = !pipe && !cli.format_json;
 
         let mut distro_id = None;
+        let mut distro_name = None;
         let mut distro_like = Vec::new();
         if let Some(content) = util::read_file("/etc/os-release") {
             for (key, value) in util::parse_kv(&content) {
                 match key {
                     "ID" => distro_id = Some(value.to_lowercase()),
+                    "PRETTY_NAME" => distro_name = Some(value.to_string()),
                     "ID_LIKE" => {
                         distro_like = value.split_whitespace().map(|v| v.to_lowercase()).collect();
                     },
@@ -99,6 +105,7 @@ impl Instance {
             pipe,
             color,
             distro_id,
+            distro_name,
             distro_like,
             logo_none: cli.logo_none,
             logo_small: cli.logo_small,

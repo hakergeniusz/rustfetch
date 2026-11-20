@@ -7,7 +7,7 @@
 use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
-    logo_entries::{self, LogoEntry},
+    logo_entries::self,
     modules::Row,
 };
 
@@ -16,81 +16,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     Vec::new()
 }
 
-/// FFLogoSize reduced to the values the JSON generator can produce
-/// (Normal exists upstream but is only reachable via --logo-type).
-#[derive(Clone, Copy, PartialEq)]
-enum Size {
-    #[allow(dead_code)]
-    Normal,
-    Small,
-    Unknown,
-}
-
-/// ffLogoGetBuiltin: only entries whose first name shares the requested
-/// name's letter are examined (upstream's per-letter tables), filtered by
-/// the size's line type, then matched case-insensitively; with small size
-/// a name also matches a "_small"-suffixed entry name.
-fn find_entry(name: &str, size: Size) -> Option<&'static LogoEntry> {
-    let first = name.chars().next()?;
-    if !first.is_ascii_alphabetic() {
-        return None;
-    }
-    let first = first.to_ascii_lowercase();
-    for entry in logo_entries::LOGO_ENTRIES {
-        let Some(candidate) = entry.names.first() else { continue };
-        let Some(bucket) = candidate.chars().next() else { continue };
-        if bucket.to_ascii_lowercase() != first {
-            continue;
-        }
-        let type_ok = match size {
-            Size::Normal => entry.line_type == 0,
-            Size::Small => entry.line_type == 1,
-            Size::Unknown => true,
-        };
-        if !type_ok {
-            continue;
-        }
-        if logo_has_name(entry, name, size == Size::Small) {
-            return Some(entry);
-        }
-    }
-    None
-}
-
-/// logoHasName.
-fn logo_has_name(entry: &LogoEntry, name: &str, small: bool) -> bool {
-    for logo_name in entry.names {
-        if small
-            && let Some(stripped) = logo_name.strip_suffix("_small")
-            && stripped.len() == name.len()
-            && stripped.eq_ignore_ascii_case(name)
-        {
-            return true;
-        }
-        if logo_name.eq_ignore_ascii_case(name) {
-            return true;
-        }
-    }
-    false
-}
-
-/// ffLogoGetBuiltinDetected: the os id, then the idLike tokens, then the
-/// unknown logo. Upstream also tries os->name (PRETTY_NAME) and the kernel
-/// name between them; neither is reachable when the id matches and they
-/// are not ported here.
-fn detected_entry(instance: &Instance, size: Size) -> &'static LogoEntry {
-    if let Some(id) = &instance.distro_id
-        && let Some(entry) = find_entry(id, size)
-    {
-        return entry;
-    }
-    for like in &instance.distro_like {
-        if let Some(entry) = find_entry(like, size) {
-            return entry;
-        }
-    }
-    &logo_entries::UNKNOWN_ENTRY
-}
+use crate::logo::{get_builtin, get_builtin_detected, Size};
 
 /// ffGenerateLogoJsonResult: the builtin logo table as JSON. The logo
 /// state maps onto upstream's FFLogoType: NONE — like every other type
@@ -109,7 +35,7 @@ pub fn json(instance: &Instance) -> JsonOutcome {
     let entry = match source {
         // "?" is ffLogoGetBuiltinForName's alias for the unknown logo.
         Some("?") => &logo_entries::UNKNOWN_ENTRY,
-        Some(name) => match find_entry(name, size) {
+        Some(name) => match get_builtin(name, size) {
             Some(entry) => entry,
             None => {
                 return JsonOutcome::Error(
@@ -117,7 +43,7 @@ pub fn json(instance: &Instance) -> JsonOutcome {
                 )
             },
         },
-        None => detected_entry(instance, size),
+        None => get_builtin_detected(instance, size),
     };
 
     let mut obj = Json::obj();
