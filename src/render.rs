@@ -130,6 +130,12 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
         // every logo line was already consumed by a row.
         let _ = write!(out, "\x1b[m");
     }
+    // ffLogoPrintRemaining's tail: an empty logo cache (logo none) still
+    // closes with one newline when no rows were printed, from its
+    // keysHeight <= logoHeight branch.
+    if logo_lines.is_empty() && rows.is_empty() {
+        let _ = writeln!(out);
+    }
     let _ = out.flush();
 }
 
