@@ -780,6 +780,59 @@ pub(crate) fn temps_num(celsius: f64, green: u8, yellow: u8, color: bool) -> Str
     out
 }
 
+/// FFColorRangeConfig: the green/yellow temperature thresholds. Every
+/// temps module defaults to {60, 80}; physicaldisk overrides to {50, 70}.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TempRange {
+    pub green: u8,
+    pub yellow: u8,
+}
+
+impl Default for TempRange {
+    fn default() -> Self {
+        Self { green: 60, yellow: 80 }
+    }
+}
+
+/// ffTempsParseJsonObject: the shared `temp` option value — a boolean
+/// toggles the temperature read, null disables it, and an object sets the
+/// green/yellow thresholds (integers 0-100; any other shape exits 480,
+/// like upstream's usage errors).
+pub(crate) fn parse_temp(value: &crate::jsonc::Value, range: &mut TempRange) -> bool {
+    if let Some(enabled) = value.as_bool() {
+        return enabled;
+    }
+    if matches!(value, crate::jsonc::Value::Null) {
+        return false;
+    }
+    let crate::jsonc::Value::Object(entries) = value else {
+        eprintln!("Error: usage: temp must be an object or a boolean");
+        std::process::exit(480);
+    };
+
+    // yyjson_is_int: sint/uint only, a real is a usage error.
+    let int_val = |value: &crate::jsonc::Value| match value {
+        crate::jsonc::Value::Int(int) => Some(*int),
+        crate::jsonc::Value::UInt(uint) => Some(*uint as i64),
+        _ => None,
+    };
+    for (key, field) in [("green", &mut range.green), ("yellow", &mut range.yellow)] {
+        let Some(raw) = entries.iter().rev().find(|(name, _)| name == key).map(|(_, v)| v) else {
+            continue;
+        };
+        let Some(num) = int_val(raw) else {
+            eprintln!("Error: usage: temp.{key} must be an integer between 0 and 100");
+            std::process::exit(480);
+        };
+        if !(0..=100).contains(&num) {
+            eprintln!("Error: usage: temp.{key} must be between 0 and 100");
+            std::process::exit(480);
+        }
+        *field = num as u8;
+    }
+    true
+}
+
 /// terminalLightTheme: the env-only terminal theme detection's background
 /// darkness (upstream forces the env path at display init for speed).
 pub(crate) fn terminal_light() -> bool {

@@ -546,25 +546,29 @@ fn detect_pci_bus(gpus: &mut Vec<GpuResult>, options: &GpuOptions) -> Result<(),
 }
 
 /// The FFGPUOptions our rendering and detection consume: the JSON config's
-/// `temp` and `driverSpecific` booleans.
+/// `temp` and `driverSpecific` booleans, plus the shared green/yellow
+/// temperature thresholds.
 #[derive(Default)]
 pub struct GpuOptions {
     pub temp: bool,
     pub driver_specific: bool,
+    pub temp_range: super::TempRange,
 }
 
 impl GpuOptions {
     fn from_instance(instance: &Instance) -> Self {
+        let mut options = Self::default();
         let Some(entry) = instance.entry else {
-            return Self::default();
+            return options;
         };
-        Self {
-            temp: entry.get("temp").and_then(crate::jsonc::Value::as_bool).unwrap_or(false),
-            driver_specific: entry
-                .get("driverSpecific")
-                .and_then(crate::jsonc::Value::as_bool)
-                .unwrap_or(false),
+        if let Some(value) = entry.get("temp") {
+            options.temp = super::parse_temp(value, &mut options.temp_range);
         }
+        options.driver_specific = entry
+            .get("driverSpecific")
+            .and_then(crate::jsonc::Value::as_bool)
+            .unwrap_or(false);
+        options
     }
 }
 
@@ -591,7 +595,7 @@ pub fn detect(options: &GpuOptions) -> Result<Vec<GpuResult>, &'static str> {
 
 /// The text value: "{vendor} {name}", the vendor dropped when the name
 /// already starts with it, plus the temp/memory blocks and the [type] tag.
-fn item_value(gpu: &GpuResult, color: bool) -> String {
+fn item_value(gpu: &GpuResult, range: super::TempRange, color: bool) -> String {
     let mut value = String::new();
     if !gpu.vendor.is_empty() && !gpu.name.to_ascii_lowercase().starts_with(&gpu.vendor.to_ascii_lowercase()) {
         value.push_str(&gpu.vendor);
@@ -606,7 +610,7 @@ fn item_value(gpu: &GpuResult, color: bool) -> String {
     }
     if let Some(temperature) = gpu.temperature {
         value.push_str(" - ");
-        value.push_str(&super::temps_num(temperature, 60, 80, color));
+        value.push_str(&super::temps_num(temperature, range.green, range.yellow, color));
     }
     // The dedicated memory block: percent thresholds {50, 80}.
     if let Some(total) = gpu.dedicated_total
@@ -634,7 +638,8 @@ fn item_value(gpu: &GpuResult, color: bool) -> String {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
-    let Ok(gpus) = detect(&GpuOptions::from_instance(instance)) else {
+    let options = GpuOptions::from_instance(instance);
+    let Ok(gpus) = detect(&options) else {
         return Vec::new();
     };
     // ffPrintGPU indexes the key when more than one GPU prints.
@@ -647,7 +652,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             } else {
                 format!("GPU {index}")
             };
-            Row::new(&key, item_value(gpu, instance.color))
+            Row::new(&key, item_value(gpu, options.temp_range, instance.color))
         })
         .collect()
 }

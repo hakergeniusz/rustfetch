@@ -29,16 +29,19 @@ const TEMP_UNSET: f64 = f64::MIN;
 #[derive(Default)]
 pub(crate) struct PhysicalDiskOptions {
     temp: bool,
+    temp_range: super::TempRange,
 }
 
 impl PhysicalDiskOptions {
     fn from_instance(instance: &Instance) -> Self {
+        let mut options = Self { temp: false, temp_range: super::TempRange { green: 50, yellow: 70 } };
         let Some(entry) = instance.entry else {
-            return Self::default();
+            return options;
         };
-        Self {
-            temp: entry.get("temp").and_then(crate::jsonc::Value::as_bool).unwrap_or(false),
+        if let Some(value) = entry.get("temp") {
+            options.temp = super::parse_temp(value, &mut options.temp_range);
         }
+        options
     }
 }
 
@@ -282,7 +285,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
             if dev.temperature != TEMP_UNSET && !value.is_empty() {
                 value.push_str(" - ");
-                value.push_str(&super::temps_num(dev.temperature, 50, 70, instance.color));
+                value.push_str(&super::temps_num(dev.temperature, options.temp_range.green, options.temp_range.yellow, instance.color));
             }
             Row::new(&format!("Physical Disk ({key_name})"), value)
         })

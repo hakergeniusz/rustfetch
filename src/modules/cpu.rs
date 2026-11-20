@@ -267,24 +267,27 @@ pub(crate) struct CpuOptions {
     temp: bool,
     show_pe_core_count: bool,
     temp_sensor: Option<String>,
+    temp_range: super::TempRange,
 }
 
 impl CpuOptions {
     fn from_instance(instance: &Instance) -> Self {
+        let mut options = Self { show_pe_core_count: true, ..Self::default() };
         let Some(entry) = instance.entry else {
-            return Self { show_pe_core_count: true, ..Self::default() };
+            return options;
         };
-        Self {
-            temp: entry.get("temp").and_then(crate::jsonc::Value::as_bool).unwrap_or(false),
-            show_pe_core_count: entry
-                .get("showPeCoreCount")
-                .and_then(crate::jsonc::Value::as_bool)
-                .unwrap_or(true),
-            temp_sensor: entry
-                .get("tempSensor")
-                .and_then(crate::jsonc::Value::as_str)
-                .map(str::to_string),
+        if let Some(value) = entry.get("temp") {
+            options.temp = super::parse_temp(value, &mut options.temp_range);
         }
+        options.show_pe_core_count = entry
+            .get("showPeCoreCount")
+            .and_then(crate::jsonc::Value::as_bool)
+            .unwrap_or(true);
+        options.temp_sensor = entry
+            .get("tempSensor")
+            .and_then(crate::jsonc::Value::as_str)
+            .map(str::to_string);
+        options
     }
 }
 
@@ -413,7 +416,7 @@ fn format_value(cpu: &CpuResult, options: &CpuOptions, color: bool) -> String {
 
     if let Some(temperature) = cpu.temperature {
         value.push_str(" - ");
-        value.push_str(&super::temps_num(temperature, 60, 80, color));
+        value.push_str(&super::temps_num(temperature, options.temp_range.green, options.temp_range.yellow, color));
     }
     value
 }
@@ -434,11 +437,15 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 }
 
 /// ffGenerateCPUJsonResult.
-pub fn json(_instance: &Instance) -> JsonOutcome {
-    let cpu = match detect() {
+pub fn json(instance: &Instance) -> JsonOutcome {
+    let options = CpuOptions::from_instance(instance);
+    let mut cpu = match detect() {
         Err(error) => return JsonOutcome::Error(error.to_string()),
         Ok(cpu) => cpu,
     };
+    if options.temp {
+        cpu.temperature = detect_cpu_temp(&options);
+    }
     if cpu.vendor.is_empty() && cpu.name.is_empty() && cpu.cores_online <= 1 {
         return JsonOutcome::Error("No CPU detected".to_string());
     }
