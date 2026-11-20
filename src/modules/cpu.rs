@@ -394,7 +394,7 @@ fn format_value(cpu: &CpuResult, options: &CpuOptions, color: bool) -> String {
     let mut core_types = cpu.core_types.clone();
     core_types.retain(|&(count, _)| count != 0);
     if options.show_pe_core_count && !core_types.is_empty() {
-        core_types.sort_by(|a, b| b.1.cmp(&a.1));
+        core_types.sort_by_key(|&(_, freq)| std::cmp::Reverse(freq));
         let joined = core_types
             .iter()
             .map(|&(count, _)| count.to_string())

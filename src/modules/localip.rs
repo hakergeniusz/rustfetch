@@ -87,27 +87,22 @@ impl LocalIpOptions {
 
         // showIpv6 doubles as the ipv6Type setter: a bool toggles the bit
         // with type AUTO, a string selects the type and enables the bit.
-        match entry.get("showIpv6") {
-            Some(value) => {
-                if let Some(enabled) = value.as_bool() {
-                    options.ipv6_type = v6::AUTO;
-                    if enabled {
-                        options.show_type |= show::IPV6;
-                    } else {
-                        options.show_type &= !show::IPV6;
-                    }
-                } else if let Some(kind) = value.as_str() {
-                    options.ipv6_type = match kind {
-                        "gua" => v6::GUA,
-                        "ula" => v6::ULA,
-                        "lla" => v6::LLA,
-                        "unknown" => v6::UNKNOWN,
-                        _ => v6::AUTO,
-                    };
-                    options.show_type |= show::IPV6;
-                }
-            },
-            None => {},
+        if let Some(enabled) = entry.get("showIpv6").and_then(crate::jsonc::Value::as_bool) {
+            options.ipv6_type = v6::AUTO;
+            if enabled {
+                options.show_type |= show::IPV6;
+            } else {
+                options.show_type &= !show::IPV6;
+            }
+        } else if let Some(kind) = entry.get("showIpv6").and_then(crate::jsonc::Value::as_str) {
+            options.ipv6_type = match kind {
+                "gua" => v6::GUA,
+                "ula" => v6::ULA,
+                "lla" => v6::LLA,
+                "unknown" => v6::UNKNOWN,
+                _ => v6::AUTO,
+            };
+            options.show_type |= show::IPV6;
         }
 
         if let Some(prefix) = entry.get("namePrefix").and_then(crate::jsonc::Value::as_str) {
@@ -435,7 +430,8 @@ fn detect(options: &LocalIpOptions) -> Result<Vec<LocalIpResult>, &'static str> 
                     ipv4: Vec::new(),
                     ipv6: Vec::new(),
                 });
-                adapters.last_mut().unwrap()
+                let pushed = adapters.len() - 1;
+                &mut adapters[pushed]
             },
         };
 
