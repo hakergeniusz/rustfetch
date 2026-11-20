@@ -7,7 +7,7 @@
 use std::io::{BufWriter, Write};
 
 use crate::json::{self, Json, JsonOutcome};
-use crate::logo::SegmentColor;
+use crate::logo::{Segment, SegmentColor};
 use crate::{instance::Instance, logo::Logo, modules::JsonItem, modules::Kind, modules::Row};
 
 /// Serializes parsed logo lines to strings, tracking visible widths
@@ -17,8 +17,8 @@ use crate::{instance::Instance, logo::Logo, modules::JsonItem, modules::Kind, mo
 /// wrap only appears in color mode, like logoLineCacheBuild's BOLT and
 /// logoLineCachePush's reset. Blank lines print nothing, width-zero like
 /// upstream's logoLineCachePush(nullptr, 0).
-pub(crate) fn colorize(logo: &Logo, color: bool) -> Vec<(String, usize)> {
-    logo.lines
+pub(crate) fn colorize(lines: &[Vec<Segment>], color: bool) -> Vec<(String, usize)> {
+    lines
         .iter()
         .map(|line| {
             let width = line.iter().map(|seg| seg.text.chars().count()).sum();
@@ -36,7 +36,7 @@ pub(crate) fn colorize(logo: &Logo, color: bool) -> Vec<(String, usize)> {
                         out.push_str(code);
                         out.push('m');
                     },
-                    SegmentColor::Esc(bytes) => out.push_str(bytes),
+                    SegmentColor::Esc(bytes) => out.push_str(bytes.as_str()),
                     SegmentColor::Pass => {},
                 }
                 out.push_str(&seg.text);
@@ -86,59 +86,116 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
     let color = instance.color;
-    if color {
-        // ffStart resets everything before printing starts.
-        let _ = write!(out, "\x1b[m");
-    }
-
     let key_color = instance.logo_colors.get().and_then(|colors| colors.key);
-    let mut logo_lines: Vec<(String, usize)> =
-        logo.as_ref().map(|logo| colorize(logo, color)).unwrap_or_default();
-    // logo.padding.top pushes the whole logo block down: the first rows
-    // print on key-column-width blank lines, like the reference's
-    // `-c all` output.
-    if let Some(top) = instance.padding_top {
-        logo_lines.splice(0..0, std::iter::repeat_n((String::new(), 0), top as usize));
-    }
-
     // fastfetch's padding model: 0 left / 4 right (the --logo-padding
     // overrides are not parsed yet). Without a logo the rows start at
     // column 0, like logoPrintNone leaving logoWidth at zero.
     let (pad_left, pad_right) = (0usize, 4usize);
-    let logo_width = logo.as_ref().map_or(0, |logo| logo.width);
-    let key_column = if logo.is_some() { logo_width + pad_right } else { 0 };
+    let padding_top = instance.padding_top.unwrap_or(0) as usize;
 
-    let total = logo_lines.len().max(rows.len());
-    for i in 0..total {
-        if i < logo_lines.len() {
-            let (text, width) = &logo_lines[i];
-            let _ = write!(out, "{:width$}", "", width = pad_left);
-            let _ = write!(out, "{text}");
-            // lines past the last info row are printed bare, like fastfetch's
-            // ffLogoPrintRemaining (no key-column fill)
-            if i < rows.len() {
-                let _ = write!(out, "{:width$}", "", width = key_column - pad_left - width);
+    match logo.as_ref() {
+        Some(Logo::Raw(content)) => {
+            // ffStart resets everything before printing starts. It goes
+            // through the buffered stdout and STAYS there: the dump below
+            // bypasses the buffer like ffWriteFDBuffer's raw write(2), so on
+            // the wire the reset lands after the dump and the cursor query,
+            // exactly like fastfetch's ffStart-before-ffLogoPrint does.
+            if color {
+                let _ = write!(out, "\x1b[m");
             }
-        } else {
-            let _ = write!(out, "{:width$}", "", width = key_column);
-        }
+            // ffLogoPrintCharsRaw, LEFT position (logo.width/height unset):
+            // clear the screen, home the cursor and dump the file bytes
+            // unprocessed — regardless of the color mode, like upstream.
+            let mut dump = format!("\x1b[2J\x1b[3J\x1b[{};{}H", padding_top + 1, pad_left + 1).into_bytes();
+            dump.extend_from_slice(content);
+            // One raw write to fd 1: the buffered ffStart reset must not be
+            // flushed ahead of it, and the query below writes to /dev/tty.
+            unsafe {
+                libc::write(libc::STDOUT_FILENO, dump.as_ptr().cast(), dump.len());
+            }
+            let mut logo_width = 0usize;
+            let mut logo_height = 0usize;
+            // The cursor query learns where the dump ended: X (raised to
+            // width+paddingLeft, both unparsed) gives the key column, Y the
+            // logo height. On failure upstream stays silent (showErrors
+            // defaults off) and leaves both at zero, skipping the \e[H too.
+            if let Some((y, x)) = crate::tty::response(b"\x1b[6n", crate::tty::parse_cpr) {
+                logo_width = x as usize + pad_right - 1;
+                logo_height = y as usize;
+                let _ = write!(out, "\x1b[H");
+            }
+            for row in rows {
+                // ffLogoPrintLine with an empty cache: the cursor moves
+                // right by logoWidth instead of printing spaces.
+                if logo_width > 0 {
+                    let _ = write!(out, "\x1b[{}C", logo_width);
+                }
+                let _ = writeln!(out, "{}", row_line(row, key_color, color));
+            }
+            // ffLogoPrintRemaining's empty-cache tail.
+            if rows.len() <= logo_height {
+                for _ in 0..logo_height - rows.len() + 1 {
+                    let _ = writeln!(out);
+                }
+            }
+        },
+        raw_or_chars => {
+            if color {
+                // ffStart resets everything before printing starts.
+                let _ = write!(out, "\x1b[m");
+            }
+            let logo_lines: Vec<(String, usize)> = match raw_or_chars {
+                Some(Logo::Chars { lines, .. }) => colorize(lines, color),
+                _ => Vec::new(),
+            };
+            let has_logo = matches!(logo, Some(Logo::Chars { .. }));
+            let mut logo_lines = logo_lines;
+            // logo.padding.top pushes the whole logo block down: the first rows
+            // print on key-column-width blank lines, like the reference's
+            // `-c all` output.
+            if has_logo {
+                logo_lines.splice(0..0, std::iter::repeat_n((String::new(), 0), padding_top));
+            }
 
-        if i < rows.len() {
-            let _ = writeln!(out, "{}", row_line(&rows[i], key_color, color));
-        } else {
-            let _ = writeln!(out);
-        }
-    }
-    if color && logo.is_some() {
-        // ffLogoPrintRemaining ends the logo block with a reset even when
-        // every logo line was already consumed by a row.
-        let _ = write!(out, "\x1b[m");
-    }
-    // ffLogoPrintRemaining's tail: an empty logo cache (logo none) still
-    // closes with one newline when no rows were printed, from its
-    // keysHeight <= logoHeight branch.
-    if logo_lines.is_empty() && rows.is_empty() {
-        let _ = writeln!(out);
+            let logo_width = match logo {
+                Some(Logo::Chars { width, .. }) => *width,
+                _ => 0,
+            };
+            let key_column = if has_logo { logo_width + pad_right } else { 0 };
+
+            let total = logo_lines.len().max(rows.len());
+            for i in 0..total {
+                if i < logo_lines.len() {
+                    let (text, width) = &logo_lines[i];
+                    let _ = write!(out, "{:width$}", "", width = pad_left);
+                    let _ = write!(out, "{text}");
+                    // lines past the last info row are printed bare, like fastfetch's
+                    // ffLogoPrintRemaining (no key-column fill)
+                    if i < rows.len() {
+                        let _ = write!(out, "{:width$}", "", width = key_column - pad_left - width);
+                    }
+                } else {
+                    let _ = write!(out, "{:width$}", "", width = key_column);
+                }
+
+                if i < rows.len() {
+                    let _ = writeln!(out, "{}", row_line(&rows[i], key_color, color));
+                } else {
+                    let _ = writeln!(out);
+                }
+            }
+            if color && has_logo {
+                // ffLogoPrintRemaining ends the logo block with a reset even when
+                // every logo line was already consumed by a row.
+                let _ = write!(out, "\x1b[m");
+            }
+            // ffLogoPrintRemaining's tail: an empty logo cache (logo none) still
+            // closes with one newline when no rows were printed, from its
+            // keysHeight <= logoHeight branch.
+            if logo_lines.is_empty() && rows.is_empty() {
+                let _ = writeln!(out);
+            }
+        },
     }
     let _ = out.flush();
 }

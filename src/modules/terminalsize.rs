@@ -49,67 +49,11 @@ fn detect(fast_only: bool) -> Option<(u16, u16, u16, u16)> {
     }
 }
 
-/// ffGetTerminalResponse for the CSI t responses: write the request to
-/// /dev/tty (canonical mode off, restored afterwards), then poll+read
-/// chunks until the two numbers after the marker arrive — 1s per poll,
-/// like FF_IO_TERM_RESP_WAIT_MS.
+/// ffGetTerminalResponse for the CSI t responses: the request goes to
+/// /dev/tty through the shared tty module and the two numbers after the
+/// marker are parsed from the accumulated answer.
 fn query_size(request: &[u8], marker: &[u8]) -> Option<(u16, u16)> {
-    let fd = unsafe { libc::open(c"/dev/tty".as_ptr(), libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC) };
-    if fd < 0 {
-        return None;
-    }
-    unsafe {
-        let mut old_term: libc::termios = std::mem::zeroed();
-        let mut result = None;
-        if libc::tcgetattr(fd, &mut old_term) == 0 {
-            let mut new_term = old_term;
-            new_term.c_lflag &= !(libc::ICANON | libc::ECHO);
-            if libc::tcsetattr(fd, libc::TCSAFLUSH, &new_term) == 0 {
-                let mut written = 0usize;
-                while written < request.len() {
-                    let n = libc::write(fd, request[written..].as_ptr().cast(), request.len() - written);
-                    if n <= 0 {
-                        break;
-                    }
-                    written += n as usize;
-                }
-                if written == request.len() {
-                    result = read_size(fd, marker);
-                }
-                libc::tcsetattr(fd, libc::TCSAFLUSH, &old_term);
-            }
-        }
-        libc::close(fd);
-        result
-    }
-}
-
-fn read_size(fd: i32, marker: &[u8]) -> Option<(u16, u16)> {
-    let mut buffer = Vec::with_capacity(1024);
-    loop {
-        let mut poll_fd = libc::pollfd {
-            fd,
-            events: libc::POLLIN,
-            revents: 0,
-        };
-        if unsafe { libc::poll(&mut poll_fd, 1, 1000) } <= 0 {
-            return None;
-        }
-        let mut chunk = [0u8; 1024];
-        let n = unsafe { libc::read(fd, chunk.as_mut_ptr().cast(), chunk.len()) };
-        if n <= 0 {
-            return None;
-        }
-        buffer.extend_from_slice(&chunk[..n as usize]);
-
-        // Parse what arrived so far, like the vsscanf-per-chunk loop.
-        if let Some(size) = parse_size(&buffer, marker) {
-            return Some(size);
-        }
-        if buffer.len() > 4096 {
-            return None;
-        }
-    }
+    crate::tty::response(request, |buffer| parse_size(buffer, marker))
 }
 
 /// The `ESC[8;rows;colst` / `ESC[4;height;widtht` body after the marker.

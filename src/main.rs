@@ -17,6 +17,7 @@ mod platform;
 mod render;
 mod settings;
 mod smbios;
+mod tty;
 mod util;
 
 fn main() {

@@ -28,10 +28,15 @@ pub struct Segment {
     pub color: SegmentColor,
 }
 
-/// A logo ready for rendering: parsed lines plus the width of the widest line.
-pub struct Logo {
-    pub lines: Vec<Vec<Segment>>,
-    pub width: usize,
+/// A logo ready for rendering: parsed art lines plus the width of the
+/// widest line for the cache renderer, or a `.raw` file's bytes dumped
+/// verbatim through ffLogoPrintCharsRaw's cursor path.
+pub enum Logo {
+    Chars {
+        lines: Vec<Vec<Segment>>,
+        width: usize,
+    },
+    Raw(Vec<u8>),
 }
 
 /// FFLogoSize reduced to the values the lookups can produce (Normal is
@@ -258,14 +263,7 @@ pub(crate) fn entry_colors(entry: &LogoEntry) -> LogoColors {
 /// Builds a renderable logo from its entry's art.
 fn build(entry: &'static LogoEntry, pipe: bool) -> Logo {
     let (lines, width) = parse_art(entry.art, Some(entry.colors), pipe);
-    Logo { lines, width }
-}
-
-/// Builds the raw file logo: the file's own escape sequences pass through,
-/// no `$N` replacement (logoPrintFileIfExists's doColorReplacement=false).
-fn build_raw(art: &str) -> Logo {
-    let lines = art.lines().map(|text| vec![Segment { text: text.to_string(), color: SegmentColor::Pass }]).collect();
-    Logo { lines, width: 0 }
+    Logo::Chars { lines, width }
 }
 
 /// Resolves the logo to display, porting ffLogoPrint: the NONE type
@@ -302,22 +300,29 @@ pub fn load(cli: &Cli, instance: &Instance) -> (Option<Logo>, LogoColors) {
     if let Some(entry) = get_builtin(source, Size::Unknown) {
         return (Some(build(entry, pipe)), entry_colors(entry));
     }
-    // "-" reads the logo from stdin, like ffLogoPrintFileIfExists.
-    let Ok(art) = (if source == "-" {
+    // "-" reads the logo from stdin, like ffLogoPrintFileIfExists; raw
+    // files keep their exact bytes (ffLogoPrintCharsRaw writes them back
+    // unprocessed).
+    let Ok(content) = (if source == "-" {
         use std::io::Read;
-        let mut buf = String::new();
-        match std::io::stdin().read_to_string(&mut buf) {
+        let mut buf = Vec::new();
+        match std::io::stdin().read_to_end(&mut buf) {
             Ok(_) => Ok(buf),
             Err(_) => Err(std::io::Error::other("stdin")),
         }
     } else {
-        std::fs::read_to_string(source)
+        std::fs::read(source)
     }) else {
         return fallback();
     };
     if source.to_ascii_lowercase().ends_with(".raw") {
-        return (Some(build_raw(&art)), entry_colors(detected));
+        return (Some(Logo::Raw(content)), entry_colors(detected));
     }
+    let Ok(art) = String::from_utf8(content) else {
+        // ff's cache build scans bytes; a text logo that is not UTF-8
+        // cannot round-trip through the segment parser.
+        return fallback();
+    };
     // A trailing newline terminates one more (empty) logo line, like
     // ffLogoPrintChars pushing the segment after the last '\n'.
     let mut art = art;
@@ -327,7 +332,7 @@ pub fn load(cli: &Cli, instance: &Instance) -> (Option<Logo>, LogoColors) {
     // File logos apply the detected distro's palette to their `$N` markers
     // (logoPrintCustom's ffLogoApplyColors(logoGetBuiltinDetected(NORMAL))).
     let (lines, width) = parse_art(&art, Some(detected.colors), pipe);
-    (Some(Logo { lines, width }), entry_colors(detected))
+    (Some(Logo::Chars { lines, width }), entry_colors(detected))
 }
 
 /// listModules-style listing of the builtin logo table: numbered quoted
@@ -369,11 +374,12 @@ pub(crate) fn print_logos() {
         } else {
             println!("\x1b[{}m{}:\x1b[0m", entry.colors[0], entry.names[0]);
         }
-        let logo = Logo {
+        let logo = Logo::Chars {
             lines: parse_art(entry.art, Some(entry.colors), pipe).0,
             width: 0,
         };
-        for (line, _) in crate::render::colorize(&logo, !pipe) {
+        let Logo::Chars { lines, .. } = &logo else { unreachable!() };
+        for (line, _) in crate::render::colorize(lines, !pipe) {
             println!("{line}");
         }
     }
