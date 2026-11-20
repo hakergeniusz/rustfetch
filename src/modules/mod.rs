@@ -884,6 +884,22 @@ fn prepare_rate_modules(jobs: &[PresetJob]) {
     if wants("diskio") {
         diskio::prepare();
     }
+
+    // The network modules send their requests here too, once per module
+    // instance in config order (`-s` jobs carry default options): a second
+    // publicip or weather instance is an upstream hard error (exit 1).
+    for job in jobs {
+        let (name, entry) = match job {
+            PresetJob::Module(module) => (module.name, None),
+            PresetJob::ModuleOpts { def, opts } => (def.name, Some(*opts)),
+            _ => continue,
+        };
+        match name {
+            "publicip" => publicip::prepare_from_entry(entry),
+            "weather" => weather::prepare_from_entry(entry),
+            _ => {},
+        }
+    }
 }
 
 /// Runs the selected modules (or the default preset when no structure was

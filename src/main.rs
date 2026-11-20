@@ -13,6 +13,7 @@ mod logo;
 mod logo_data;
 mod logo_entries;
 mod modules;
+mod networking;
 mod platform;
 mod render;
 mod settings;
