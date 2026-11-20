@@ -737,7 +737,18 @@ const MODULE_LIST: &[(&str, &str)] = &[
     ("Zpool", "Print ZFS storage pools"),
 ];
 
-pub fn list_modules() {
+/// FASTFETCH_DATATEXT_STRUCTURE: the default preset as one colon string.
+pub const DEFAULT_STRUCTURE_TEXT: &str = "Title:Separator:OS:Host:Kernel:Uptime:Packages:Shell:Display:DE:WM:WMTheme:Theme:Icons:Font:Cursor:Terminal:TerminalFont:CPU:GPU:Memory:Swap:Disk:LocalIp:Battery:PowerAdapter:Locale:Break:Colors";
+
+/// listModules: the pretty numbered listing, or the shell-completion
+/// "Name:description" form for `--list-modules autocompletion`.
+pub fn list_modules(pretty: bool) {
+    if !pretty {
+        for (name, description) in MODULE_LIST {
+            println!("{name}:{description}");
+        }
+        return;
+    }
     // printf("%d)%s%-14s: %s\n", count, count > 9 ? " " : "  ", name, description)
     for (index, (name, description)) in MODULE_LIST.iter().enumerate() {
         let gap = if index >= 9 { " " } else { "  " };

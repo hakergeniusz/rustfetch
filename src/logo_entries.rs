@@ -3881,6 +3881,14 @@ pub static LOGO_ENTRIES: &[LogoEntry] = &[
         art: include_str!("logo/t/truenas_scale.txt"),
     },
     LogoEntry {
+        names: &["Turkish"],
+        colors: &["39"],
+        color_keys: Some("34"),
+        color_title: Some("31"),
+        line_type: 0,
+        art: include_str!("logo/t/turkish.txt"),
+    },
+    LogoEntry {
         names: &["Tuxedo OS", "tuxedo"],
         colors: &["37", "31"],
         color_keys: None,

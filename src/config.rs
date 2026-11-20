@@ -64,58 +64,63 @@ fn exit_error(code: i32, message: &str) -> ! {
     std::process::exit(code)
 }
 
+/// ffPlatformPathAddAbsolute/AddHome: only directories that exist, one
+/// trailing slash, deduped.
+fn add_dir(dirs: &mut Vec<String>, path: &str) {
+    if !std::path::Path::new(path).is_dir() {
+        return;
+    }
+    let mut path = path.to_string();
+    if !path.ends_with('/') {
+        path.push('/');
+    }
+    if !dirs.contains(&path) {
+        dirs.push(path);
+    }
+}
+
 /// ffPlatform configDirs, each ending with '/'.
-fn config_dirs() -> Vec<String> {
+pub(crate) fn config_dirs() -> Vec<String> {
     let mut dirs = Vec::new();
-    let mut add = |dir: String| {
-        if !dir.is_empty() && !dirs.contains(&dir) {
-            dirs.push(dir);
-        }
-    };
     if let Some(dir) = std::env::var_os("XDG_CONFIG_HOME") {
-        add(format!("{}/", dir.to_string_lossy()));
+        add_dir(&mut dirs, &dir.to_string_lossy());
     }
     let home = &platform::platform().home_dir;
-    add(format!("{home}.config/"));
-    add(home.clone());
+    add_dir(&mut dirs, &format!("{home}.config/"));
+    add_dir(&mut dirs, home);
     if let Some(list) = std::env::var_os("XDG_CONFIG_DIRS") {
         for dir in list.to_string_lossy().split(':') {
-            add(format!("{dir}/"));
+            add_dir(&mut dirs, dir);
         }
     }
-    add("/etc/xdg/".to_string());
-    add("/etc/".to_string());
+    add_dir(&mut dirs, "/etc/xdg/");
+    add_dir(&mut dirs, "/etc/");
     dirs
 }
 
 /// ffPlatform dataDirs, each ending with '/'.
-fn data_dirs() -> Vec<String> {
+pub(crate) fn data_dirs() -> Vec<String> {
     let mut dirs = Vec::new();
-    let mut add = |dir: String| {
-        if !dir.is_empty() && !dirs.contains(&dir) {
-            dirs.push(dir);
-        }
-    };
     if let Some(dir) = std::env::var_os("XDG_DATA_HOME") {
-        add(format!("{}/", dir.to_string_lossy()));
+        add_dir(&mut dirs, &dir.to_string_lossy());
     }
     let home = &platform::platform().home_dir;
-    add(format!("{home}.local/share/"));
+    add_dir(&mut dirs, &format!("{home}.local/share/"));
     // ${exePath}/../share
     let exe = &platform::platform().exe_path;
     if let Some(last_slash) = exe.rfind('/')
         && let Some(second_slash) = exe[..last_slash].rfind('/')
     {
-        add(format!("{}/share/", &exe[..second_slash]));
+        add_dir(&mut dirs, &format!("{}/share/", &exe[..second_slash]));
     }
-    add(home.clone());
+    add_dir(&mut dirs, home);
     if let Some(list) = std::env::var_os("XDG_DATA_DIRS") {
         for dir in list.to_string_lossy().split(':') {
-            add(format!("{dir}/"));
+            add_dir(&mut dirs, dir);
         }
     }
-    add("/usr/local/share/".to_string());
-    add("/usr/share/".to_string());
+    add_dir(&mut dirs, "/usr/local/share/");
+    add_dir(&mut dirs, "/usr/share/");
     dirs
 }
 
@@ -539,4 +544,79 @@ pub(crate) fn for_test(content: &str) -> Config {
         panic!("test config must parse");
     };
     build_config(leak_root(root))
+}
+
+/// listConfigPaths: every configDir + "fastfetch/", marked (*) when a
+/// config.jsonc exists inside.
+pub(crate) fn list_config_paths() {
+    for dir in config_dirs() {
+        let marker = std::path::Path::new(&format!("{dir}fastfetch/config.jsonc")).is_file();
+        println!("{dir}fastfetch/{}", if marker { " (*)" } else { "" });
+    }
+}
+
+/// listDataPaths: every dataDir + "fastfetch/".
+pub(crate) fn list_data_paths() {
+    for dir in data_dirs() {
+        println!("{dir}fastfetch/");
+    }
+}
+
+/// listFilesRecursively: hidden entries skipped, directories recurse with
+/// one more "  | " indent; pretty prints "  | " per indent level before
+/// each file, autocompletion prints the path relative to the walked root.
+pub(crate) fn list_files_recursively(
+    root: &str,
+    dir: &str,
+    pretty: bool,
+    indentation: u8,
+    folder_name: Option<&str>,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    // Entering a subdirectory announces it one indent level up.
+    if pretty
+        && let Some(folder_name) = folder_name
+    {
+        for _ in 0..indentation.saturating_sub(1) {
+            print!("  | ");
+        }
+        println!("{folder_name}/");
+    }
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with('.') {
+            continue;
+        }
+        let path = format!("{dir}{name}");
+        if entry.file_type().is_ok_and(|file_type| file_type.is_dir()) {
+            list_files_recursively(root, &format!("{path}/"), pretty, indentation + 1, Some(&name));
+            continue;
+        }
+        if pretty {
+            for _ in 0..indentation {
+                print!("  | ");
+            }
+        } else {
+            // The path from the walked root to the file's directory.
+            print!("{}", &dir[root.len()..]);
+        }
+        println!("{name}");
+    }
+}
+
+/// listAvailablePresets: dataDirs + "fastfetch/presets/", then the
+/// presets shipped next to the executable.
+pub(crate) fn list_presets(pretty: bool) {
+    for dir in data_dirs() {
+        let presets = format!("{dir}fastfetch/presets/");
+        list_files_recursively(&presets, &presets, pretty, 0, None);
+    }
+    let exe = &crate::platform::platform().exe_path;
+    if let Some(last_slash) = exe.rfind('/') {
+        let presets = format!("{}/presets/", &exe[..=last_slash]);
+        list_files_recursively(&presets, &presets, pretty, 0, None);
+    }
 }

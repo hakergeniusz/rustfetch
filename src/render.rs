@@ -7,15 +7,17 @@
 use std::io::{BufWriter, Write};
 
 use crate::json::{self, Json, JsonOutcome};
+use crate::logo::SegmentColor;
 use crate::{instance::Instance, logo::Logo, modules::JsonItem, modules::Kind, modules::Row};
 
 /// Serializes parsed logo lines to strings, tracking visible widths
-/// separately. Every segment emits its color — including empty ones from
-/// `$N` markers at line starts (fastfetch prints the carried color and
-/// then the marker's own escape) — wrapped in bold/reset like
-/// logoLineCacheBuild. Blank lines print nothing, width-zero like
+/// separately. Every segment emits its escape — Code, raw Esc, including
+/// empty ones from `$N` markers at line starts (fastfetch prints the
+/// carried color and then the marker's own escape) — while the bold/reset
+/// wrap only appears in color mode, like logoLineCacheBuild's BOLT and
+/// logoLineCachePush's reset. Blank lines print nothing, width-zero like
 /// upstream's logoLineCachePush(nullptr, 0).
-fn colorize(logo: &Logo, color: bool) -> Vec<(String, usize)> {
+pub(crate) fn colorize(logo: &Logo, color: bool) -> Vec<(String, usize)> {
     logo.lines
         .iter()
         .map(|line| {
@@ -28,12 +30,14 @@ fn colorize(logo: &Logo, color: bool) -> Vec<(String, usize)> {
                 out.push_str("\x1b[1m");
             }
             for seg in line {
-                if color && !seg.color.is_empty() {
-                    // An empty color marks raw logo lines, whose own
-                    // escape sequences pass through untouched.
-                    out.push_str("\x1b[");
-                    out.push_str(seg.color);
-                    out.push('m');
+                match &seg.color {
+                    SegmentColor::Code(code) => {
+                        out.push_str("\x1b[");
+                        out.push_str(code);
+                        out.push('m');
+                    },
+                    SegmentColor::Esc(bytes) => out.push_str(bytes),
+                    SegmentColor::Pass => {},
                 }
                 out.push_str(&seg.text);
             }

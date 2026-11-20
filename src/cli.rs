@@ -10,6 +10,12 @@ use crate::config::{self, Config};
 /// prints a hand-maintained document, not a generated one.
 const HELP: &str = include_str!("cli_help.txt");
 
+/// `--list-features`: the reference build's compiled-in features.
+const LIST_FEATURES: &str = include_str!("list_features.txt");
+
+/// `--help-raw`: the reference's JSON help document.
+const HELP_RAW: &str = include_str!("help_raw.txt");
+
 /// `-h <command>` entries for the options this port parses, verbatim.
 /// The reference knows a hundred more commands; those answer the same
 /// "No specific help" error as an unknown name.
@@ -122,7 +128,64 @@ impl Cli {
                     std::process::exit(0);
                 },
                 "--list-modules" => {
-                    crate::modules::list_modules();
+                    // pretty unless the value is "autocompletion"
+                    crate::modules::list_modules(!value.is_some_and(|value| value.eq_ignore_ascii_case("autocompletion")));
+                    std::process::exit(0);
+                },
+                "--list-presets" => {
+                    crate::config::list_presets(!value.is_some_and(|value| value.eq_ignore_ascii_case("autocompletion")));
+                    std::process::exit(0);
+                },
+                "--list-config-paths" => {
+                    crate::config::list_config_paths();
+                    std::process::exit(0);
+                },
+                "--list-data-paths" => {
+                    crate::config::list_data_paths();
+                    std::process::exit(0);
+                },
+                "--list-features" => {
+                    print!("{LIST_FEATURES}");
+                    std::process::exit(0);
+                },
+                "--list-logos" => {
+                    match value {
+                        Some(value) if value.eq_ignore_ascii_case("autocompletion") => {
+                            crate::logo::list_logos_builtin(1, true);
+                        },
+                        Some(value) if value.eq_ignore_ascii_case("builtin") => {
+                            crate::logo::list_logos_builtin(1, false);
+                        },
+                        Some(value) if value.eq_ignore_ascii_case("custom") => {
+                            crate::logo::list_logos_custom();
+                        },
+                        Some(value) => {
+                            eprintln!("Error: unsupported logo type: {value}");
+                            std::process::exit(415);
+                        },
+                        None => {
+                            println!("Builtin logos:");
+                            crate::logo::list_logos_builtin(1, false);
+                            println!("\nCustom logos:");
+                            crate::logo::list_logos_custom();
+                        },
+                    }
+                    std::process::exit(0);
+                },
+                "--help-raw" => {
+                    print!("{HELP_RAW}");
+                    std::process::exit(0);
+                },
+                key if key.to_ascii_lowercase().starts_with("--print-") => {
+                    let subkey = &key["--print-".len()..];
+                    if subkey.to_ascii_lowercase().ends_with("structure") {
+                        println!("{}", crate::modules::DEFAULT_STRUCTURE_TEXT);
+                    } else if subkey.eq_ignore_ascii_case("logos") {
+                        crate::logo::print_logos();
+                    } else {
+                        eprintln!("Error: unsupported print option: {key}");
+                        std::process::exit(415);
+                    }
                     std::process::exit(0);
                 },
                 "-c" | "--config" => {
@@ -163,6 +226,14 @@ impl Cli {
                     if value_was_consumed(argv, i) {
                         handled[i + 1] = true;
                     }
+                },
+                key if key.to_ascii_lowercase().starts_with("--print-") => {
+                    eprintln!("Error: unsupported print option: {key}");
+                    std::process::exit(415);
+                },
+                key if key.to_ascii_lowercase().starts_with("--list-") => {
+                    eprintln!("Error: unsupported list option: {key}");
+                    std::process::exit(415);
                 },
                 _ => {},
             }

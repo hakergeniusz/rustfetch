@@ -1,0 +1,27 @@
+linux-headers 7.3.0
+threads
+vulkan
+wayland
+xcb-randr
+xrandr
+drm
+gio
+dconf
+eet
+dbus
+imagemagick7
+chafa
+zlib
+sqlite3
+egl
+glx
+opencl
+libelf
+libzfs
+va-drm
+va-x11
+vdpau
+System yyjson
+linux/videodev2
+Embedded wcwidth
+Lua 5.5
