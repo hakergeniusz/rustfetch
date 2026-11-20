@@ -14,8 +14,10 @@ pub enum Format {
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "rustfetch",
-    version,
+    // --version prints "{name} {version}": pinned to the reference
+    // fastfetch 2.71.0 identity, like the version module.
+    name = "fastfetch",
+    version = "2.71.0 (x86_64)",
     about = "Fastfetch, rewritten in Rust",
     after_help = "Run `rustfetch -s <module>:<module>` to only show the given modules."
 )]

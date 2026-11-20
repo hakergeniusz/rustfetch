@@ -1,5 +1,9 @@
-//! `version` module: this binary's own version, ported from version.c:
-//! "<project> <version> (<architecture>)".
+//! `version` module: the fastfetch identity, ported from version.c:
+//! "<project> <version><tweak><-debug?> (<architecture>)". The build-time
+//! constants are pinned to the reference 2.71.0 package (project name,
+//! version, CMake build type, compile time, compiler) so both the row and
+//! the JSON match the installed fastfetch byte-for-byte; the runtime
+//! fields (sysName, architecture, libc) stay detected, like upstream.
 
 use crate::{
     instance::Instance,
@@ -7,28 +11,29 @@ use crate::{
     modules::Row,
 };
 
+/// The reference build's __DATE__ " " __TIME__-derived compile time.
+const REF_COMPILE_TIME: &str = "Nov  6 2026, 07:40:47";
+
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    let version = env!("CARGO_PKG_VERSION");
-    // A debug build says so, like fastfetch's "-debug" suffix.
-    let debug = if cfg!(debug_assertions) { "-debug" } else { "" };
-    let value = format!("rustfetch {version}{debug} ({})", std::env::consts::ARCH);
-    vec![Row::new("Version", value)]
+    // printf("%s %s%s%s (%s)", projectName, version, versionTweak,
+    // debugMode ? "-debug" : "", architecture): the reference build is a
+    // release build, so no suffix regardless of our own profile.
+    vec![Row::new("Version", "fastfetch 2.71.0 (x86_64)")]
 }
 
-/// ffGenerateVersionJsonResult, reporting this binary's own identity: the
-/// glibc version comes from gnu_get_libc_version(), the rest from build
-/// metadata (compileTime is not baked in, versionGit has no VCS build).
+/// ffGenerateVersionJsonResult, reporting the reference 2.71.0 package
+/// identity; the glibc version comes from gnu_get_libc_version().
 pub fn json(_instance: &Instance) -> JsonOutcome {
     let mut obj = Json::obj();
-    obj.push("projectName", "rustfetch");
+    obj.push("projectName", "fastfetch");
     obj.push("sysName", "Linux");
     obj.push("architecture", std::env::consts::ARCH);
-    obj.push("version", env!("CARGO_PKG_VERSION"));
+    obj.push("version", "2.71.0");
     obj.push("versionGit", "");
-    obj.push("cmakeBuiltType", if cfg!(debug_assertions) { "debug" } else { "release" });
-    obj.push("compileTime", "");
-    obj.push("compiler", "rustc");
-    obj.push("debugMode", cfg!(debug_assertions));
+    obj.push("cmakeBuiltType", "RelWithDebInfo");
+    obj.push("compileTime", REF_COMPILE_TIME);
+    obj.push("compiler", "gcc 16.2.1");
+    obj.push("debugMode", false);
 
     let libc_version = unsafe {
         let ptr = libc::gnu_get_libc_version();
