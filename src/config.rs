@@ -26,6 +26,8 @@ pub struct Config {
     pub document_loaded: bool,
     /// `logo: null` (upstream: logo type NONE, all paddings zeroed).
     pub logo_none: bool,
+    /// `logo.type: "small"` (upstream: logo type SMALL).
+    pub logo_small: bool,
     /// `logo.padding.*` overrides.
     pub padding_top: Option<u32>,
     /// `display.pipe` (applies unless `--pipe` was given on the command
@@ -47,6 +49,7 @@ impl Config {
         Self {
             document_loaded: false,
             logo_none: false,
+            logo_small: false,
             padding_top: None,
             pipe: false,
             player_name: String::new(),
@@ -145,7 +148,14 @@ pub fn load_explicit(value: &str, already_loaded: &mut bool) -> Config {
     }
 
     if value == "-" {
-        return build_config(leak_root(parse_stdin()));
+        let root = parse_stdin();
+        if !root.is_object() {
+            exit_error(
+                477,
+                "JsonConfig Error: Invalid JSON config format. Root value must be an object",
+            );
+        }
+        return build_config(leak_root(root));
     }
 
     // Extension rules decide the parser mode; without one, .jsonc is
@@ -285,6 +295,11 @@ fn apply_logo(root: &jsonc::Value, config: &mut Config) {
                         .iter()
                         .any(|known| known.eq_ignore_ascii_case(name)) =>
                     {
+                        if name.eq_ignore_ascii_case("none") {
+                            config.logo_none = true;
+                        } else if name.eq_ignore_ascii_case("small") {
+                            config.logo_small = true;
+                        }
                         None
                     },
                     Some(name)

@@ -10,7 +10,6 @@ name = "rustfetch"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
 libc = "0.2"
 
 [lints.clippy]

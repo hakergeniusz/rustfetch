@@ -92,20 +92,21 @@ fn detected_entry(instance: &Instance, size: Size) -> &'static LogoEntry {
     &logo_entries::UNKNOWN_ENTRY
 }
 
-/// ffGenerateLogoJsonResult: the builtin logo table as JSON. The CLI's
-/// --logo values map onto upstream's logo options: `none` is the NONE
-/// type (rejected like upstream), `small` is the SMALL type, any other
-/// value is a builtin name looked up in any variant.
+/// ffGenerateLogoJsonResult: the builtin logo table as JSON. The logo
+/// state maps onto upstream's FFLogoType: NONE — like every other type
+/// this port can not render — is rejected up front, SMALL picks the
+/// compact variant, and any other state looks the source up in the
+/// builtin table (or the detected distro when no source is set).
 pub fn json(instance: &Instance) -> JsonOutcome {
-    let source = instance.logo_source.as_deref();
-    if source.is_some_and(|value| value.eq_ignore_ascii_case("none")) {
+    if instance.logo_none {
         return JsonOutcome::Error(
             "Only 'builtin' and 'small' logo types are supported".to_string(),
         );
     }
-    let small = source.is_some_and(|value| value.eq_ignore_ascii_case("small"));
+    let small = instance.logo_small;
     let size = if small { Size::Small } else { Size::Unknown };
-    let entry = match source.filter(|_| !small) {
+    let source = instance.logo_source.as_deref();
+    let entry = match source {
         // "?" is ffLogoGetBuiltinForName's alias for the unknown logo.
         Some("?") => &logo_entries::UNKNOWN_ENTRY,
         Some(name) => match find_entry(name, size) {

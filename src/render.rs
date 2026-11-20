@@ -7,7 +7,7 @@
 use std::io::{BufWriter, Write};
 
 use crate::json::{self, Json, JsonOutcome};
-use crate::{cli::Cli, instance::Instance, logo::Logo, modules::JsonItem, modules::Kind, modules::Row};
+use crate::{instance::Instance, logo::Logo, modules::JsonItem, modules::Kind, modules::Row};
 
 /// Serializes parsed logo lines to strings, tracking visible widths
 /// separately. Every segment emits its color — including empty ones from
@@ -28,7 +28,9 @@ fn colorize(logo: &Logo, color: bool) -> Vec<(String, usize)> {
                 out.push_str("\x1b[1m");
             }
             for seg in line {
-                if color {
+                if color && !seg.color.is_empty() {
+                    // An empty color marks raw logo lines, whose own
+                    // escape sequences pass through untouched.
                     out.push_str("\x1b[");
                     out.push_str(seg.color);
                     out.push('m');
@@ -74,7 +76,7 @@ fn row_line(row: &Row, key_color: Option<&str>, color: bool) -> String {
     }
 }
 
-pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) {
+pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
     // Pipe mode keeps the two-column layout; it only drops the colors,
     // which every writer below gates on instance.color.
     let stdout = std::io::stdout();
@@ -95,13 +97,12 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], cli: &Cli, instance: &Instance) 
         logo_lines.splice(0..0, std::iter::repeat_n((String::new(), 0), top as usize));
     }
 
-    // fastfetch's padding model: defaults are 0 left / 4 right; --padding N
-    // sets both sides. The key column sits at logo width + left + right.
-    let (pad_left, pad_right) = match cli.padding {
-        Some(pad) => (pad as usize, pad as usize),
-        None => (0, 4),
-    };
-    let key_column = pad_left + logo.as_ref().map_or(0, |logo| logo.width) + pad_right;
+    // fastfetch's padding model: 0 left / 4 right (the --logo-padding
+    // overrides are not parsed yet). Without a logo the rows start at
+    // column 0, like logoPrintNone leaving logoWidth at zero.
+    let (pad_left, pad_right) = (0usize, 4usize);
+    let logo_width = logo.as_ref().map_or(0, |logo| logo.width);
+    let key_column = if logo.is_some() { logo_width + pad_right } else { 0 };
 
     let total = logo_lines.len().max(rows.len());
     for i in 0..total {

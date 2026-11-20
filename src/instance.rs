@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::sync::{Mutex, OnceLock};
 
-use crate::{cli::Cli, cli::Format, util};
+use crate::{cli::Cli, util};
 
 /// The title/key colors fastfetch derives from the logo definition
 /// (colorTitle = colors[0], colorKeys = colors[1]); set even when the
@@ -24,15 +24,20 @@ pub struct Instance {
     /// colors not disabled via `--pipe` or `NO_COLOR`; unlike many tools,
     /// fastfetch does not honor TERM=dumb).
     pub color: bool,
-    /// Filled in after logo detection, read by the title/colors modules.
-    pub logo_colors: OnceLock<LogoColors>,
+    /// Logo state mirrored from the CLI: the NONE type hides the logo
+    /// entirely, SMALL selects the compact variant, and the source names
+    /// a builtin logo or a file.
+    pub logo_none: bool,
+    pub logo_small: bool,
+    pub logo_source: Option<String>,
     /// `ID=` from /etc/os-release, lowercased.
     pub distro_id: Option<String>,
     /// `ID_LIKE=` entries from /etc/os-release, lowercased.
     pub distro_like: Vec<String>,
-    /// The raw `--logo` value: "none" and "small" are logo types, anything
-    /// else is a builtin name (upstream splits them into logoOptions).
-    pub logo_source: Option<String>,
+    /// The title/key colors fastfetch derives from the logo definition
+    /// (colorTitle = colors[0], colorKeys = colors[1]); set even when the
+    /// logo itself is hidden with --logo none.
+    pub logo_colors: OnceLock<LogoColors>,
     /// `logo.padding.top` from the config; blank key-column lines inserted
     /// above the logo block.
     pub padding_top: Option<u32>,
@@ -52,6 +57,8 @@ impl Clone for Instance {
             logo_colors: self.logo_colors.clone(),
             distro_id: self.distro_id.clone(),
             distro_like: self.distro_like.clone(),
+            logo_none: self.logo_none,
+            logo_small: self.logo_small,
             logo_source: self.logo_source.clone(),
             padding_top: self.padding_top,
             entry: self.entry,
@@ -72,7 +79,7 @@ impl Instance {
             } else {
                 !std::io::stdout().is_terminal() || std::env::var_os("NO_COLOR").is_some()
             });
-        let color = !pipe && cli.format == Format::Standard;
+        let color = !pipe && !cli.format_json;
 
         let mut distro_id = None;
         let mut distro_like = Vec::new();
@@ -93,7 +100,9 @@ impl Instance {
             color,
             distro_id,
             distro_like,
-            logo_source: cli.logo.clone(),
+            logo_none: cli.logo_none,
+            logo_small: cli.logo_small,
+            logo_source: cli.logo_source.clone(),
             padding_top,
             entry: None,
             gnome_settings: Mutex::new(HashMap::new()),

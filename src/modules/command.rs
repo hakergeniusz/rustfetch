@@ -116,8 +116,20 @@ mod tests {
     use super::*;
 
     fn instance() -> crate::instance::Instance {
-        use clap::Parser as _;
-        crate::instance::Instance::new(&crate::cli::Cli::parse_from(["rustfetch"]), false, None)
+        crate::instance::Instance::new(
+            &crate::cli::Cli {
+                structure: None,
+                logo_none: false,
+                logo_small: false,
+                logo_source: None,
+                pipe: None,
+                format_json: false,
+                config: None,
+                config_loaded: false,
+            },
+            false,
+            None,
+        )
     }
 
     #[test]

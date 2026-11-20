@@ -109,33 +109,38 @@ fn logo_colors(def: &LogoDef) -> LogoColors {
     }
 }
 
-/// Resolves the logo to display: explicit `--logo` source first, then the
-/// detected distro (ID, then ID_LIKE), then fastfetch's unknown fallback.
-/// The color palette is always the detected distro's, even with --logo
-/// none, mirroring ffLogoPrintNone.
+/// Resolves the logo to display, porting ffLogoPrint: the NONE type
+/// prints nothing, an empty source uses the detected distro, and a
+/// source tries the built-in logo table (SMALL variant under the SMALL
+/// type), then `.raw` files verbatim, then text files with `$N`
+/// replacement — falling back silently to the detected distro logo.
+/// The color palette is always the detected distro's, even with no logo.
 pub fn load(cli: &Cli, instance: &Instance) -> (Option<Logo>, LogoColors) {
-    let mut small = false;
-    if let Some(source) = &cli.logo {
-        if source == "none" {
-            return (None, logo_colors(detected_def(instance)));
-        }
-        // `-l small`: the small variant of the detected distro logo.
-        if source == "small" {
-            small = true;
-        } else if let Some(def) = find_logo(source) {
-            return (Some(build(def, false)), logo_colors(def));
-        } else if let Ok(art) = std::fs::read_to_string(source) {
-            let (lines, width) = parse_art(&art, logo_data::UNKNOWN.colors);
-            let def = &logo_data::UNKNOWN;
-            return (Some(Logo { lines, width }), logo_colors(def));
-        } else {
-            eprintln!("rustfetch: unknown logo or unreadable file: {source}");
-            return (None, logo_colors(detected_def(instance)));
-        }
+    let detected = detected_def(instance);
+    if cli.logo_none {
+        return (None, logo_colors(detected));
     }
+    let Some(source) = &cli.logo_source else {
+        return (Some(build(detected, cli.logo_small)), logo_colors(detected));
+    };
 
-    let def = detected_def(instance);
-    (Some(build(def, small)), logo_colors(def))
+    // A miss on the builtin table falls back to the DETECTED big logo,
+    // like ffLogoPrintDetected(FF_LOGO_SIZE_UNKNOWN).
+    let fallback = || (Some(build(detected, false)), logo_colors(detected));
+    if let Some(def) = find_logo(source) {
+        return (Some(build(def, cli.logo_small)), logo_colors(def));
+    }
+    let Ok(art) = std::fs::read_to_string(source) else {
+        return fallback();
+    };
+    if source.to_ascii_lowercase().ends_with(".raw") {
+        // raw: the file's own escape sequences pass through, no `$N`
+        // replacement (logoPrintFileIfExists's doColorReplacement=false).
+        let lines = art.lines().map(|text| vec![Segment { text: text.to_string(), color: "" }]).collect();
+        return (Some(Logo { lines, width: 0 }), logo_colors(detected));
+    }
+    let (lines, width) = parse_art(&art, logo_data::UNKNOWN.colors);
+    (Some(Logo { lines, width }), logo_colors(&logo_data::UNKNOWN))
 }
 
 /// The distro's logo definition, falling back to fastfetch's unknown logo.

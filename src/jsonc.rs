@@ -200,12 +200,16 @@ impl<'a> Parser<'a> {
                 return Err(self.err("unexpected end of data"));
             };
             if c != b'"' {
-                return Err(self.err("unexpected character, expected a JSON value"));
+                return Err(self.err("unexpected character, expected a string key"));
             }
             let key = self.string()?;
             self.skip_ws();
-            if self.peek() != Some(b':') {
-                return Err(self.err("unexpected character, expected ':' after key"));
+            match self.peek() {
+                Some(b':') => {},
+                None => return Err(self.err("unexpected end of data")),
+                Some(_) => {
+                    return Err(self.err("unexpected character, expected ':' after key"));
+                },
             }
             self.pos += 1;
             self.skip_ws();
@@ -527,7 +531,7 @@ mod tests {
         let text = "{\n // line\n /* block */\n \"a\": [1, 2,],\n}";
         assert_eq!(parse_ok(text).get("a"), Some(&Value::Array(vec![Value::UInt(1), Value::UInt(2)])));
         // strict mode rejects both; the comment is hit before the comma here
-        assert_eq!(parse_err(text, false).msg, "unexpected character, expected a JSON value");
+        assert_eq!(parse_err(text, false).msg, "unexpected character, expected a string key");
         assert_eq!(parse_err("[1,]", false).msg, "trailing comma is not allowed");
         assert_eq!(
             parse_err("// only a comment\n", false),
