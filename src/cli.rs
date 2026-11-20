@@ -357,6 +357,62 @@ fn invalid_option(key: &str) -> ! {
     std::process::exit(400)
 }
 
+/// printCommandFormatHelpJson (`-h format-json`): every module's format
+/// variables as a yyjson pretty document, keyed `<module>Format`.
+fn print_format_help_json() -> ! {
+    let mut root = crate::json::Json::obj();
+    for (name, args) in crate::module_formats::MODULE_FORMATS {
+        if args.is_empty() {
+            continue;
+        }
+        let mut key = name.to_ascii_lowercase();
+        key.push_str("Format");
+        let mut content =
+            format!("Output format for the `{name}` module. See Wiki for formatting syntax\n");
+        for (index, (variable, desc)) in args.iter().enumerate() {
+            content.push_str(&format!("    {}. {{{variable}}}: {desc}\n", index + 1));
+        }
+        // ffStrbufTrimRight(&content, '\n')
+        while content.ends_with('\n') {
+            content.pop();
+        }
+        let mut object = crate::json::Json::obj();
+        object.push("description", content);
+        object.push("type", "string");
+        root.push(&key, object);
+    }
+    println!("{}", crate::json::to_pretty(&root));
+    std::process::exit(0);
+}
+
+/// printCommandFormatHelp (`-h <module>-format`).
+fn print_module_format_help(command: &str) {
+    let type_name = command[..command.len() - "-format".len()].to_ascii_lowercase();
+    let Some((name, args)) = crate::module_formats::MODULE_FORMATS
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(&type_name))
+    else {
+        eprintln!("Error: Module '{type_name}' is not supported");
+        return;
+    };
+    if args.is_empty() {
+        eprintln!("Error: Module '{name}' doesn't support output formatting");
+        return;
+    }
+    println!("-- In config file: {{ \"type\": \"{type_name}\", \"format\": \"{{<format-variable>}}\" }}");
+    println!("Sets the format string for {name} output.");
+    println!("To see how a format string is constructed, take a look at https://github.com/fastfetch-cli/fastfetch/wiki/Format-String-Guide.");
+    println!("Descriptions which end with a '*' are available in key format too.");
+    println!("The following variables are passed:");
+    let mut max_width = 20usize;
+    for (variable, _) in *args {
+        max_width = max_width.max(variable.len() + 2);
+    }
+    for (variable, desc) in *args {
+        println!("{:>width$}: {desc}", format!("{{{variable}}}"), width = max_width);
+    }
+}
+
 /// `-h` without a command prints the full help; `-h <command>` prints the
 /// option's entry, or the reference's no-help error (which still exits 0).
 fn print_help(command: Option<&str>) -> ! {
@@ -366,6 +422,18 @@ fn print_help(command: Option<&str>) -> ! {
             std::process::exit(0);
         },
         Some(command) => {
+            if command.eq_ignore_ascii_case("format-json") {
+                print_format_help_json();
+            }
+            // <module>-format: an English letter followed by the suffix,
+            // like fastfetch's argv walk check.
+            if command.len() > "-format".len()
+                && command.as_bytes()[0].is_ascii_alphabetic()
+                && command[command.len() - "-format".len()..].eq_ignore_ascii_case("-format")
+            {
+                print_module_format_help(command);
+                std::process::exit(0);
+            }
             let entry = COMMAND_HELP
                 .iter()
                 .find(|(name, _)| name.eq_ignore_ascii_case(command));
