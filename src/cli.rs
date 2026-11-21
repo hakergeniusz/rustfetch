@@ -131,6 +131,23 @@ pub struct Cli {
     /// `--hide-cursor <?bool>`: `\e[?25l` before output, `\e[?25h` at the
     /// end; both pipe-disabled.
     pub hide_cursor: Option<bool>,
+    /// `--separator <str>`: display.keyValueSeparator, printed verbatim
+    /// after every key.
+    pub key_value_separator: Option<String>,
+    /// `--color` / `--color-{keys,title,output,separator}`: the parsed
+    /// SGR parameter strings (upstream's display.color* slots).
+    pub color_keys: Option<String>,
+    pub color_title: Option<String>,
+    pub color_output: Option<String>,
+    pub color_separator: Option<String>,
+    /// `--key-width` / `--key-padding-left`: `(uint16_t)
+    /// ffOptionParseUInt32` — the `\e[{n}G` jump and the leading spaces.
+    pub key_width: Option<u16>,
+    pub key_padding_left: Option<u16>,
+    /// `--key-type`: display.keyType (FF_MODULE_KEY_TYPE bits).
+    pub key_type: Option<u8>,
+    /// `--bright-color <?bool>`: the bolt ahead of the key/title colors.
+    pub bright_color: Option<bool>,
     /// The config document loaded during the command pass: upstream
     /// processes `-c` before the option pass, so its errors (413/414)
     /// fire in argv order ahead of unknown-option errors.
@@ -178,6 +195,15 @@ impl Cli {
             player_name: None,
             disable_linewrap: None,
             hide_cursor: None,
+            key_value_separator: None,
+            color_keys: None,
+            color_title: None,
+            color_output: None,
+            color_separator: None,
+            key_width: None,
+            key_padding_left: None,
+            key_type: None,
+            bright_color: None,
             pipe: None,
             watch_interval: 0,
             format_json: false,
@@ -358,6 +384,19 @@ impl Cli {
             i += 1;
         }
 
+        // fastfetch.c:924 — the automatic config search runs between the
+        // two argv passes, so the option pass sees the config's colors
+        // and the PROP color words resolve against them (NO_CONFIG and
+        // the already-loaded gate are checked inside).
+        if cli.config.is_none() {
+            cli.config = config::load_automatic(cli.config_loaded);
+        }
+
+        // The display colors the option pass parses against: upstream's
+        // one FFOptionsDisplay, seeded by the config walk and mutated in
+        // argv order by the --color*/--bright-color/--logo-color-N arms.
+        let mut state = ColorState::from_config(cli.config.as_ref());
+
         // Pass 2: parseOption.
         let mut i = 1;
         while i < argv.len() {
@@ -413,7 +452,7 @@ impl Cli {
                     let Some(value) = value else {
                         usage_exit(key, "<str>", 477);
                     };
-                    let parsed = parse_color(value);
+                    let parsed = state.parse_color(value);
                     if !parsed.is_empty() {
                         cli.logo_colors.push((index as usize, parsed.leak()));
                     }
@@ -520,6 +559,76 @@ impl Cli {
                 },
                 "--hide-cursor" => {
                     cli.hide_cursor = Some(parse_boolean(value));
+                },
+                "--separator" => {
+                    cli.key_value_separator = Some(parse_string(key, value));
+                },
+                "--color" => {
+                    // optionCheckString + ffOptionParseColor: the parse
+                    // replaces both slots at once.
+                    let value = parse_string(key, value);
+                    let parsed = state.parse_color(&value);
+                    state.keys = parsed.clone();
+                    state.title = parsed.clone();
+                    cli.color_keys = Some(parsed.clone());
+                    cli.color_title = Some(parsed);
+                },
+                key if key.to_ascii_lowercase().starts_with("--color-") => {
+                    let subkey = &key.to_ascii_lowercase()["--color-".len()..];
+                    match subkey {
+                        "keys" => {
+                            let value = parse_string(key, value);
+                            let parsed = state.parse_color(&value);
+                            state.keys = parsed.clone();
+                            cli.color_keys = Some(parsed);
+                        },
+                        "title" => {
+                            let value = parse_string(key, value);
+                            let parsed = state.parse_color(&value);
+                            state.title = parsed.clone();
+                            cli.color_title = Some(parsed);
+                        },
+                        "output" => {
+                            let value = parse_string(key, value);
+                            let parsed = state.parse_color(&value);
+                            state.output = parsed.clone();
+                            cli.color_output = Some(parsed);
+                        },
+                        "separator" => {
+                            let value = parse_string(key, value);
+                            let parsed = state.parse_color(&value);
+                            state.separator = parsed.clone();
+                            cli.color_separator = Some(parsed);
+                        },
+                        // Unknown subkeys return false upstream, falling
+                        // through to the module-option scan.
+                        _ => {
+                            if !parse_module_options(key, value) {
+                                eprintln!("Error: unknown option: {key}");
+                                std::process::exit(400);
+                            }
+                        },
+                    }
+                },
+                key if key.to_ascii_lowercase().starts_with("--key-") => {
+                    let subkey = &key.to_ascii_lowercase()["--key-".len()..];
+                    match subkey {
+                        "width" => cli.key_width = Some(parse_uint32(key, value) as u16),
+                        "type" => cli.key_type = Some(key_type_enum(key, value)),
+                        "padding-left" => cli.key_padding_left = Some(parse_uint32(key, value) as u16),
+                        // --key-language lands with the display-name table.
+                        _ => {
+                            if !parse_module_options(key, value) {
+                                eprintln!("Error: unknown option: {key}");
+                                std::process::exit(400);
+                            }
+                        },
+                    }
+                },
+                "--bright-color" => {
+                    let bright = parse_boolean(value);
+                    state.bright = bright;
+                    cli.bright_color = Some(bright);
                 },
                 "--stat" => {
                     // A truthy value or a full strtoul number times the
@@ -744,6 +853,30 @@ fn enum_pairs(key: &str, value: Option<&str>, names: &[&str]) {
     std::process::exit(478)
 }
 
+/// --key-type's ffOptionParseEnum pairs (display.c:749): FF_MODULE_KEY_TYPE
+/// values, `both` aliasing BOTH_1.
+fn key_type_enum(key: &str, value: Option<&str>) -> u8 {
+    const PAIRS: &[(&str, u8)] = &[
+        ("none", crate::instance::KEY_TYPE_NONE),
+        ("string", crate::instance::KEY_TYPE_STRING),
+        ("icon", crate::instance::KEY_TYPE_ICON),
+        ("both", 3 | 1 << 4),
+        ("both-0", 3),
+        ("both-1", 3 | 1 << 4),
+        ("both-2", 3 | 2 << 4),
+        ("both-3", 3 | 3 << 4),
+        ("both-4", 3 | 4 << 4),
+    ];
+    let Some(value) = value else {
+        usage_exit(key, "<value>", 476);
+    };
+    if let Some((_, code)) = PAIRS.iter().find(|(name, _)| value.eq_ignore_ascii_case(name)) {
+        return *code;
+    }
+    eprintln!("Error: unknown {key} value: {value}");
+    std::process::exit(478)
+}
+
 /// ffOptionParseInt32: strtol base 10 with the strict tail check — a
 /// missing value exits 480, trailing junk or an out-of-range value 479.
 fn parse_int32(key: &str, value: Option<&str>) -> i32 {
@@ -815,183 +948,244 @@ fn strtoul_full(value: &str) -> Option<u32> {
     Some(raw as u32)
 }
 
-/// ffOptionParseColorNoClear: the SGR parameter string a palette slot
-/// holds. ANSI escapes pass through with every trailing `m` trimmed,
-/// named colors and modifiers prefix-match case-insensitively and
-/// accumulate, @256 and #RGB run through strtoul (C-whitespace skip,
-/// sign, ERANGE clamp, u32 truncation before the checks), an unmatched
-/// letter rejects with the unconsumed tail, and any other character is
-/// appended verbatim — plain digits therefore survive untouched.
-pub(crate) fn parse_color_public(value: &str) -> String {
-    parse_color(value)
+/// The display colors the PROP color words (`keys`, `title`, `output`,
+/// `separator`) resolve against: upstream parses every color option
+/// against the one live FFOptionsDisplay, which the config walk (logo,
+/// then display) fills before the command line mutates it in argv order.
+pub(crate) struct ColorState {
+    pub(crate) keys: String,
+    pub(crate) title: String,
+    pub(crate) output: String,
+    pub(crate) separator: String,
+    pub(crate) bright: bool,
 }
 
-fn parse_color(value: &str) -> String {
-    if value.is_empty() {
-        return String::new();
+impl ColorState {
+    /// ffOptionsInitDisplay's parse-time state: empty slots, bright on.
+    pub(crate) fn fresh() -> Self {
+        Self {
+            keys: String::new(),
+            title: String::new(),
+            output: String::new(),
+            separator: String::new(),
+            bright: true,
+        }
     }
-    if value.starts_with('\x1b') && value.len() > 1 && value.as_bytes()[1] == b'[' {
-        return value[2..].trim_end_matches('m').to_string();
+
+    /// The state after the config walk: the config's parsed color slots
+    /// (None = untouched defaults).
+    pub(crate) fn from_config(config: Option<&Config>) -> Self {
+        let Some(config) = config else {
+            return Self::fresh();
+        };
+        Self {
+            keys: config.color_keys.clone().unwrap_or_default(),
+            title: config.color_title.clone().unwrap_or_default(),
+            output: config.color_output.clone().unwrap_or_default(),
+            separator: config.color_separator.clone().unwrap_or_default(),
+            bright: config.bright_color.unwrap_or(true),
+        }
     }
-    const NAMED: &[(&str, &str)] = &[
-        ("reset_", "0;"),
-        ("bold_", "1;"),
-        ("bright_", "1;"),
-        ("dim_", "2;"),
-        ("italic_", "3;"),
-        ("underline_", "4;"),
-        ("blink_", "5;"),
-        ("inverse_", "7;"),
-        ("hidden_", "8;"),
-        ("strike_", "9;"),
-        ("black", "30"),
-        ("red", "31"),
-        ("green", "32"),
-        ("yellow", "33"),
-        ("blue", "34"),
-        ("magenta", "35"),
-        ("cyan", "36"),
-        ("white", "37"),
-        ("default", "39"),
-        ("light_black", "90"),
-        ("light_red", "91"),
-        ("light_green", "92"),
-        ("light_yellow", "93"),
-        ("light_blue", "94"),
-        ("light_magenta", "95"),
-        ("light_cyan", "96"),
-        ("light_white", "97"),
-    ];
-    let mut out = String::new();
-    let mut rest = value;
-    while !rest.is_empty() {
-        if rest.as_bytes()[0].is_ascii_alphabetic() {
-            if let Some((code, consumed)) = NAMED
-                .iter()
-                .find(|(name, _)| rest.len() >= name.len() && rest[..name.len()].eq_ignore_ascii_case(name))
-                .map(|(name, code)| (*code, name.len()))
-            {
-                out.push_str(code);
-                rest = &rest[consumed..];
+
+    /// Module-time parses (separator.c's outputColor) resolve against the
+    /// final display state, like upstream's option-time struct reads.
+    pub(crate) fn from_instance(instance: &crate::instance::Instance) -> Self {
+        Self {
+            keys: instance.display.color_keys.clone(),
+            title: instance.display.color_title.clone(),
+            output: instance.display.color_output.clone(),
+            separator: instance.display.color_separator.clone(),
+            bright: instance.display.bright_color,
+        }
+    }
+
+    /// ffOptionParseColorNoClear: the SGR parameter string a color slot
+    /// holds. ANSI escapes pass through with every trailing `m` trimmed,
+    /// named colors and modifiers prefix-match case-insensitively and
+    /// accumulate, @256 and #RGB run through strtoul (C-whitespace skip,
+    /// sign, ERANGE clamp, u32 truncation before the checks), an unmatched
+    /// letter rejects with the unconsumed tail, and any other character is
+    /// appended verbatim — plain digits therefore survive untouched. The
+    /// display-property words read the state's current slot, prefixed
+    /// `1;` when the bright bolt applies.
+    pub(crate) fn parse_color(&self, value: &str) -> String {
+        if value.is_empty() {
+            return String::new();
+        }
+        if value.starts_with('\x1b') && value.len() > 1 && value.as_bytes()[1] == b'[' {
+            return value[2..].trim_end_matches('m').to_string();
+        }
+        const NAMED: &[(&str, &str)] = &[
+            ("reset_", "0;"),
+            ("bold_", "1;"),
+            ("bright_", "1;"),
+            ("dim_", "2;"),
+            ("italic_", "3;"),
+            ("underline_", "4;"),
+            ("blink_", "5;"),
+            ("inverse_", "7;"),
+            ("hidden_", "8;"),
+            ("strike_", "9;"),
+            ("black", "30"),
+            ("red", "31"),
+            ("green", "32"),
+            ("yellow", "33"),
+            ("blue", "34"),
+            ("magenta", "35"),
+            ("cyan", "36"),
+            ("white", "37"),
+            ("default", "39"),
+            ("light_black", "90"),
+            ("light_red", "91"),
+            ("light_green", "92"),
+            ("light_yellow", "93"),
+            ("light_blue", "94"),
+            ("light_magenta", "95"),
+            ("light_cyan", "96"),
+            ("light_white", "97"),
+        ];
+        let mut out = String::new();
+        let mut rest = value;
+        while !rest.is_empty() {
+            if rest.as_bytes()[0].is_ascii_alphabetic() {
+                if let Some((code, consumed)) = NAMED
+                    .iter()
+                    .find(|(name, _)| rest.len() >= name.len() && rest[..name.len()].eq_ignore_ascii_case(name))
+                    .map(|(name, code)| (*code, name.len()))
+                {
+                    out.push_str(code);
+                    rest = &rest[consumed..];
+                    continue;
+                }
+                // The display color properties: the word resolves against the
+                // state's current slot — `1;` when the bright bolt applies,
+                // then the slot's parsed parameters, or the default 39 when
+                // it is empty.
+                let mut matched = false;
+                for (name, honor_bright) in [("keys", true), ("title", true), ("output", false), ("separator", false)] {
+                    if rest.len() >= name.len() && rest[..name.len()].eq_ignore_ascii_case(name) {
+                        if honor_bright && self.bright {
+                            out.push_str("1;");
+                        }
+                        let current = match name {
+                            "keys" => &self.keys,
+                            "title" => &self.title,
+                            "output" => &self.output,
+                            _ => &self.separator,
+                        };
+                        if current.is_empty() {
+                            out.push_str("39");
+                        } else {
+                            out.push_str(current);
+                        }
+                        rest = &rest[name.len()..];
+                        matched = true;
+                        break;
+                    }
+                }
+                if !matched {
+                    eprintln!("Error: invalid color code found: {rest}");
+                    std::process::exit(479);
+                }
                 continue;
             }
-            // The display color properties: this port leaves
-            // display.color* unparsed, so they read as FF_COLOR_FG_DEFAULT
-            // with the bright modifier honored for keys and title.
-            let mut matched = false;
-            for (name, honor_bright) in [("keys", true), ("title", true), ("output", false), ("separator", false)] {
-                if rest.len() >= name.len() && rest[..name.len()].eq_ignore_ascii_case(name) {
-                    if honor_bright {
-                        out.push_str("1;");
-                    }
-                    out.push_str("39");
-                    rest = &rest[name.len()..];
-                    matched = true;
-                    break;
+            if let Some(after) = rest.strip_prefix('@') {
+                // Xterm 256 color through strtoul base 10: C whitespace, an
+                // optional sign, digits; ERANGE clamps to u64::MAX, the u32
+                // truncation happens before the 255 check, and the canonical
+                // value is appended (leading zeros drop).
+                let bytes = after.as_bytes();
+                let mut offset = 0;
+                while offset < bytes.len() && matches!(bytes[offset], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r') {
+                    offset += 1;
                 }
+                let negative = offset < bytes.len() && bytes[offset] == b'-';
+                if offset < bytes.len() && (bytes[offset] == b'+' || bytes[offset] == b'-') {
+                    offset += 1;
+                }
+                let digit_start = offset;
+                while offset < bytes.len() && bytes[offset].is_ascii_digit() {
+                    offset += 1;
+                }
+                if offset == digit_start {
+                    eprintln!("Error: invalid 256 color code found: {after}");
+                    std::process::exit(479);
+                }
+                // glibc returns ULONG_MAX on ERANGE before the sign negates.
+                let color = match after[digit_start..offset].parse::<u64>() {
+                    Ok(magnitude) => (if negative { magnitude.wrapping_neg() } else { magnitude }) as u32,
+                    Err(_) => u32::MAX,
+                };
+                if color > 255 {
+                    eprintln!("Error: invalid 256 color code found: {after}");
+                    std::process::exit(479);
+                }
+                out.push_str("38;5;");
+                out.push_str(&color.to_string());
+                rest = &after[offset..];
+                continue;
             }
-            if !matched {
-                eprintln!("Error: invalid color code found: {rest}");
-                std::process::exit(479);
+            if let Some(after) = rest.strip_prefix('#') {
+                // RGB through strtoul base 16: the consumed span — sign and
+                // 0x prefix included — drives the length checks (3 expands
+                // 4-bit channels, 6 is used as-is), and the u32 truncation
+                // happens before them.
+                let bytes = after.as_bytes();
+                let mut offset = 0;
+                while offset < bytes.len() && matches!(bytes[offset], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r') {
+                    offset += 1;
+                }
+                let negative = offset < bytes.len() && bytes[offset] == b'-';
+                if offset < bytes.len() && (bytes[offset] == b'+' || bytes[offset] == b'-') {
+                    offset += 1;
+                }
+                let digit_start = offset;
+                let mut hex_start = offset;
+                if offset + 2 < bytes.len()
+                    && bytes[offset] == b'0'
+                    && (bytes[offset + 1] | 32) == b'x'
+                    && bytes[offset + 2].is_ascii_hexdigit()
+                {
+                    hex_start = offset + 2;
+                    offset += 2;
+                }
+                while offset < bytes.len() && bytes[offset].is_ascii_hexdigit() {
+                    offset += 1;
+                }
+                if offset == digit_start {
+                    eprintln!("Error: invalid RGB color code found: {after}");
+                    std::process::exit(479);
+                }
+                // glibc returns ULONG_MAX on ERANGE before the sign negates;
+                // a 6-hex-digit span can never overflow, so the clamp branch
+                // is dead here but kept symmetric.
+                let value = match u64::from_str_radix(&after[hex_start..offset], 16) {
+                    Ok(magnitude) => (if negative { magnitude.wrapping_neg() } else { magnitude }) as u32,
+                    Err(_) => u32::MAX,
+                };
+                if offset > 6 {
+                    eprintln!("Error: RGB color code too long: {after}");
+                    std::process::exit(479);
+                } else if offset == 3 {
+                    let rgb = ((value & 0xF00) >> 8) * 0x110000
+                        + ((value & 0x0F0) >> 4) * 0x001100
+                        + (value & 0x00F) * 0x000011;
+                    out.push_str(&format!("38;2;{};{};{}", rgb >> 16, (rgb >> 8) & 0xFF, rgb & 0xFF));
+                } else if offset != 6 {
+                    eprintln!("Error: invalid RGB color code length: {after}");
+                    std::process::exit(479);
+                } else {
+                    out.push_str(&format!("38;2;{};{};{}", value >> 16, (value >> 8) & 0xFF, value & 0xFF));
+                }
+                rest = &after[offset..];
+                continue;
             }
-            continue;
+            let next = rest.chars().next().unwrap_or('\0');
+            out.push(next);
+            rest = &rest[next.len_utf8()..];
         }
-        if let Some(after) = rest.strip_prefix('@') {
-            // Xterm 256 color through strtoul base 10: C whitespace, an
-            // optional sign, digits; ERANGE clamps to u64::MAX, the u32
-            // truncation happens before the 255 check, and the canonical
-            // value is appended (leading zeros drop).
-            let bytes = after.as_bytes();
-            let mut offset = 0;
-            while offset < bytes.len() && matches!(bytes[offset], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r') {
-                offset += 1;
-            }
-            let negative = offset < bytes.len() && bytes[offset] == b'-';
-            if offset < bytes.len() && (bytes[offset] == b'+' || bytes[offset] == b'-') {
-                offset += 1;
-            }
-            let digit_start = offset;
-            while offset < bytes.len() && bytes[offset].is_ascii_digit() {
-                offset += 1;
-            }
-            if offset == digit_start {
-                eprintln!("Error: invalid 256 color code found: {after}");
-                std::process::exit(479);
-            }
-            // glibc returns ULONG_MAX on ERANGE before the sign negates.
-            let color = match after[digit_start..offset].parse::<u64>() {
-                Ok(magnitude) => (if negative { magnitude.wrapping_neg() } else { magnitude }) as u32,
-                Err(_) => u32::MAX,
-            };
-            if color > 255 {
-                eprintln!("Error: invalid 256 color code found: {after}");
-                std::process::exit(479);
-            }
-            out.push_str("38;5;");
-            out.push_str(&color.to_string());
-            rest = &after[offset..];
-            continue;
-        }
-        if let Some(after) = rest.strip_prefix('#') {
-            // RGB through strtoul base 16: the consumed span — sign and
-            // 0x prefix included — drives the length checks (3 expands
-            // 4-bit channels, 6 is used as-is), and the u32 truncation
-            // happens before them.
-            let bytes = after.as_bytes();
-            let mut offset = 0;
-            while offset < bytes.len() && matches!(bytes[offset], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r') {
-                offset += 1;
-            }
-            let negative = offset < bytes.len() && bytes[offset] == b'-';
-            if offset < bytes.len() && (bytes[offset] == b'+' || bytes[offset] == b'-') {
-                offset += 1;
-            }
-            let digit_start = offset;
-            let mut hex_start = offset;
-            if offset + 2 < bytes.len()
-                && bytes[offset] == b'0'
-                && (bytes[offset + 1] | 32) == b'x'
-                && bytes[offset + 2].is_ascii_hexdigit()
-            {
-                hex_start = offset + 2;
-                offset += 2;
-            }
-            while offset < bytes.len() && bytes[offset].is_ascii_hexdigit() {
-                offset += 1;
-            }
-            if offset == digit_start {
-                eprintln!("Error: invalid RGB color code found: {after}");
-                std::process::exit(479);
-            }
-            // glibc returns ULONG_MAX on ERANGE before the sign negates;
-            // a 6-hex-digit span can never overflow, so the clamp branch
-            // is dead here but kept symmetric.
-            let value = match u64::from_str_radix(&after[hex_start..offset], 16) {
-                Ok(magnitude) => (if negative { magnitude.wrapping_neg() } else { magnitude }) as u32,
-                Err(_) => u32::MAX,
-            };
-            if offset > 6 {
-                eprintln!("Error: RGB color code too long: {after}");
-                std::process::exit(479);
-            } else if offset == 3 {
-                let rgb = ((value & 0xF00) >> 8) * 0x110000
-                    + ((value & 0x0F0) >> 4) * 0x001100
-                    + (value & 0x00F) * 0x000011;
-                out.push_str(&format!("38;2;{};{};{}", rgb >> 16, (rgb >> 8) & 0xFF, rgb & 0xFF));
-            } else if offset != 6 {
-                eprintln!("Error: invalid RGB color code length: {after}");
-                std::process::exit(479);
-            } else {
-                out.push_str(&format!("38;2;{};{};{}", value >> 16, (value >> 8) & 0xFF, value & 0xFF));
-            }
-            rest = &after[offset..];
-            continue;
-        }
-        let next = rest.chars().next().unwrap_or('\0');
-        out.push(next);
-        rest = &rest[next.len_utf8()..];
+        out
     }
-    out
 }
 
 /// ffOptionParseUInt32: strtoul base 10 with the strict tail check — a

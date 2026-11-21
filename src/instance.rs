@@ -16,6 +16,60 @@ pub struct LogoColors {
     pub key: Option<&'static str>,
 }
 
+/// FF_MODULE_KEY_TYPE (common/option.h): the NONE gate hides the whole
+/// key block; the STRING bit prints the key text shifted by the value's
+/// high nibble; the ICON bit prints the module icon glyph (the icon
+/// table lands with the key-icon commit).
+pub const KEY_TYPE_NONE: u8 = 0;
+pub const KEY_TYPE_STRING: u8 = 1 << 0;
+pub const KEY_TYPE_ICON: u8 = 1 << 1;
+pub const KEY_TYPE_SPACE_SHIFT: u8 = 4;
+
+/// The display-surface options the key printer and the title read — the
+/// FFOptionsDisplay fields ffPrintLogoAndKey touches. Defaults mirror
+/// ffOptionsInitDisplay: bright bolt, ": " separator, STRING key type,
+/// empty colors, zero key geometry.
+#[derive(Clone)]
+pub struct DisplaySurface {
+    /// display.brightColor: gates the `\e[1m` bolt ahead of the key and
+    /// title colors (ffOptionsInitDisplay's terminalLightTheme check is
+    /// compiled out of the reference build).
+    pub bright_color: bool,
+    /// display.keyValueSeparator, printed verbatim after the key.
+    pub key_value_separator: String,
+    /// display.colorKeys / colorTitle / colorOutput / colorSeparator:
+    /// parsed SGR parameter strings; empty prints no escape.
+    pub color_keys: String,
+    pub color_title: String,
+    pub color_output: String,
+    pub color_separator: String,
+    /// display.keyWidth: a positive value moves the value to column
+    /// keyWidth + logoWidth with `\e[{n}G`, in pipe mode too.
+    pub key_width: u16,
+    /// display.keyPaddingLeft: the space run before the key, in pipe
+    /// mode too.
+    pub key_padding_left: u16,
+    /// display.keyType: the NONE gate around the key block, the STRING
+    /// bit's key text, and the (pending) icon bits.
+    pub key_type: u8,
+}
+
+impl Default for DisplaySurface {
+    fn default() -> Self {
+        Self {
+            bright_color: true,
+            key_value_separator: ": ".to_string(),
+            color_keys: String::new(),
+            color_title: String::new(),
+            color_output: String::new(),
+            color_separator: String::new(),
+            key_width: 0,
+            key_padding_left: 0,
+            key_type: KEY_TYPE_STRING,
+        }
+    }
+}
+
 pub struct Instance {
     /// display.c:957 — `!isatty(stdout) || NO_COLOR is set (even empty)`,
     /// or an explicit `--pipe` / config `display.pipe`. Gates {#color}
@@ -77,6 +131,9 @@ pub struct Instance {
     /// matching restore at ffFinish.
     pub disable_linewrap: bool,
     pub hide_cursor: bool,
+    /// The display-surface options (separator, colors, key geometry):
+    /// assembled in main.rs from the config and the command line.
+    pub display: DisplaySurface,
     /// Memoized GSettings/dconf reads per (schema, key), filled lazily by the
     /// GTK modules. A Mutex because modules run in parallel threads.
     pub gnome_settings: Mutex<HashMap<String, Option<String>>>,
@@ -105,6 +162,7 @@ impl Clone for Instance {
             ff_started: Cell::new(self.ff_started.get()),
             disable_linewrap: self.disable_linewrap,
             hide_cursor: self.hide_cursor,
+            display: self.display.clone(),
             player_name: self.player_name.clone(),
             title_fqdn: Cell::new(self.title_fqdn.get()),
             gnome_settings: Mutex::new(self.gnome_settings.lock().unwrap_or_else(|e| e.into_inner()).clone()),
@@ -122,6 +180,7 @@ impl Instance {
         player_name: String,
         disable_linewrap: bool,
         hide_cursor: bool,
+        display: DisplaySurface,
         logo_options: crate::logo::LogoOptions,
         logo_color_overrides: &'static [(usize, &'static str)],
     ) -> Self {
@@ -176,9 +235,29 @@ impl Instance {
             // restores alike.
             disable_linewrap: disable_linewrap && !pipe,
             hide_cursor: hide_cursor && !pipe,
+            display,
             ff_started: Cell::new(false),
             gnome_settings: Mutex::new(HashMap::new()),
             logo_colors: OnceLock::new(),
+        }
+    }
+
+    /// The effective key color: ffLogoApplyColors fills the display slot
+    /// from the logo only when it is empty, so a CLI/config color wins.
+    pub fn key_color(&self) -> Option<&str> {
+        if !self.display.color_keys.is_empty() {
+            Some(&self.display.color_keys)
+        } else {
+            self.logo_colors.get().and_then(|colors| colors.key)
+        }
+    }
+
+    /// The effective title color, resolved the same way as the key's.
+    pub fn title_color(&self) -> Option<&str> {
+        if !self.display.color_title.is_empty() {
+            Some(&self.display.color_title)
+        } else {
+            self.logo_colors.get().and_then(|colors| colors.title)
         }
     }
 }

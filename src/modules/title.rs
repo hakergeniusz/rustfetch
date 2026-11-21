@@ -23,13 +23,18 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     let user = &platform.user_name;
     let host = &platform.host_name;
 
-    // appendText: bold, then the logo title color, then reset.
-    let color = instance.logo_colors.get().and_then(|colors| colors.title);
+    // appendText: the bright bolt (display.brightColor-gated), then the
+    // effective title color (the module's colorUser is not set through
+    // module options today), then reset — all skipped in pipe mode.
+    let color = instance.title_color();
     let wrap = |text: &str| {
         if !instance.color {
             return text.to_string();
         }
-        let mut out = String::from("\x1b[1m");
+        let mut out = String::new();
+        if instance.display.bright_color {
+            out.push_str("\x1b[1m");
+        }
         if let Some(code) = color {
             out.push_str(&format!("\x1b[{code}m"));
         }

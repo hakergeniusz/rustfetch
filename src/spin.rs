@@ -665,6 +665,8 @@ pub(crate) struct SpinState {
     angle: f32,
     animated: bool,
     pipe: bool,
+    /// display.brightColor: the frame's bold runs gate on it.
+    bright: bool,
     degrees: f32,
     started: bool,
     printed: bool,
@@ -689,6 +691,7 @@ impl SpinState {
         opts: &crate::logo::LogoOptions,
         animated: bool,
         pipe: bool,
+        bright: bool,
     ) -> Self {
         Self {
             art,
@@ -699,6 +702,7 @@ impl SpinState {
             angle: opts.spin_angle,
             animated,
             pipe,
+            bright,
             degrees: 0.0,
             started: false,
             printed: false,
@@ -783,7 +787,7 @@ impl SpinState {
         // The frame already carries its own SGR sequences; `bold` mirrors
         // display.brightColor, whose default (dark terminal theme) this
         // port assumes like the cache line's bolt does.
-        let mut ansi = frame_to_ansi(&frame, &self.art, !self.pipe, true, !self.animated);
+        let mut ansi = frame_to_ansi(&frame, &self.art, !self.pipe, self.bright, !self.animated);
         // The serialiser ends every row with a newline; the last one would
         // add an empty line to the logo and change the output from the
         // other logo types.
@@ -912,6 +916,7 @@ mod tests {
             &crate::logo::LogoOptions::default(),
             false,
             false,
+            true,
         );
         let Some(draw) = state.draw() else { panic!("draw failed") };
         // trimRight drops trailing blanks; each row starts in its palette
@@ -928,7 +933,7 @@ mod tests {
             spin_speed_per_frame: 100.0,
             ..crate::logo::LogoOptions::default()
         };
-        let mut state = SpinState::new(parse(&[], "ab\n"), PositionOpt::Left, &opts, false, false);
+        let mut state = SpinState::new(parse(&[], "ab\n"), PositionOpt::Left, &opts, false, false, true);
         assert!(state.draw().is_some());
         assert!(state.tick());
         assert!((state.degrees - 100.0).abs() < f32::EPSILON);
@@ -940,7 +945,7 @@ mod tests {
             spin_speed_per_round: 360.0, // one revolution per second
             ..crate::logo::LogoOptions::default()
         };
-        let mut state = SpinState::new(parse(&[], "ab\n"), PositionOpt::Left, &opts, false, false);
+        let mut state = SpinState::new(parse(&[], "ab\n"), PositionOpt::Left, &opts, false, false, true);
         assert!(state.draw().is_some());
         let step = state.step_degrees();
         // The elapsed time since the draw is tiny; the step is proportional.
@@ -954,7 +959,7 @@ mod tests {
             spin_tilt: 80.0,   // a steep lean, so the frame grows
             ..crate::logo::LogoOptions::default()
         };
-        let mut state = SpinState::new(parse(&[], "abcdefghij\nklmnopqrst\n0123456789\n"), PositionOpt::Left, &opts, false, false);
+        let mut state = SpinState::new(parse(&[], "abcdefghij\nklmnopqrst\n0123456789\n"), PositionOpt::Left, &opts, false, false, true);
         let Some(draw) = state.draw() else { panic!("draw failed") };
         // The turned slab sticks out of the art's box: the 96-step sweep
         // grew the 10x3 frame to five rows.
@@ -970,6 +975,7 @@ mod tests {
             &crate::logo::LogoOptions::default(),
             false,
             true,
+            false,
         );
         let Some(draw) = state.draw() else { panic!("draw failed") };
         assert_eq!(draw.ansi, "ab\ncd");
@@ -981,6 +987,7 @@ mod tests {
             parse(&["31"], "ab\n"),
             PositionOpt::Left,
             &crate::logo::LogoOptions::default(),
+            true,
             true,
             true,
         );

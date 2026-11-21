@@ -980,7 +980,7 @@ fn load_spin(
     };
 
     let animated = cli.watch_interval > 0;
-    let mut state = crate::spin::SpinState::new(art, configured, opts, animated, pipe);
+    let mut state = crate::spin::SpinState::new(art, configured, opts, animated, pipe, instance.display.bright_color);
     let Some(draw) = state.draw() else {
         return (None, colors);
     };

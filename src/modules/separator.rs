@@ -29,7 +29,7 @@ impl Default for SeparatorOptions {
 impl SeparatorOptions {
     /// ffParseSeparatorJsonObject: parse errors become rows (ffPrintError
     /// is showErrors-gated) and parsing continues.
-    fn parse(&mut self, entry: &crate::jsonc::Value, errors: &mut Vec<Row>) {
+    fn parse(&mut self, entry: &crate::jsonc::Value, errors: &mut Vec<Row>, state: &crate::cli::ColorState) {
         let error = |errors: &mut Vec<Row>, message: String| {
             errors.push(Row::error("Separator", message));
         };
@@ -50,9 +50,10 @@ impl SeparatorOptions {
                     None => error(errors, "Property 'string' must be a string".to_string()),
                 },
                 "outputColor" => {
-                    // ffOptionParseColor(nullptr) is a no-op.
+                    // ffOptionParseColor(nullptr) is a no-op; the parse
+                    // resolves PROP words against the final display colors.
                     if let Some(color) = value.as_str() {
-                        self.output_color = crate::cli::parse_color_public(color);
+                        self.output_color = state.parse_color(color);
                     }
                 },
                 "times" => match value {
@@ -82,7 +83,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     let mut options = SeparatorOptions::default();
     let mut rows = Vec::new();
     if let Some(entry) = instance.entry {
-        options.parse(entry, &mut rows);
+        let state = crate::cli::ColorState::from_instance(instance);
+        options.parse(entry, &mut rows, &state);
     }
 
     let text = if options.times > 0 {

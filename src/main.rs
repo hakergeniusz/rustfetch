@@ -120,12 +120,10 @@ fn main() {
     }
 
     // The explicit config already loaded during the option walk; without
-    // one, the automatic configDirs search runs here. (logo: null set the
-    // NONE type during the walk, before any -l flag could.)
-    let config = match cli.config.take() {
-        Some(config) => Some(config),
-        None => config::load_automatic(cli.config_loaded),
-    };
+    // one, the automatic configDirs search ran between the two argv passes
+    // in cli.rs. (logo: null set the NONE type during the walk, before any
+    // -l flag could.)
+    let config = cli.config.take();
 
     // The logo options are one upstream struct mutated by the config pass
     // and then the command line, so the CLI wins per-field. Defaults:
@@ -187,6 +185,37 @@ fn main() {
         .hide_cursor
         .or(cfg.and_then(|config| config.hide_cursor))
         .unwrap_or(false);
+    // ffOptionsInitDisplay defaults, merged config-then-CLI like the rest
+    // of the surfaces: the colors stay empty unless set (the renderer and
+    // the PROP parser decide the fallbacks), keyWidth/keyPaddingLeft
+    // default 0, keyType defaults to STRING.
+    let display = instance::DisplaySurface {
+        bright_color: cli.bright_color.or(cfg.and_then(|config| config.bright_color)).unwrap_or(true),
+        key_value_separator: cli
+            .key_value_separator
+            .clone()
+            .or_else(|| cfg.and_then(|config| config.key_value_separator.clone()))
+            .unwrap_or_else(|| ": ".to_string()),
+        color_keys: cli.color_keys.clone().or_else(|| cfg.and_then(|config| config.color_keys.clone())).unwrap_or_default(),
+        color_title: cli
+            .color_title
+            .clone()
+            .or_else(|| cfg.and_then(|config| config.color_title.clone()))
+            .unwrap_or_default(),
+        color_output: cli
+            .color_output
+            .clone()
+            .or_else(|| cfg.and_then(|config| config.color_output.clone()))
+            .unwrap_or_default(),
+        color_separator: cli
+            .color_separator
+            .clone()
+            .or_else(|| cfg.and_then(|config| config.color_separator.clone()))
+            .unwrap_or_default(),
+        key_width: cli.key_width.or(cfg.and_then(|config| config.key_width)).unwrap_or(0),
+        key_padding_left: cli.key_padding_left.or(cfg.and_then(|config| config.key_padding_left)).unwrap_or(0),
+        key_type: cli.key_type.or(cfg.and_then(|config| config.key_type)).unwrap_or(instance::KEY_TYPE_STRING),
+    };
     let instance = instance::Instance::new(
         &cli,
         config.as_ref().is_some_and(|config| config.pipe),
@@ -195,6 +224,7 @@ fn main() {
         player_name,
         disable_linewrap,
         hide_cursor,
+        display,
         logo_options,
         logo_color_overrides.leak(),
     );

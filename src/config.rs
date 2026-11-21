@@ -70,6 +70,20 @@ pub struct Config {
     /// positive number colored green/yellow/red, -1 unset. None when the
     /// key is absent.
     pub stat: Option<i32>,
+    /// `display.separator` (ffStrbufSetJsonVal: strings set it, any other
+    /// type clears it), the parsed `display.color` slots and
+    /// `display.brightColor` (yyjson_get_bool: non-bools read false).
+    pub key_value_separator: Option<String>,
+    pub color_keys: Option<String>,
+    pub color_title: Option<String>,
+    pub color_output: Option<String>,
+    pub color_separator: Option<String>,
+    pub bright_color: Option<bool>,
+    /// `display.key.width` / `.paddingLeft` ((uint16_t) yyjson_get_uint:
+    /// negative ints bit-cast huge) and `.type` (ffJsonConfigParseEnum).
+    pub key_width: Option<u16>,
+    pub key_padding_left: Option<u16>,
+    pub key_type: Option<u8>,
     /// `display.pipe` (applies unless `--pipe` was given on the command
     /// line, which is parsed after the config).
     pub pipe: bool,
@@ -110,6 +124,15 @@ impl Config {
             disable_linewrap: None,
             hide_cursor: None,
             stat: None,
+            key_value_separator: None,
+            color_keys: None,
+            color_title: None,
+            color_output: None,
+            color_separator: None,
+            bright_color: None,
+            key_width: None,
+            key_padding_left: None,
+            key_type: None,
             pipe: false,
             player_name: String::new(),
             entries: Vec::new(),
@@ -522,7 +545,9 @@ fn apply_logo(root: &jsonc::Value, config: &mut Config) {
                         section_error("logo", Some(key), "Keys of property 'color' must be a number between 1 to 9");
                     }
                     if let jsonc::Value::Str(text) = color {
-                        let parsed = crate::cli::parse_color_public(text);
+                        // The logo section walks before display (fastfetch.c:429),
+                        // so the PROP words here resolve against the init state.
+                        let parsed = crate::cli::ColorState::fresh().parse_color(text);
                         if !parsed.is_empty() {
                             config.logo_colors.push(((index - 1) as usize, parsed.leak()));
                         }
@@ -649,7 +674,9 @@ fn apply_general(root: &jsonc::Value, config: &mut Config) {
 
 /// ffOptionsParseDisplayJsonConfig; the keys that change our behavior
 /// today are `pipe` and `stat` (which implies showErrors upstream). The
-/// rest are accepted with upstream's type checks where they exist.
+/// rest are accepted with upstream's type checks where they exist. The
+/// color slots parse against a running ColorState, so PROP words resolve
+/// in document order (upstream's shared options struct).
 fn apply_display(root: &jsonc::Value, config: &mut Config) {
     let Some(display) = root.get("display") else {
         return;
@@ -657,6 +684,7 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
     let Some(entries) = object_entries(display) else {
         section_error("display", None, "Property 'display' must be an object");
     };
+    let mut state = crate::cli::ColorState::fresh();
     for (key, value) in entries {
         match key.as_str() {
             "stat" => match value {
@@ -688,8 +716,107 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
             // yyjson_get_bool accepts any value type; non-bools read as false.
             "pipe" => config.pipe = value.as_bool().unwrap_or(false),
             "showErrors" => config.show_errors = value.as_bool().unwrap_or(false),
-            "brightColor" | "noBuffer" => {},
-            "separator" | "color" | "key" | "constants" => {},
+            "brightColor" => {
+                state.bright = value.as_bool().unwrap_or(false);
+                config.bright_color = Some(state.bright);
+            },
+            "noBuffer" => {},
+            // ffStrbufSetJsonVal: a string sets the separator, anything
+            // else clears it.
+            "separator" => {
+                config.key_value_separator = Some(match value {
+                    jsonc::Value::Str(text) => text.clone(),
+                    _ => String::new(),
+                });
+            },
+            "color" => match value {
+                jsonc::Value::Str(text) => {
+                    let parsed = state.parse_color(text);
+                    state.keys = parsed.clone();
+                    state.title = parsed.clone();
+                    config.color_keys = Some(parsed.clone());
+                    config.color_title = Some(parsed);
+                },
+                jsonc::Value::Object(_) => {
+                    // Per-slot yyjson_obj_get lookups in upstream's fixed
+                    // order; a non-string value reads as NULL and is a
+                    // no-op, and unknown sub-objects are ignored.
+                    for (slot, field) in [
+                        ("keys", Slot::Keys),
+                        ("title", Slot::Title),
+                        ("output", Slot::Output),
+                        ("separator", Slot::Separator),
+                    ] {
+                        let Some(color) = value.get(slot).and_then(|color| color.as_str()) else {
+                            continue;
+                        };
+                        let parsed = state.parse_color(color);
+                        match field {
+                            Slot::Keys => {
+                                state.keys = parsed.clone();
+                                config.color_keys = Some(parsed);
+                            },
+                            Slot::Title => {
+                                state.title = parsed.clone();
+                                config.color_title = Some(parsed);
+                            },
+                            Slot::Output => {
+                                state.output = parsed.clone();
+                                config.color_output = Some(parsed);
+                            },
+                            Slot::Separator => {
+                                state.separator = parsed.clone();
+                                config.color_separator = Some(parsed);
+                            },
+                        }
+                    }
+                },
+                _ => section_error("display", Some(key), "display.color must be either a string or an object"),
+            },
+            "key" => {
+                let Some(_) = object_entries(value) else {
+                    section_error("display", Some(key), "display.key must be an object");
+                };
+                // Upstream probes the sub-keys with yyjson_obj_get in a
+                // fixed order (width, type, paddingLeft, language), so a
+                // duplicated key's first occurrence wins.
+                if let Some(width) = value.get("width") {
+                    config.key_width = Some(json_get_uint16(width));
+                }
+                if let Some(kind) = value.get("type") {
+                    config.key_type = Some(json_config_enum(
+                        kind,
+                        &[
+                            ("none", crate::instance::KEY_TYPE_NONE),
+                            ("string", crate::instance::KEY_TYPE_STRING),
+                            ("icon", crate::instance::KEY_TYPE_ICON),
+                            ("both", 3 | 1 << 4),
+                            ("both-0", 3),
+                            ("both-1", 3 | 1 << 4),
+                            ("both-2", 3 | 2 << 4),
+                            ("both-3", 3 | 3 << 4),
+                            ("both-4", 3 | 4 << 4),
+                        ],
+                    ));
+                }
+                if let Some(padding) = value.get("paddingLeft") {
+                    config.key_padding_left = Some(json_get_uint16(padding));
+                }
+                // `language` parses through optionParseLanguageString for
+                // its error behavior; the resolved value is consumed by the
+                // display-name table (the --key-language commit).
+                if let Some(language) = value.get("language") {
+                    if language.as_str().is_none() && !matches!(language, jsonc::Value::Null) {
+                        section_error("display", Some(key), "display.key.language must be a string or null");
+                    }
+                    let _ = parse_language_string(language.as_str().unwrap_or(""));
+                }
+            },
+            "constants" => {
+                if !matches!(value, jsonc::Value::Array(_)) {
+                    section_error("display", Some(key), "display.constants must be an array");
+                }
+            },
             "duration" | "size" | "temp" | "percent" | "bar" | "fraction" | "freq" | "common" => {
                 if !value.is_object() {
                     section_error(
@@ -702,6 +829,123 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
             _ => section_error("display", Some(key), "Unknown display property"),
         }
     }
+}
+
+/// Which display.color object slot a sub-key fills.
+enum Slot {
+    Keys,
+    Title,
+    Output,
+    Separator,
+}
+
+/// (uint16_t) yyjson_get_uint: integers read through (negative ints
+/// bit-cast huge), every other type reads as zero.
+fn json_get_uint16(value: &jsonc::Value) -> u16 {
+    let raw = match value {
+        jsonc::Value::UInt(amount) => *amount,
+        jsonc::Value::Int(amount) => *amount as u64,
+        _ => 0,
+    };
+    raw as u16
+}
+
+/// ffJsonConfigParseEnum: integers match pair values ("Invalid enum
+/// integer"), strings match names case-insensitively ("Invalid enum
+/// string"), anything else is a type error. The section/key pair is
+/// display.key because upstream's walk leaves `*pkey` at the outer key.
+fn json_config_enum(value: &jsonc::Value, pairs: &[(&str, u8)]) -> u8 {
+    match value {
+        jsonc::Value::Int(num) => {
+            if let Some((_, code)) = pairs.iter().find(|(_, code)| *num == *code as i64) {
+                *code
+            } else {
+                section_error("display", Some("key"), "Invalid enum integer");
+            }
+        },
+        jsonc::Value::UInt(num) => {
+            if let Some((_, code)) = pairs.iter().find(|(_, code)| *num == *code as u64) {
+                *code
+            } else {
+                section_error("display", Some("key"), "Invalid enum integer");
+            }
+        },
+        jsonc::Value::Str(text) => {
+            if let Some((_, code)) = pairs.iter().find(|(name, _)| text.eq_ignore_ascii_case(name)) {
+                *code
+            } else {
+                section_error("display", Some("key"), "Invalid enum string");
+            }
+        },
+        _ => section_error("display", Some("key"), "Invalid enum value type; must be a string or integer"),
+    }
+}
+
+/// optionParseLanguageString's detection + normalization + 2-char switch,
+/// returning the canonical language code; the error paths match upstream
+/// exactly. (The resolved value feeds the display-name table in the
+/// --key-language commit; until then it is parsed and dropped.)
+fn parse_language_string(value: &str) -> &'static str {
+    // ffDetectLocale: LC_ALL, then LANG, then setlocale(LC_TIME, nullptr) —
+    // the port's startup equivalent of `setlocale(LC_TIME, "")` reads
+    // LC_TIME when LC_ALL/LANG were empty, else the "C" locale. All empty
+    // is impossible after the setlocale leg, so the "Failed to detect
+    // locale" exit stays unreachable here.
+    let detected = value.is_empty();
+    let mut language = if detected {
+        let locale = ["LC_ALL", "LANG", "LC_TIME"]
+            .iter()
+            .find_map(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
+            .unwrap_or_else(|| "C".to_string());
+        locale
+    } else {
+        value.to_string()
+    };
+    // SubstrBeforeFirstC('.') (the encoding) and ('@') (the modifier,
+    // Linux), then lowercase.
+    language = language.split('.').next().unwrap_or("").to_string();
+    language = language.split('@').next().unwrap_or("").to_string();
+    language = language.to_ascii_lowercase();
+
+    const LANGS: &[&str] = &[
+        "en", "ar", "cs", "de", "es", "fi", "fr", "gl", "he", "id", "it", "ja", "ko", "pl", "pt", "ru", "tr", "uk", "vi",
+    ];
+    // The error label: the detected locale falls back to English silently,
+    // an explicit one reports and exits 477.
+    let unsupported = |language: &str| -> &'static str {
+        if detected {
+            return "en";
+        }
+        eprintln!("Error: Language '{language}' is not supported");
+        std::process::exit(477);
+    };
+    if language.len() <= 1 {
+        // chars[0] on the NUL-terminated buffer: empty reads as '\0'.
+        if language == "c" {
+            return "en";
+        }
+        return unsupported(&language);
+    }
+    if language.len() > 2 {
+        match language.as_bytes()[2] {
+            b'-' => language.replace_range(2..3, "_"),
+            b'_' => {},
+            _ => return unsupported(&language),
+        }
+    }
+    // The switch matches the first two chars only: "de_DE" resolves to de,
+    // while zh needs the full zh_cn/zh_tw spelling.
+    if !LANGS.contains(&&language[..2]) {
+        return unsupported(&language);
+    }
+    if &language[..2] == "zh" {
+        return match language.as_str() {
+            "zh_cn" => "zh_cn",
+            "zh_tw" => "zh_tw",
+            _ => unsupported(&language),
+        };
+    }
+    LANGS.iter().find(|lang| **lang == &language[..2]).copied().unwrap()
 }
 
 fn section_error(section: &str, key: Option<&str>, message: &str) -> ! {

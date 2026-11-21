@@ -113,48 +113,107 @@ pub(crate) fn colorize_cache(
         .collect()
 }
 
-/// Renders a single info row; `Kind::Raw` values are printed verbatim because
-/// modules embed their own escapes there.
-fn row_line(row: &Row, key_color: Option<&str>, color: bool) -> String {
-    match (&row.key, row.kind) {
-        (Some(key), Kind::Value) => {
-            if color {
-                let mut out = String::from("\x1b[m\x1b[1m");
-                if let Some(code) = key_color {
-                    out.push_str(&format!("\x1b[{code}m"));
+/// The key emission inputs: the resolved FFOptionsDisplay surface the
+/// rows print against, shared by every branch of one render pass.
+#[derive(Clone, Copy)]
+struct KeyStyle<'a> {
+    /// !pipe: the reset/color escapes only go out on a terminal.
+    color: bool,
+    bright_color: bool,
+    /// The effective display.colorKeys / colorOutput / colorSeparator
+    /// (ffLogoApplyColors-resolved), empty = print no escape.
+    color_keys: &'a str,
+    color_output: &'a str,
+    color_separator: &'a str,
+    /// display.keyValueSeparator, verbatim.
+    separator: &'a str,
+    key_width: u16,
+    key_padding_left: u16,
+    key_type: u8,
+}
+
+/// ffPrintLogoAndKey's body after the logo line, ported line for line:
+/// the key block (gated on keyType != NONE — the title/colors/custom
+/// modules hide it with the `" "` magic key) and the unconditional
+/// reset+outputColor tail. `logo_width` is instance.state.logoWidth at
+/// the call site; the `\e[{n}G` jump and the padding spaces run in pipe
+/// mode too.
+fn key_prefix(row_key: Option<&str>, style: &KeyStyle<'_>, logo_width: usize) -> String {
+    let mut out = String::new();
+    if let Some(key) = row_key {
+        if style.key_type != crate::instance::KEY_TYPE_NONE {
+            for _ in 0..style.key_padding_left {
+                out.push(' ');
+            }
+            if style.color {
+                out.push_str("\x1b[m");
+                if style.bright_color {
+                    out.push_str("\x1b[1m");
+                }
+                if !style.color_keys.is_empty() {
+                    out.push_str(&format!("\x1b[{}m", style.color_keys));
+                }
+            }
+            // The key-icon bits print moduleArgs->keyIcon, which no module
+            // carries yet (the icon table lands with the key-icon commit).
+            if style.key_type & crate::instance::KEY_TYPE_STRING != 0 {
+                for _ in 0..(style.key_type >> crate::instance::KEY_TYPE_SPACE_SHIFT) {
+                    out.push(' ');
                 }
                 out.push_str(key);
-                out.push_str("\x1b[m: \x1b[m");
-                out.push_str(&row.value);
-                out
-            } else {
-                format!("{key}: {}", row.value)
             }
+            if style.color {
+                out.push_str("\x1b[m");
+                if !style.color_separator.is_empty() {
+                    out.push_str(&format!("\x1b[{}m", style.color_separator));
+                }
+            }
+            out.push_str(style.separator);
+            if style.color && !style.color_separator.is_empty() {
+                out.push_str("\x1b[m");
+            }
+            if style.key_width > 0 {
+                out.push_str(&format!("\x1b[{}G", style.key_width as usize + logo_width));
+            }
+        }
+    }
+    if style.color {
+        out.push_str("\x1b[m");
+        if !style.color_output.is_empty() {
+            out.push_str(&format!("\x1b[{}m", style.color_output));
+        }
+    }
+    out
+}
+
+/// Renders a single info row; `Kind::Raw` values are printed verbatim because
+/// modules embed their own escapes there.
+fn row_line(row: &Row, style: &KeyStyle<'_>, logo_width: usize) -> String {
+    match (&row.key, row.kind) {
+        (Some(key), Kind::Value) => {
+            let mut out = key_prefix(Some(key), style, logo_width);
+            out.push_str(&row.value);
+            out
         },
         // ffPrintError's message: bold red outside pipe mode, plain in it.
         (_, Kind::Error) => {
-            if color {
-                format!("{}: \x1b[1;31m{}\x1b[m", {
-                    let mut out = String::from("\x1b[m\x1b[1m");
-                    if let Some(code) = key_color {
-                        out.push_str(&format!("\x1b[{code}m"));
-                    }
-                    out.push_str(row.key.as_deref().unwrap_or(""));
-                    out.push_str("\x1b[m: \x1b[m");
-                    out
-                }, row.value)
-            } else {
-                format!("{}: {}", row.key.as_deref().unwrap_or(""), row.value)
+            let mut out = key_prefix(row.key.as_deref(), style, logo_width);
+            if style.color {
+                out.push_str("\x1b[1;31m");
             }
+            out.push_str(&row.value);
+            if style.color {
+                out.push_str("\x1b[m");
+            }
+            out
         },
         // Keyless styled rows (title, colors): the module owns the value's
-        // escapes; the renderer only adds ffPrintLogoAndKey's trailing reset.
+        // escapes; the renderer adds the tail reset (and outputColor) of
+        // the key writer.
         (None, Kind::Value) => {
-            if color {
-                format!("\x1b[m{}", row.value)
-            } else {
-                row.value.clone()
-            }
+            let mut out = key_prefix(None, style, logo_width);
+            out.push_str(&row.value);
+            out
         },
         (_, Kind::Raw) => row.value.clone(),
         // Late rows expand into regular ones before reaching here.
@@ -163,12 +222,14 @@ fn row_line(row: &Row, key_color: Option<&str>, color: bool) -> String {
 }
 
 /// The fixed two-column layout of one Chars render, shared by the row
-/// emissions: the key column the rows start at, the styling flags, and
-/// the resolved logo position.
+/// emissions: the key column the rows start at, the key emission style,
+/// and the resolved logo position.
 struct CharsLayout<'a> {
     key_column: usize,
-    key_color: Option<&'a str>,
-    color: bool,
+    /// instance.state.logoWidth: the key column for LEFT, zero for
+    /// RIGHT/TOP (logoLineCacheBuild); the `\e[{n}G` jump adds it.
+    logo_width: usize,
+    style: KeyStyle<'a>,
     position: Position,
     /// RIGHT: how far the art sits from the right edge (maxLineWidth +
     /// paddingRight - 1, the cache's rightOffset).
@@ -226,7 +287,7 @@ fn emit_chars_row(
         let _ = write!(out, "\x1b[K");
     }
     *logo_index += 1;
-    let _ = writeln!(out, "{}", row_line(row, layout.key_color, layout.color));
+    let _ = writeln!(out, "{}", row_line(row, &layout.style, layout.logo_width));
 }
 
 /// One watch round's close: clear from the cursor down, flush, sleep the
@@ -292,7 +353,17 @@ pub fn print(
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
     let color = instance.color;
-    let key_color = instance.logo_colors.get().and_then(|colors| colors.key);
+    let style = KeyStyle {
+        color,
+        bright_color: instance.display.bright_color,
+        color_keys: instance.key_color().unwrap_or(""),
+        color_output: &instance.display.color_output,
+        color_separator: &instance.display.color_separator,
+        separator: &instance.display.key_value_separator,
+        key_width: instance.display.key_width,
+        key_padding_left: instance.display.key_padding_left,
+        key_type: instance.display.key_type,
+    };
     let opts = &instance.logo_options;
 
     // ffStart (init.c:111): the buffered reset, then the pipe-disabled
@@ -451,7 +522,7 @@ pub fn print(
                             if watch.is_some() && *position == Position::Left {
                                 let _ = write!(out, "\x1b[K");
                             }
-                            let _ = writeln!(out, "{}", row_line(&produced, key_color, color));
+                            let _ = writeln!(out, "{}", row_line(&produced, &style, logo_width));
                         }
                         printed += 1;
                         cursor.flush(&mut out, printed);
@@ -466,7 +537,7 @@ pub fn print(
                     if watch.is_some() && *position == Position::Left {
                         let _ = write!(out, "\x1b[K");
                     }
-                    let _ = writeln!(out, "{}", row_line(row, key_color, color));
+                    let _ = writeln!(out, "{}", row_line(row, &style, logo_width));
                     printed += 1;
                     cursor.flush(&mut out, printed);
                 }
@@ -563,14 +634,14 @@ pub fn print(
                             let _ = out.flush();
                             for produced in late(instance) {
                                 keys_height += 1;
-                                let _ = writeln!(out, "{}", row_line(&produced, key_color, color));
+                                let _ = writeln!(out, "{}", row_line(&produced, &style, 0));
                             }
                             printed += 1;
                             cursor.flush(&mut out, printed);
                             continue;
                         }
                         keys_height += 1;
-                        let _ = writeln!(out, "{}", row_line(row, key_color, color));
+                        let _ = writeln!(out, "{}", row_line(row, &style, 0));
                         printed += 1;
                         cursor.flush(&mut out, printed);
                     }
@@ -597,8 +668,8 @@ pub fn print(
             let mut logo_height = if has_logo { logo_lines.len().saturating_sub(1) } else { 0 };
             let mut layout = CharsLayout {
                 key_column,
-                key_color,
-                color,
+                logo_width: if position == Position::Left { key_column } else { 0 },
+                style,
                 position,
                 right_offset: chars_width + opts.padding_right as usize - 1,
             };
@@ -623,6 +694,9 @@ pub fn print(
                     };
                     logo_lines = colorize_cache(&new_lines, color, pad_left, bare);
                     layout.key_column = new_width + opts.padding_right as usize;
+                    // The spin frames flow through ffLogoPrintChars, so the
+                    // LEFT logoWidth tracks the turned frame's width too.
+                    layout.logo_width = if position == Position::Left { layout.key_column } else { 0 };
                     layout.right_offset = new_width + opts.padding_right as usize - 1;
                     logo_height = logo_lines.len().saturating_sub(1);
                     logo_index = 0;
@@ -741,32 +815,96 @@ pub fn print_json(items: &[JsonItem]) {
 mod tests {
     use super::*;
 
+    fn style(color: bool) -> KeyStyle<'static> {
+        KeyStyle {
+            color,
+            bright_color: true,
+            color_keys: "",
+            color_output: "",
+            color_separator: "",
+            separator: ": ",
+            key_width: 0,
+            key_padding_left: 0,
+            key_type: crate::instance::KEY_TYPE_STRING,
+        }
+    }
+
     #[test]
     fn key_rows_match_fastfetch_escape_layout() {
         let row = Row::new("BTRFS", "1 GiB");
+        let mut colored = style(true);
+        colored.color_keys = "36";
         assert_eq!(
-            row_line(&row, Some("36"), true),
+            row_line(&row, &colored, 0),
             "\x1b[m\x1b[1m\x1b[36mBTRFS\x1b[m: \x1b[m1 GiB"
         );
-        assert_eq!(row_line(&row, Some("36"), false), "BTRFS: 1 GiB");
+        assert_eq!(row_line(&row, &style(false), 0), "BTRFS: 1 GiB");
         // logos with a single palette color color no key
-        assert_eq!(row_line(&row, None, true), "\x1b[m\x1b[1mBTRFS\x1b[m: \x1b[m1 GiB");
+        assert_eq!(row_line(&row, &style(true), 0), "\x1b[m\x1b[1mBTRFS\x1b[m: \x1b[m1 GiB");
     }
 
     #[test]
     fn keyless_rows_only_add_the_trailing_reset_of_the_key_writer() {
         let row = Row::bare("\x1b[1m\x1b[36muser\x1b[m@\x1b[1m\x1b[36mhost\x1b[m");
         assert_eq!(
-            row_line(&row, Some("36"), true),
+            row_line(&row, &style(true), 0),
             "\x1b[m\x1b[1m\x1b[36muser\x1b[m@\x1b[1m\x1b[36mhost\x1b[m"
         );
-        assert_eq!(row_line(&row, Some("36"), false), row.value);
+        assert_eq!(row_line(&row, &style(false), 0), row.value);
     }
 
     #[test]
     fn raw_rows_pass_through() {
         let row = Row::raw("---");
-        assert_eq!(row_line(&row, Some("36"), true), "---");
-        assert_eq!(row_line(&row, Some("36"), false), "---");
+        assert_eq!(row_line(&row, &style(true), 0), "---");
+        assert_eq!(row_line(&row, &style(false), 0), "---");
+    }
+
+    #[test]
+    fn key_surface_matches_ffprintlogoandkey() {
+        let mut colored = style(true);
+        colored.color_keys = "34";
+        colored.color_separator = "90";
+        colored.color_output = "97";
+        colored.separator = " => ";
+        colored.key_padding_left = 2;
+        colored.key_width = 20;
+        // padding, bolt+keyColor, key, separator color+text+reset, the
+        // absolute-column jump (keyWidth + logoWidth), then outputColor.
+        let row = Row::new("OS", "Arch Linux");
+        assert_eq!(
+            row_line(&row, &colored, 5),
+            "  \x1b[m\x1b[1m\x1b[34mOS\x1b[m\x1b[90m => \x1b[m\x1b[25G\x1b[m\x1b[97mArch Linux"
+        );
+        // keyType NONE drops the whole key block but keeps the tail.
+        colored.key_type = crate::instance::KEY_TYPE_NONE;
+        assert_eq!(row_line(&row, &colored, 0), "\x1b[m\x1b[97mArch Linux");
+        // the STRING space shift pads between the key color and the text.
+        colored.key_type = crate::instance::KEY_TYPE_STRING | 2 << crate::instance::KEY_TYPE_SPACE_SHIFT;
+        assert_eq!(
+            row_line(&row, &colored, 0),
+            "  \x1b[m\x1b[1m\x1b[34m  OS\x1b[m\x1b[90m => \x1b[m\x1b[20G\x1b[m\x1b[97mArch Linux"
+        );
+        // pipe mode keeps the padding, separator and jump, drops all color.
+        let mut pipe = style(false);
+        pipe.key_padding_left = 2;
+        pipe.key_width = 20;
+        pipe.separator = " => ";
+        assert_eq!(row_line(&row, &pipe, 5), "  OS => \x1b[25GArch Linux");
+    }
+
+    #[test]
+    fn error_rows_wrap_the_value_in_the_error_modifier() {
+        let mut colored = style(true);
+        colored.color_keys = "34";
+        let row = Row::error("CPU", "No CPU detected");
+        assert_eq!(row_line(&row, &colored, 0), "\x1b[m\x1b[1m\x1b[34mCPU\x1b[m: \x1b[m\x1b[1;31mNo CPU detected\x1b[m");
+        let mut bright_off = style(true);
+        bright_off.color_keys = "34";
+        bright_off.bright_color = false;
+        assert_eq!(
+            row_line(&row, &bright_off, 0),
+            "\x1b[m\x1b[34mCPU\x1b[m: \x1b[m\x1b[1;31mNo CPU detected\x1b[m"
+        );
     }
 }
