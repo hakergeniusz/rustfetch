@@ -221,12 +221,22 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    let value = if lm.version.is_empty() {
-        lm.pretty_name.clone()
-    } else {
-        format!("{} {}", lm.pretty_name, lm.version)
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        let value = if lm.version.is_empty() {
+            lm.pretty_name.clone()
+        } else {
+            format!("{} {}", lm.pretty_name, lm.version)
+        };
+        return vec![Row::new(instance.display_name("lm"), value)];
     };
-    vec![Row::new(instance.display_name("lm"), value)]
+
+    let args = [
+        crate::format_args::FormatArg { name: "service", value: crate::format_args::ArgValue::Str(&lm.service) },
+        crate::format_args::FormatArg { name: "pretty-name", value: crate::format_args::ArgValue::Str(&lm.pretty_name) },
+        crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(&lm.version) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("lm"), rendered)]
 }
 
 /// ffGenerateLMJsonResult.

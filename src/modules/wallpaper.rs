@@ -55,11 +55,24 @@ fn detect(instance: &Instance) -> Option<String> {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
-    detect(instance).map(|wallpaper| {
-        // picture-uri is often a file:// URL; only the basename prints.
-        let basename = wallpaper.rsplit('/').next().unwrap_or(&wallpaper).to_string();
-        vec![Row::new(instance.display_name("wallpaper"), basename)]
-    }).unwrap_or_default()
+    let Some(wallpaper) = detect(instance) else {
+        return Vec::new();
+    };
+    // picture-uri is often a file:// URL; only the basename prints.
+    let basename = wallpaper.rsplit('/').next().unwrap_or(&wallpaper).to_string();
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        return vec![Row::new(instance.display_name("wallpaper"), basename)];
+    };
+
+    // Upstream FF_PRINT_FORMAT_CHECKED's arg list: `file-name` is a
+    // const char* pointer into fullpath (the empty string when no path was
+    // detected), `full-path` is the detected path strbuf.
+    let args = [
+        crate::format_args::FormatArg { name: "file-name", value: crate::format_args::ArgValue::Str(&basename) },
+        crate::format_args::FormatArg { name: "full-path", value: crate::format_args::ArgValue::Str(&wallpaper) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("wallpaper"), rendered)]
 }
 
 /// ffGenerateWallpaperJsonResult: the full path, no basename cleanup.

@@ -96,12 +96,25 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    let mut value = ds.de_pretty_name.clone();
-    if let Some(version) = de_version(&ds.de_pretty_name) {
-        value.push(' ');
-        value.push_str(&version);
-    }
-    vec![Row::new(instance.display_name("de"), value)]
+    // Upstream detects the version before branching on outputFormat.
+    let version = de_version(&ds.de_pretty_name);
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        let mut value = ds.de_pretty_name.clone();
+        if let Some(version) = version.as_deref() {
+            value.push(' ');
+            value.push_str(version);
+        }
+        return vec![Row::new(instance.display_name("de"), value)];
+    };
+
+    let version = version.unwrap_or_default();
+    let args = [
+        crate::format_args::FormatArg { name: "process-name", value: crate::format_args::ArgValue::Str(&ds.de_process_name) },
+        crate::format_args::FormatArg { name: "pretty-name", value: crate::format_args::ArgValue::Str(&ds.de_pretty_name) },
+        crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(&version) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("de"), rendered)]
 }
 
 /// ffGenerateDEJsonResult: process and pretty names from the shared
