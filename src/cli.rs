@@ -407,7 +407,9 @@ fn print_format_help_json() -> ! {
         object.push("type", "string");
         root.push(&key, object);
     }
-    println!("{}", crate::json::to_pretty(&root));
+    // yyjson_mut_write_fp(stdout, doc, YYJSON_WRITE_PRETTY, ...) without a
+    // trailing newline, followed by putchar('\n').
+    print!("{}", crate::json::to_pretty_indent(&root, "    "));
     std::process::exit(0);
 }
 

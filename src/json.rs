@@ -109,19 +109,26 @@ impl From<f64> for Json {
 /// yyjson's pretty-two-spaces serialization, including the trailing newline
 /// (YYJSON_WRITE_NEWLINE_AT_END).
 pub fn to_pretty(value: &Json) -> String {
+    to_pretty_indent(value, "  ")
+}
+
+/// yyjson's plain pretty serialization (YYJSON_WRITE_PRETTY, four spaces):
+/// `-h format-json` writes its document with it, unlike the two-space
+/// result writer.
+pub fn to_pretty_indent(value: &Json, unit: &str) -> String {
     let mut out = String::new();
-    write_value(&mut out, value, 0);
+    write_value(&mut out, value, 0, unit);
     out.push('\n');
     out
 }
 
-fn indent(out: &mut String, level: usize) {
+fn indent(out: &mut String, level: usize, unit: &str) {
     for _ in 0..level {
-        out.push_str("  ");
+        out.push_str(unit);
     }
 }
 
-fn write_value(out: &mut String, value: &Json, level: usize) {
+fn write_value(out: &mut String, value: &Json, level: usize, unit: &str) {
     match value {
         Json::Null => out.push_str("null"),
         Json::Bool(true) => out.push_str("true"),
@@ -141,14 +148,14 @@ fn write_value(out: &mut String, value: &Json, level: usize) {
             }
             out.push_str("[\n");
             for (index, item) in items.iter().enumerate() {
-                indent(out, level + 1);
-                write_value(out, item, level + 1);
+                indent(out, level + 1, unit);
+                write_value(out, item, level + 1, unit);
                 if index + 1 < items.len() {
                     out.push(',');
                 }
                 out.push('\n');
             }
-            indent(out, level);
+            indent(out, level, unit);
             out.push(']');
         },
         Json::Object(entries) => {
@@ -158,16 +165,16 @@ fn write_value(out: &mut String, value: &Json, level: usize) {
             }
             out.push_str("{\n");
             for (index, (key, item)) in entries.iter().enumerate() {
-                indent(out, level + 1);
+                indent(out, level + 1, unit);
                 write_string(out, key);
                 out.push_str(": ");
-                write_value(out, item, level + 1);
+                write_value(out, item, level + 1, unit);
                 if index + 1 < entries.len() {
                     out.push(',');
                 }
                 out.push('\n');
             }
-            indent(out, level);
+            indent(out, level, unit);
             out.push('}');
         },
     }
