@@ -135,12 +135,25 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    let value = if chassis.version.is_empty() {
-        chassis.chassis_type.clone()
-    } else {
-        format!("{} ({})", chassis.chassis_type, chassis.version)
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        let value = if chassis.version.is_empty() {
+            chassis.chassis_type.clone()
+        } else {
+            format!("{} ({})", chassis.chassis_type, chassis.version)
+        };
+        return vec![Row::new(instance.display_name("chassis"), value)];
     };
-    vec![Row::new(instance.display_name("chassis"), value)]
+
+    // FF_PRINT_FORMAT_CHECKED args: the raw chassis fields. Borrow them
+    // here (the default-value branch above already returned).
+    let args = [
+        crate::format_args::FormatArg { name: "type", value: crate::format_args::ArgValue::Str(&chassis.chassis_type) },
+        crate::format_args::FormatArg { name: "vendor", value: crate::format_args::ArgValue::Str(&chassis.vendor) },
+        crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(&chassis.version) },
+        crate::format_args::FormatArg { name: "serial", value: crate::format_args::ArgValue::Str(&chassis.serial) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("chassis"), rendered)]
 }
 
 /// ffGenerateChassisJsonResult.

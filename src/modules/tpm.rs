@@ -45,7 +45,17 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     if tpm.version.is_empty() {
         return Vec::new();
     }
-    vec![Row::new(instance.display_name("tpm"), tpm.version)]
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        return vec![Row::new(instance.display_name("tpm"), tpm.version)];
+    };
+
+    // FF_PRINT_FORMAT_CHECKED args: both fields are plain strings.
+    let args = [
+        crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(&tpm.version) },
+        crate::format_args::FormatArg { name: "description", value: crate::format_args::ArgValue::Str(&tpm.description) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("tpm"), rendered)]
 }
 
 /// ffGenerateTPMJsonResult.
