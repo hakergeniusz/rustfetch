@@ -118,6 +118,7 @@ mod tests {
     fn instance() -> crate::instance::Instance {
         crate::instance::Instance::new(
             &crate::cli::Cli {
+                logo_position: None,
                 structure: None,
                 logo_none: false,
                 logo_small: false,

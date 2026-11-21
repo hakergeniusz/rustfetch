@@ -66,6 +66,9 @@ pub struct Cli {
     pub logo_none: bool,
     pub logo_small: bool,
     pub logo_source: Option<String>,
+    /// `--logo-position auto|left|right|top` (options/logo.c's enum, default
+    /// LEFT); the config's `logo.position` is the base value.
+    pub logo_position: Option<crate::logo::PositionOpt>,
     /// `--pipe <?bool>`: Some when the flag was given, with upstream's
     /// boolean parsing (empty/true/yes/on/1 → true, anything else false).
     pub pipe: Option<bool>,
@@ -99,6 +102,7 @@ impl Cli {
             logo_none: false,
             logo_small: false,
             logo_source: None,
+            logo_position: None,
             pipe: None,
             format_json: false,
             config: None,
@@ -202,6 +206,9 @@ impl Cli {
                     if config.logo_small {
                         cli.logo_small = true;
                     }
+                    if config.logo_position.is_some() {
+                        cli.logo_position = config.logo_position;
+                    }
                     cli.config = Some(config);
                     handled[i] = true;
                     if value_was_consumed(argv, i) {
@@ -270,6 +277,7 @@ impl Cli {
                     }
                 },
                 "--pipe" => cli.pipe = Some(parse_boolean(value)),
+                "--logo-position" => cli.logo_position = Some(position_enum(key, value)),
                 _ => {
                     eprintln!("Error: unknown option: {key}");
                     std::process::exit(400);
@@ -350,6 +358,24 @@ fn format_enum(key: &str, value: Option<&str>) -> bool {
     }
     eprintln!("Error: unknown {key} value: {value}");
     std::process::exit(478)
+}
+
+/// --logo-position's ffOptionParseEnum pairs (options/logo.c:196).
+fn position_enum(key: &str, value: Option<&str>) -> crate::logo::PositionOpt {
+    use crate::logo::PositionOpt;
+    let Some(value) = value else {
+        usage_exit(key, "<value>", 476);
+    };
+    match value.to_ascii_lowercase().as_str() {
+        "auto" => PositionOpt::Auto,
+        "left" => PositionOpt::Left,
+        "right" => PositionOpt::Right,
+        "top" => PositionOpt::Top,
+        _ => {
+            eprintln!("Error: unknown {key} value: {value}");
+            std::process::exit(478)
+        },
+    }
 }
 
 fn invalid_option(key: &str) -> ! {

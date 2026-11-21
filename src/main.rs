@@ -74,7 +74,7 @@ fn main() {
         return;
     }
 
-    let (logo, colors) = logo::load(&cli, &instance);
+    let (logo, colors) = logo::load(&cli, config.as_ref(), &instance);
     let _ = instance.logo_colors.set(colors);
     let rows = modules::collect(&structure_modules, structure_given, config.as_ref(), &instance);
     render::print(&logo, &rows, &instance);

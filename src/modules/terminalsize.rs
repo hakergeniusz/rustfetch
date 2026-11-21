@@ -3,6 +3,8 @@
 //! whatever the ioctl left at zero (skipped for the fastOnly logo-layout
 //! probes), then fastfetch's "179 columns x 41 rows (1920x1440px)" format.
 
+use std::io::IsTerminal;
+
 use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
@@ -54,6 +56,24 @@ fn detect(fast_only: bool) -> Option<(u16, u16, u16, u16)> {
 /// marker are parsed from the accumulated answer.
 fn query_size(request: &[u8], marker: &[u8]) -> Option<(u16, u16)> {
     crate::tty::response(request, |buffer| parse_size(buffer, marker))
+}
+
+/// ffLogoResolveAutoPosition's terminal probe: the column count only when
+/// stdout is a terminal (the fastOnly detection skips the CSI queries),
+/// zero otherwise — AUTO stays LEFT without a terminal.
+pub(crate) fn logo_terminal_columns() -> u32 {
+    if !std::io::stdout().is_terminal() {
+        return 0;
+    }
+    detect(true).map(|(columns, _, _, _)| columns as u32).unwrap_or(0)
+}
+
+/// ffLogoPrint's image attempt for non-.txt file logos: chafa's sizing
+/// runs ffDetectTerminalSize (slow path) before the load fails on a
+/// non-image file, so the CSI 18t/14t queries reach /dev/tty and their
+/// answers are consumed even though nothing image-shaped is printed.
+pub(crate) fn image_attempt_probe() {
+    let _ = detect(false);
 }
 
 /// The `ESC[8;rows;colst` / `ESC[4;height;widtht` body after the marker.

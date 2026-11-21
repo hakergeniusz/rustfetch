@@ -28,6 +28,46 @@ pub struct Segment {
     pub color: SegmentColor,
 }
 
+/// FFLogoPosition before AUTO resolution; the default is LEFT.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PositionOpt {
+    Auto,
+    Left,
+    Right,
+    Top,
+}
+
+/// The resolved FFLogoPosition; AUTO becomes LEFT or TOP by
+/// ffLogoSelectPosition and never reaches the renderer.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Position {
+    Left,
+    Right,
+    Top,
+}
+
+/// ffLogoSelectPosition: a non-AUTO position stands; without a terminal
+/// width (not a tty, or the fastOnly ioctl failed) the logo stays LEFT;
+/// otherwise it only keeps the two-column layout when the info columns
+/// left of it number at least FF_LOGO_AUTO_MIN_INFO_WIDTH (32).
+pub fn resolve_position(configured: PositionOpt, terminal_columns: u32, logo_width: u32) -> Position {
+    match configured {
+        PositionOpt::Left => Position::Left,
+        PositionOpt::Right => Position::Right,
+        PositionOpt::Top => Position::Top,
+        PositionOpt::Auto => {
+            const MIN_INFO_WIDTH: u32 = 32;
+            if terminal_columns == 0
+                || (logo_width <= terminal_columns && terminal_columns - logo_width >= MIN_INFO_WIDTH)
+            {
+                Position::Left
+            } else {
+                Position::Top
+            }
+        },
+    }
+}
+
 /// A logo ready for rendering: parsed art lines plus the width of the
 /// widest line for the cache renderer, or a `.raw` file's bytes dumped
 /// verbatim through ffLogoPrintCharsRaw's cursor path.
@@ -35,8 +75,12 @@ pub enum Logo {
     Chars {
         lines: Vec<Vec<Segment>>,
         width: usize,
+        position: Position,
     },
-    Raw(Vec<u8>),
+    Raw {
+        content: Vec<u8>,
+        position: Position,
+    },
 }
 
 /// FFLogoSize reduced to the values the lookups can produce (Normal is
@@ -66,7 +110,11 @@ pub fn parse_art(art: &str, colors: Option<&'static [&'static str]>, pipe: bool)
     };
     let mut max_width = 0;
 
-    for raw in art.lines() {
+    // split('\n'), not lines(): a trailing newline parses one trailing
+    // empty cache line, like upstream's logoLineCacheBuild (whose
+    // parsedHeight only counts newline-terminated lines, so the cache
+    // always ends parsedHeight + 1 entries long).
+    for raw in art.split('\n').map(|line| line.strip_suffix('\r').unwrap_or(line)) {
         let chars: Vec<char> = raw.chars().collect();
         let mut segments: Vec<Segment> = Vec::new();
         let mut text = String::new();
@@ -260,10 +308,43 @@ pub(crate) fn entry_colors(entry: &LogoEntry) -> LogoColors {
     }
 }
 
-/// Builds a renderable logo from its entry's art.
-fn build(entry: &'static LogoEntry, pipe: bool) -> Logo {
-    let (lines, width) = parse_art(entry.art, Some(entry.colors), pipe);
-    Logo::Chars { lines, width }
+/// Builds a renderable logo from its entry's art. The AUTO position is
+/// resolved against the terminal columns like ffLogoResolveAutoPosition
+/// inside ffLogoPrintChars: the width argument is the parsed art width
+/// plus paddingRight (4 — the --logo-padding overrides are not parsed).
+fn build(entry: &'static LogoEntry, pipe: bool, configured: PositionOpt) -> Logo {
+    let (lines, width) = parse_art(builtin_art(entry), Some(entry.colors), pipe);
+    let position = resolve_position(
+        configured,
+        crate::modules::terminalsize::logo_terminal_columns(),
+        (width + 4) as u32,
+    );
+    Logo::Chars { lines, width, position }
+}
+
+/// fastfetch_encode_c_string removes the trailing newline when CMake
+/// embeds the ascii art (CMakeLists.txt:369), so builtin art never ends
+/// with '\n' and its cache never gains the trailing empty line a raw
+/// file logo would produce — one stray newline per builtin dump.
+fn builtin_art(entry: &LogoEntry) -> &'static str {
+    entry.art.strip_suffix('\n').unwrap_or(entry.art)
+}
+
+/// The image attempt ffLogoPrint makes for every non-.txt file source:
+/// image rendering is not implemented, but the attempt still costs the
+/// terminal a sizing probe (chafa's ffDetectTerminalSize slow path) whose
+/// queries reach /dev/tty — reproduced here, result discarded, behind
+/// ffLogoPrintImageIfExists' early gates (pipe mode, missing file, and
+/// the screen multiplexer all skip it).
+fn maybe_image_attempt(source: &str, pipe: bool) {
+    if pipe
+        || source.to_ascii_lowercase().ends_with(".txt")
+        || !std::path::Path::new(source).exists()
+        || std::env::var("TERM").as_deref() == Ok("screen")
+    {
+        return;
+    }
+    crate::modules::terminalsize::image_attempt_probe();
 }
 
 /// Resolves the logo to display, porting ffLogoPrint: the NONE type
@@ -272,33 +353,41 @@ fn build(entry: &'static LogoEntry, pipe: bool) -> Logo {
 /// type), then `.raw` files verbatim, then text files with `$N`
 /// replacement — falling back silently to the detected distro logo.
 /// The color palette is always the detected distro's, even with no logo.
-pub fn load(cli: &Cli, instance: &Instance) -> (Option<Logo>, LogoColors) {
+/// The JSON config's logo keys are the base state; the command line runs
+/// after it upstream, so its values win — NONE is sticky either way.
+pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instance) -> (Option<Logo>, LogoColors) {
     let pipe = instance.pipe;
+    let configured = cli
+        .logo_position
+        .or(config.and_then(|config| config.logo_position))
+        .unwrap_or(PositionOpt::Left);
+    let logo_none = cli.logo_none || config.is_some_and(|config| config.logo_none);
+    let logo_small = cli.logo_small || config.is_some_and(|config| config.logo_small);
     let detected = get_builtin_detected(instance, Size::Normal);
-    if cli.logo_none {
+    if logo_none {
         return (None, entry_colors(detected));
     }
     let Some(source) = &cli.logo_source else {
-        let size = if cli.logo_small { Size::Small } else { Size::Normal };
+        let size = if logo_small { Size::Small } else { Size::Normal };
         let entry = get_builtin_detected(instance, size);
-        return (Some(build(entry, pipe)), entry_colors(entry));
+        return (Some(build(entry, pipe, configured)), entry_colors(entry));
     };
 
     // A miss on the builtin table falls back to the DETECTED logo with
     // no size filter, like ffLogoPrintDetected(FF_LOGO_SIZE_UNKNOWN).
     let fallback = || {
         let entry = get_builtin_detected(instance, Size::Unknown);
-        (Some(build(entry, pipe)), entry_colors(entry))
+        (Some(build(entry, pipe, configured)), entry_colors(entry))
     };
-    if cli.logo_small {
+    if logo_small {
         // A SMALL source matches a "_small"-suffixed entry name too.
         if let Some(entry) = get_builtin(source, Size::Small) {
-            return (Some(build(entry, pipe)), entry_colors(entry));
+            return (Some(build(entry, pipe, configured)), entry_colors(entry));
         }
         return fallback();
     }
     if let Some(entry) = get_builtin(source, Size::Unknown) {
-        return (Some(build(entry, pipe)), entry_colors(entry));
+        return (Some(build(entry, pipe, configured)), entry_colors(entry));
     }
     // "-" reads the logo from stdin, like ffLogoPrintFileIfExists; raw
     // files keep their exact bytes (ffLogoPrintCharsRaw writes them back
@@ -316,23 +405,51 @@ pub fn load(cli: &Cli, instance: &Instance) -> (Option<Logo>, LogoColors) {
         return fallback();
     };
     if source.to_ascii_lowercase().ends_with(".raw") {
-        return (Some(Logo::Raw(content)), entry_colors(detected));
+        // ffLogoPrintCharsRaw resolves AUTO with the width OPTION (unset:
+        // zero) plus the paddings, before looking at the position. RIGHT
+        // without a width prints the printError message and fails, and
+        // the caller falls back to the detected logo.
+        let position = resolve_position(configured, crate::modules::terminalsize::logo_terminal_columns(), 4);
+        if position == Position::Right {
+            // The upstream error ("Logo (image-raw): Must set logo width
+            // when using position right") is gated on display.showErrors,
+            // which this port does not implement: the message stays hidden.
+            // ffLogoPrintCharsRaw then fails and ffLogoPrint falls through
+            // to the image attempt (same non-.txt source) before re-reading
+            // the file as a CHARS logo (escape passthrough plus the $N
+            // palette), still position RIGHT.
+            maybe_image_attempt(source, pipe);
+            let Ok(art) = String::from_utf8(content) else {
+                return fallback();
+            };
+            let (lines, width) = parse_art(&art, Some(detected.colors), pipe);
+            let position = resolve_position(
+                configured,
+                crate::modules::terminalsize::logo_terminal_columns(),
+                (width + 4) as u32,
+            );
+            return (Some(Logo::Chars { lines, width, position }), entry_colors(detected));
+        }
+        return (Some(Logo::Raw { content, position }), entry_colors(detected));
     }
+    maybe_image_attempt(source, pipe);
     let Ok(art) = String::from_utf8(content) else {
         // ff's cache build scans bytes; a text logo that is not UTF-8
         // cannot round-trip through the segment parser.
         return fallback();
     };
-    // A trailing newline terminates one more (empty) logo line, like
-    // ffLogoPrintChars pushing the segment after the last '\n'.
-    let mut art = art;
-    if art.ends_with('\n') {
-        art.push('\n');
-    }
     // File logos apply the detected distro's palette to their `$N` markers
     // (logoPrintCustom's ffLogoApplyColors(logoGetBuiltinDetected(NORMAL))).
     let (lines, width) = parse_art(&art, Some(detected.colors), pipe);
-    (Some(Logo::Chars { lines, width }), entry_colors(detected))
+    let position = resolve_position(
+        configured,
+        crate::modules::terminalsize::logo_terminal_columns(),
+        (width + 4) as u32,
+    );
+    (
+        Some(Logo::Chars { lines, width, position }),
+        entry_colors(detected),
+    )
 }
 
 /// listModules-style listing of the builtin logo table: numbered quoted
@@ -375,8 +492,9 @@ pub(crate) fn print_logos() {
             println!("\x1b[{}m{}:\x1b[0m", entry.colors[0], entry.names[0]);
         }
         let logo = Logo::Chars {
-            lines: parse_art(entry.art, Some(entry.colors), pipe).0,
+            lines: parse_art(builtin_art(entry), Some(entry.colors), pipe).0,
             width: 0,
+            position: Position::Left,
         };
         let Logo::Chars { lines, .. } = &logo else { unreachable!() };
         for (line, _) in crate::render::colorize(lines, !pipe) {

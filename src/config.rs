@@ -28,6 +28,8 @@ pub struct Config {
     pub logo_none: bool,
     /// `logo.type: "small"` (upstream: logo type SMALL).
     pub logo_small: bool,
+    /// `logo.position` (upstream's FFLogoPosition; LEFT when unset).
+    pub logo_position: Option<crate::logo::PositionOpt>,
     /// `logo.padding.*` overrides.
     pub padding_top: Option<u32>,
     /// `display.pipe` (applies unless `--pipe` was given on the command
@@ -50,6 +52,7 @@ impl Config {
             document_loaded: false,
             logo_none: false,
             logo_small: false,
+            logo_position: None,
             padding_top: None,
             pipe: false,
             player_name: String::new(),
@@ -324,8 +327,31 @@ fn apply_logo(root: &jsonc::Value, config: &mut Config) {
                     section_error("logo", Some(key), error);
                 }
             },
+            "position" => {
+                let error = match value {
+                    jsonc::Value::Str(name)
+                        if ["auto", "left", "top", "right"]
+                            .iter()
+                            .any(|known| known.eq_ignore_ascii_case(name)) =>
+                    {
+                        config.logo_position = Some(match name.to_ascii_lowercase().as_str() {
+                            "auto" => crate::logo::PositionOpt::Auto,
+                            "left" => crate::logo::PositionOpt::Left,
+                            "right" => crate::logo::PositionOpt::Right,
+                            _ => crate::logo::PositionOpt::Top,
+                        });
+                        None
+                    },
+                    jsonc::Value::Str(_) => Some("Invalid enum string"),
+                    jsonc::Value::Int(_) | jsonc::Value::UInt(_) => Some("Invalid enum integer"),
+                    _ => Some("Invalid enum value type; must be a string or integer"),
+                };
+                if let Some(error) = error {
+                    section_error("logo", Some(key), error);
+                }
+            },
             "source" | "printRemaining" | "preserveAspectRatio" | "cache" | "recache"
-            | "position" | "animationFrame" | "spin" | "color" | "width" | "height" => {
+            | "animationFrame" | "spin" | "color" | "width" | "height" => {
                 // accepted; rendering support grows with the logo rounds
             },
             "padding" => {
