@@ -105,10 +105,24 @@ fn main() {
         None => config::load_automatic(cli.config_loaded),
     };
 
+    // The logo options are one upstream struct mutated by the config pass
+    // and then the command line, so the CLI wins per-field. Defaults:
+    // padding right 4, printRemaining true (ffOptionsInitLogo).
+    let cfg = config.as_ref();
+    let logo_options = crate::logo::LogoOptions {
+        padding_top: cli.logo_padding_top.or(cfg.and_then(|config| config.padding_top)).unwrap_or(0),
+        padding_bottom: cli.logo_padding_bottom.or(cfg.and_then(|config| config.padding_bottom)).unwrap_or(0),
+        padding_left: cli.logo_padding_left.or(cfg.and_then(|config| config.padding_left)).unwrap_or(0),
+        padding_right: cli.logo_padding_right.or(cfg.and_then(|config| config.padding_right)).unwrap_or(4),
+        width: cli.logo_width.or(cfg.and_then(|config| config.logo_width)).unwrap_or(0),
+        height: cli.logo_height.or(cfg.and_then(|config| config.logo_height)).unwrap_or(0),
+        print_remaining: cli.logo_print_remaining.or(cfg.and_then(|config| config.logo_print_remaining)).unwrap_or(true),
+    };
+
     let instance = instance::Instance::new(
         &cli,
         config.as_ref().is_some_and(|config| config.pipe),
-        config.as_ref().and_then(|config| config.padding_top),
+        logo_options,
     );
 
     if cli.format_json {

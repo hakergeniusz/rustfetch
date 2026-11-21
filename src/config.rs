@@ -30,8 +30,20 @@ pub struct Config {
     pub logo_small: bool,
     /// `logo.position` (upstream's FFLogoPosition; LEFT when unset).
     pub logo_position: Option<crate::logo::PositionOpt>,
-    /// `logo.padding.*` overrides.
+    /// `logo.padding.*` overrides (upstream's paddingTop/paddingBottom/
+    /// paddingLeft/paddingRight; `--logo-padding` covers the horizontal
+    /// pair on the command line).
     pub padding_top: Option<u32>,
+    pub padding_bottom: Option<u32>,
+    pub padding_left: Option<u32>,
+    pub padding_right: Option<u32>,
+    /// `logo.width` / `logo.height`: the art size floors; null resets to
+    /// zero, anything that does not read as a positive integer errors.
+    pub logo_width: Option<u32>,
+    pub logo_height: Option<u32>,
+    /// `logo.printRemaining` (yyjson_get_bool: only JSON true reads as
+    /// true).
+    pub logo_print_remaining: Option<bool>,
     /// `display.pipe` (applies unless `--pipe` was given on the command
     /// line, which is parsed after the config).
     pub pipe: bool,
@@ -54,6 +66,12 @@ impl Config {
             logo_small: false,
             logo_position: None,
             padding_top: None,
+            padding_bottom: None,
+            padding_left: None,
+            padding_right: None,
+            logo_width: None,
+            logo_height: None,
+            logo_print_remaining: None,
             pipe: false,
             player_name: String::new(),
             entries: Vec::new(),
@@ -350,8 +368,24 @@ fn apply_logo(root: &jsonc::Value, config: &mut Config) {
                     section_error("logo", Some(key), error);
                 }
             },
-            "source" | "printRemaining" | "preserveAspectRatio" | "cache" | "recache"
-            | "animationFrame" | "spin" | "color" | "width" | "height" => {
+            "printRemaining" => {
+                // yyjson_get_bool: only a JSON true reads as true.
+                config.logo_print_remaining = Some(matches!(value, jsonc::Value::Bool(true)));
+            },
+            "width" | "height" => {
+                // Null resets to zero; anything else reads through
+                // yyjson_get_uint (negative ints bit-cast huge — upstream
+                // then spins filling that width — and every non-integer
+                // type reads as zero and errors).
+                let slot = if key == "width" { &mut config.logo_width } else { &mut config.logo_height };
+                *slot = Some(match value {
+                    jsonc::Value::Null => 0,
+                    jsonc::Value::UInt(amount) => *amount as u32,
+                    jsonc::Value::Int(amount) => (*amount as u64) as u32,
+                    _ => section_error("logo", Some(key), &format!("Logo {key} must be a positive integer")),
+                });
+            },
+            "source" | "preserveAspectRatio" | "cache" | "recache" | "animationFrame" | "spin" | "color" => {
                 // accepted; rendering support grows with the logo rounds
             },
             "padding" => {
@@ -359,11 +393,18 @@ fn apply_logo(root: &jsonc::Value, config: &mut Config) {
                     section_error("logo", Some(key), "Logo padding must be an object");
                 };
                 for (side, amount) in padding {
-                    // yyjson_get_uint wraps/truncates whatever it reads;
-                    // upstream has no type check here.
+                    // yyjson_is_uint: only non-negative integer literals
+                    // pass; negatives, reals and strings error out.
+                    if !matches!(amount, jsonc::Value::UInt(_)) {
+                        section_error("logo", Some(key), "Logo padding values must be positive integers");
+                    }
                     let amount = amount.as_uint().unwrap_or(0) as u32;
-                    if side == "top" {
-                        config.padding_top = Some(amount);
+                    match side.as_str() {
+                        "top" => config.padding_top = Some(amount),
+                        "bottom" => config.padding_bottom = Some(amount),
+                        "left" => config.padding_left = Some(amount),
+                        "right" => config.padding_right = Some(amount),
+                        _ => {},
                     }
                 }
             },

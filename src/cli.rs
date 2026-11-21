@@ -69,6 +69,20 @@ pub struct Cli {
     /// `--logo-position auto|left|right|top` (options/logo.c's enum, default
     /// LEFT); the config's `logo.position` is the base value.
     pub logo_position: Option<crate::logo::PositionOpt>,
+    /// `--logo-width` / `--logo-height`: floors on the parsed art size
+    /// (ffOptionParseUInt32, 0 leaves the option unset).
+    pub logo_width: Option<u32>,
+    pub logo_height: Option<u32>,
+    /// `--logo-padding` sets both horizontal paddings; the four sided
+    /// flags set one each. The vertical pair feeds the cache build, the
+    /// horizontal pair the key column and raw dumps.
+    pub logo_padding_top: Option<u32>,
+    pub logo_padding_bottom: Option<u32>,
+    pub logo_padding_left: Option<u32>,
+    pub logo_padding_right: Option<u32>,
+    /// `--logo-print-remaining <?bool>`: gates the closing
+    /// ffLogoPrintRemaining (the watch rounds' call is not gated).
+    pub logo_print_remaining: Option<bool>,
     /// `--pipe <?bool>`: Some when the flag was given, with upstream's
     /// boolean parsing (empty/true/yes/on/1 → true, anything else false).
     pub pipe: Option<bool>,
@@ -107,6 +121,13 @@ impl Cli {
             logo_small: false,
             logo_source: None,
             logo_position: None,
+            logo_width: None,
+            logo_height: None,
+            logo_padding_top: None,
+            logo_padding_bottom: None,
+            logo_padding_left: None,
+            logo_padding_right: None,
+            logo_print_remaining: None,
             pipe: None,
             watch_interval: 0,
             format_json: false,
@@ -190,7 +211,19 @@ impl Cli {
                     if subkey.to_ascii_lowercase().ends_with("structure") {
                         println!("{}", crate::modules::DEFAULT_STRUCTURE_TEXT);
                     } else if subkey.eq_ignore_ascii_case("logos") {
-                        crate::logo::print_logos();
+                        // The option struct holds whatever was parsed up to
+                        // this argv position (config keys via -c included).
+                        let cfg = cli.config.as_ref();
+                        let opts = crate::logo::LogoOptions {
+                            padding_top: cli.logo_padding_top.or(cfg.and_then(|config| config.padding_top)).unwrap_or(0),
+                            padding_bottom: cli.logo_padding_bottom.or(cfg.and_then(|config| config.padding_bottom)).unwrap_or(0),
+                            padding_left: cli.logo_padding_left.or(cfg.and_then(|config| config.padding_left)).unwrap_or(0),
+                            padding_right: cli.logo_padding_right.or(cfg.and_then(|config| config.padding_right)).unwrap_or(4),
+                            width: cli.logo_width.or(cfg.and_then(|config| config.logo_width)).unwrap_or(0),
+                            height: cli.logo_height.or(cfg.and_then(|config| config.logo_height)).unwrap_or(0),
+                            print_remaining: true,
+                        };
+                        crate::logo::print_logos(&opts);
                     } else {
                         eprintln!("Error: unsupported print option: {key}");
                         std::process::exit(415);
@@ -302,6 +335,18 @@ impl Cli {
                 },
                 "--pipe" => cli.pipe = Some(parse_boolean(value)),
                 "--logo-position" => cli.logo_position = Some(position_enum(key, value)),
+                "--logo-width" => cli.logo_width = Some(parse_uint32(key, value)),
+                "--logo-height" => cli.logo_height = Some(parse_uint32(key, value)),
+                "--logo-padding" => {
+                    let padding = parse_uint32(key, value);
+                    cli.logo_padding_left = Some(padding);
+                    cli.logo_padding_right = Some(padding);
+                },
+                "--logo-padding-top" => cli.logo_padding_top = Some(parse_uint32(key, value)),
+                "--logo-padding-bottom" => cli.logo_padding_bottom = Some(parse_uint32(key, value)),
+                "--logo-padding-left" => cli.logo_padding_left = Some(parse_uint32(key, value)),
+                "--logo-padding-right" => cli.logo_padding_right = Some(parse_uint32(key, value)),
+                "--logo-print-remaining" => cli.logo_print_remaining = Some(parse_boolean(value)),
                 _ => {
                     eprintln!("Error: unknown option: {key}");
                     std::process::exit(400);

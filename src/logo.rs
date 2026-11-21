@@ -73,14 +73,56 @@ pub fn resolve_position(configured: PositionOpt, terminal_columns: u32, logo_wid
 /// verbatim through ffLogoPrintCharsRaw's cursor path.
 pub enum Logo {
     Chars {
+        /// The full cache: paddingTop blank lines, the parsed art, then the
+        /// height-option fill — exactly what logoLineCacheBuild leaves.
         lines: Vec<Vec<Segment>>,
+        /// maxLineWidth + the prefix pad: the widest cache line, floored by
+        /// the width option (instance.state.logoWidth before position fixup).
         width: usize,
+        /// The pad-left prefix baked into the parsed lines (0 when the
+        /// configured position is RIGHT or the option is unset).
+        pad_left: usize,
+        /// (leading paddingTop entries, trailing height-fill entries) —
+        /// the bare-empty bookends of the cache.
+        bare: (usize, usize),
         position: Position,
     },
     Raw {
         content: Vec<u8>,
         position: Position,
+        /// The width+height static path's pre/post bytes and the
+        /// logoWidth/logoHeight the rows align against; None runs the
+        /// cursor-query path instead.
+        static_layout: Option<(Vec<u8>, Vec<u8>, usize, usize)>,
     },
+}
+
+/// FFOptionsLogo's text-rendering inputs: the paddings, the width/height
+/// floors and whether the closing ffLogoPrintRemaining runs. Defaults
+/// match ffOptionsInitLogo (paddingRight 4, printRemaining true).
+#[derive(Clone, Copy)]
+pub struct LogoOptions {
+    pub padding_top: u32,
+    pub padding_bottom: u32,
+    pub padding_left: u32,
+    pub padding_right: u32,
+    pub width: u32,
+    pub height: u32,
+    pub print_remaining: bool,
+}
+
+impl Default for LogoOptions {
+    fn default() -> Self {
+        Self {
+            padding_top: 0,
+            padding_bottom: 0,
+            padding_left: 0,
+            padding_right: 4,
+            width: 0,
+            height: 0,
+            print_remaining: true,
+        }
+    }
 }
 
 /// FFLogoSize reduced to the values the lookups can produce (Normal is
@@ -308,18 +350,65 @@ pub(crate) fn entry_colors(entry: &LogoEntry) -> LogoColors {
     }
 }
 
-/// Builds a renderable logo from its entry's art. The AUTO position is
-/// resolved against the terminal columns like ffLogoResolveAutoPosition
-/// inside ffLogoPrintChars: the width argument is the parsed art width
-/// plus paddingRight (4 — the --logo-padding overrides are not parsed).
-fn build(entry: &'static LogoEntry, pipe: bool, configured: PositionOpt) -> Logo {
-    let (lines, width) = parse_art(builtin_art(entry), Some(entry.colors), pipe);
+/// logoLineCacheBuild's cache assembly: the pad-left prefix (skipped when
+/// the CONFIGURED position is RIGHT — the decision happens before
+/// ffLogoResolveAutoPosition resolves AUTO), the width-option floor on
+/// maxLineWidth, the height-option floor on parsedHeight, and the fill
+/// that keeps the cache at logoHeight + 1 entries.
+fn build_chars(
+    lines: Vec<Vec<Segment>>,
+    art_width: usize,
+    configured: PositionOpt,
+    opts: &LogoOptions,
+) -> Logo {
+    let pad_left = if configured == PositionOpt::Right {
+        0
+    } else {
+        opts.padding_left as usize
+    };
+    // An empty art skips the whole parse loop upstream: no prefixes, and
+    // maxLineWidth stays at the width-option floor.
+    let max_line_width = if lines.is_empty() {
+        opts.width as usize
+    } else {
+        (opts.width as usize).max(art_width + pad_left)
+    };
     let position = resolve_position(
         configured,
         crate::modules::terminalsize::logo_terminal_columns(),
-        (width + 4) as u32,
+        max_line_width as u32 + opts.padding_right,
     );
-    Logo::Chars { lines, width, position }
+    // parsedHeight counts newline-terminated lines (entries - 1), then the
+    // height option floors it; the cache fills to logoHeight + 1 entries.
+    let parsed_height = lines.len().saturating_sub(1).max(opts.height as usize);
+    let logo_height = opts.padding_top as usize + parsed_height;
+    let art_entries = lines.len();
+    let mut cache = lines;
+    for _ in 0..opts.padding_top as usize {
+        cache.insert(0, Vec::new());
+    }
+    debug_assert!(cache.len() <= logo_height + 1);
+    while cache.len() < logo_height + 1 {
+        cache.push(Vec::new());
+    }
+    cache.truncate(logo_height + 1);
+    let fill = cache.len() - opts.padding_top as usize - art_entries;
+    Logo::Chars {
+        lines: cache,
+        width: max_line_width,
+        pad_left,
+        // The paddingTop bookend and the height-fill tail were pushed via
+        // logoLineCachePush(nullptr, 0): always bare-empty, no prefix,
+        // unlike blank art lines which gain the prefix's width.
+        bare: (opts.padding_top as usize, fill),
+        position,
+    }
+}
+
+/// Builds a renderable logo from its entry's art.
+fn build(entry: &'static LogoEntry, pipe: bool, configured: PositionOpt, opts: &LogoOptions) -> Logo {
+    let (lines, art_width) = parse_art(builtin_art(entry), Some(entry.colors), pipe);
+    build_chars(lines, art_width, configured, opts)
 }
 
 /// fastfetch_encode_c_string removes the trailing newline when CMake
@@ -357,6 +446,7 @@ fn maybe_image_attempt(source: &str, pipe: bool) {
 /// after it upstream, so its values win — NONE is sticky either way.
 pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instance) -> (Option<Logo>, LogoColors) {
     let pipe = instance.pipe;
+    let opts = &instance.logo_options;
     let configured = cli
         .logo_position
         .or(config.and_then(|config| config.logo_position))
@@ -370,24 +460,24 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
     let Some(source) = &cli.logo_source else {
         let size = if logo_small { Size::Small } else { Size::Normal };
         let entry = get_builtin_detected(instance, size);
-        return (Some(build(entry, pipe, configured)), entry_colors(entry));
+        return (Some(build(entry, pipe, configured, opts)), entry_colors(entry));
     };
 
     // A miss on the builtin table falls back to the DETECTED logo with
     // no size filter, like ffLogoPrintDetected(FF_LOGO_SIZE_UNKNOWN).
     let fallback = || {
         let entry = get_builtin_detected(instance, Size::Unknown);
-        (Some(build(entry, pipe, configured)), entry_colors(entry))
+        (Some(build(entry, pipe, configured, opts)), entry_colors(entry))
     };
     if logo_small {
         // A SMALL source matches a "_small"-suffixed entry name too.
         if let Some(entry) = get_builtin(source, Size::Small) {
-            return (Some(build(entry, pipe, configured)), entry_colors(entry));
+            return (Some(build(entry, pipe, configured, opts)), entry_colors(entry));
         }
         return fallback();
     }
     if let Some(entry) = get_builtin(source, Size::Unknown) {
-        return (Some(build(entry, pipe, configured)), entry_colors(entry));
+        return (Some(build(entry, pipe, configured, opts)), entry_colors(entry));
     }
     // "-" reads the logo from stdin, like ffLogoPrintFileIfExists; raw
     // files keep their exact bytes (ffLogoPrintCharsRaw writes them back
@@ -405,32 +495,70 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
         return fallback();
     };
     if source.to_ascii_lowercase().ends_with(".raw") {
-        // ffLogoPrintCharsRaw resolves AUTO with the width OPTION (unset:
-        // zero) plus the paddings, before looking at the position. RIGHT
-        // without a width prints the printError message and fails, and
-        // the caller falls back to the detected logo.
-        let position = resolve_position(configured, crate::modules::terminalsize::logo_terminal_columns(), 4);
-        if position == Position::Right {
-            // The upstream error ("Logo (image-raw): Must set logo width
-            // when using position right") is gated on display.showErrors,
-            // which this port does not implement: the message stays hidden.
-            // ffLogoPrintCharsRaw then fails and ffLogoPrint falls through
-            // to the image attempt (same non-.txt source) before re-reading
-            // the file as a CHARS logo (escape passthrough plus the $N
-            // palette), still position RIGHT.
+        // ffLogoPrintCharsRaw resolves AUTO with the width option plus both
+        // paddings before looking at the position. With width AND height
+        // set the bytes dump through the static path (no clear, no cursor
+        // query); otherwise RIGHT needs a width — without one the
+        // printError-gated message stays hidden, the image attempt runs,
+        // and the caller re-reads the file as a CHARS logo (escape
+        // passthrough plus the $N palette), still position RIGHT.
+        let position = resolve_position(
+            configured,
+            crate::modules::terminalsize::logo_terminal_columns(),
+            opts.width + opts.padding_left + opts.padding_right,
+        );
+        if opts.width > 0 && opts.height > 0 {
+            let mut prefix = Vec::new();
+            prefix.extend(std::iter::repeat_n(b'\n', opts.padding_top as usize));
+            if position == Position::Right {
+                prefix.extend(format!("\x1b[9999999C\x1b[{}D", opts.padding_right + opts.width).into_bytes());
+            } else if opts.padding_left > 0 {
+                prefix.extend(format!("\x1b[{}C", opts.padding_left).into_bytes());
+            }
+            // The static path appends one newline of its own after the
+            // bytes, before the suffix escapes.
+            let mut suffix = b"\n".to_vec();
+            let (logo_width, logo_height) = match position {
+                Position::Left => {
+                    let logo_width = (opts.width + opts.padding_left + opts.padding_right) as usize;
+                    let logo_height = (opts.padding_top + opts.height) as usize;
+                    suffix.extend(format!("\x1b[{logo_height}A").into_bytes());
+                    (logo_width, logo_height)
+                },
+                Position::Top => {
+                    suffix.extend(std::iter::repeat_n(b'\n', opts.padding_right as usize));
+                    (0, 0)
+                },
+                Position::Right => {
+                    suffix.extend(format!("\x1b[{}A", opts.height).into_bytes());
+                    (0, 0)
+                },
+            };
+            return (
+                Some(Logo::Raw {
+                    content,
+                    position,
+                    static_layout: Some((prefix, suffix, logo_width, logo_height)),
+                }),
+                entry_colors(detected),
+            );
+        }
+        if position == Position::Right && opts.width == 0 {
             maybe_image_attempt(source, pipe);
             let Ok(art) = String::from_utf8(content) else {
                 return fallback();
             };
-            let (lines, width) = parse_art(&art, Some(detected.colors), pipe);
-            let position = resolve_position(
-                configured,
-                crate::modules::terminalsize::logo_terminal_columns(),
-                (width + 4) as u32,
-            );
-            return (Some(Logo::Chars { lines, width, position }), entry_colors(detected));
+            let (lines, art_width) = parse_art(&art, Some(detected.colors), pipe);
+            return (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected));
         }
-        return (Some(Logo::Raw { content, position }), entry_colors(detected));
+        return (
+            Some(Logo::Raw {
+                content,
+                position,
+                static_layout: None,
+            }),
+            entry_colors(detected),
+        );
     }
     maybe_image_attempt(source, pipe);
     let Ok(art) = String::from_utf8(content) else {
@@ -440,16 +568,8 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
     };
     // File logos apply the detected distro's palette to their `$N` markers
     // (logoPrintCustom's ffLogoApplyColors(logoGetBuiltinDetected(NORMAL))).
-    let (lines, width) = parse_art(&art, Some(detected.colors), pipe);
-    let position = resolve_position(
-        configured,
-        crate::modules::terminalsize::logo_terminal_columns(),
-        (width + 4) as u32,
-    );
-    (
-        Some(Logo::Chars { lines, width, position }),
-        entry_colors(detected),
-    )
+    let (lines, art_width) = parse_art(&art, Some(detected.colors), pipe);
+    (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected))
 }
 
 /// listModules-style listing of the builtin logo table: numbered quoted
@@ -483,7 +603,7 @@ pub(crate) fn list_logos_custom() {
 /// ffLogoBuiltinPrint: every builtin logo, name line first, then the art
 /// printed position-top (each cache line plus a newline). The name carries
 /// the logo's first color outside pipe mode.
-pub(crate) fn print_logos() {
+pub(crate) fn print_logos(opts: &LogoOptions) {
     let pipe = !std::io::stdout().is_terminal() || std::env::var_os("NO_COLOR").is_some();
     for entry in logo_entries::LOGO_ENTRIES {
         if pipe {
@@ -491,13 +611,12 @@ pub(crate) fn print_logos() {
         } else {
             println!("\x1b[{}m{}:\x1b[0m", entry.colors[0], entry.names[0]);
         }
-        let logo = Logo::Chars {
-            lines: parse_art(builtin_art(entry), Some(entry.colors), pipe).0,
-            width: 0,
-            position: Position::Left,
-        };
-        let Logo::Chars { lines, .. } = &logo else { unreachable!() };
-        for (line, _) in crate::render::colorize(lines, !pipe) {
+        let (lines, art_width) = parse_art(builtin_art(entry), Some(entry.colors), pipe);
+        // ffLogoBuiltinPrint forces position top before each dump; the
+        // parsed-so-far paddings and floors still apply to every cache.
+        let logo = build_chars(lines, art_width, PositionOpt::Top, opts);
+        let Logo::Chars { lines, pad_left, bare, .. } = &logo else { unreachable!() };
+        for (line, _) in crate::render::colorize_cache(lines, !pipe, *pad_left, *bare) {
             println!("{line}");
         }
     }

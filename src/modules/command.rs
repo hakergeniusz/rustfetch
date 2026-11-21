@@ -123,6 +123,13 @@ mod tests {
                 logo_none: false,
                 logo_small: false,
                 logo_source: None,
+                logo_width: None,
+                logo_height: None,
+                logo_padding_top: None,
+                logo_padding_bottom: None,
+                logo_padding_left: None,
+                logo_padding_right: None,
+                logo_print_remaining: None,
                 pipe: None,
                 watch_interval: 0,
                 format_json: false,
@@ -130,7 +137,7 @@ mod tests {
                 config_loaded: false,
             },
             false,
-            None,
+            crate::logo::LogoOptions::default(),
         )
     }
 

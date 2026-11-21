@@ -41,9 +41,10 @@ pub struct Instance {
     /// (colorTitle = colors[0], colorKeys = colors[1]); set even when the
     /// logo itself is hidden with --logo none.
     pub logo_colors: OnceLock<LogoColors>,
-    /// `logo.padding.top` from the config; blank key-column lines inserted
-    /// above the logo block.
-    pub padding_top: Option<u32>,
+    /// The text logo's rendering inputs (FFOptionsLogo): paddings,
+    /// width/height floors and the printRemaining gate, assembled in
+    /// main.rs from the config keys and the command line.
+    pub logo_options: crate::logo::LogoOptions,
     /// The current config entry's object (per-job: each module job gets a
     /// clone carrying its own entry), read by modules with config options.
     pub entry: Option<&'static crate::jsonc::Value>,
@@ -64,7 +65,7 @@ impl Clone for Instance {
             logo_none: self.logo_none,
             logo_small: self.logo_small,
             logo_source: self.logo_source.clone(),
-            padding_top: self.padding_top,
+            logo_options: self.logo_options,
             entry: self.entry,
             gnome_settings: Mutex::new(self.gnome_settings.lock().unwrap_or_else(|e| e.into_inner()).clone()),
         }
@@ -72,7 +73,7 @@ impl Clone for Instance {
 }
 
 impl Instance {
-    pub fn new(cli: &Cli, config_pipe: bool, padding_top: Option<u32>) -> Self {
+    pub fn new(cli: &Cli, config_pipe: bool, logo_options: crate::logo::LogoOptions) -> Self {
         // display.c:957 — --pipe defaults to !isatty(stdout) || NO_COLOR
         // (getenv, so an empty value counts too); --pipe false overrides;
         // config display.pipe applies unless the command line said
@@ -110,7 +111,7 @@ impl Instance {
             logo_none: cli.logo_none,
             logo_small: cli.logo_small,
             logo_source: cli.logo_source.clone(),
-            padding_top,
+            logo_options,
             entry: None,
             gnome_settings: Mutex::new(HashMap::new()),
             logo_colors: OnceLock::new(),
