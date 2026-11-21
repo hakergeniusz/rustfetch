@@ -553,11 +553,22 @@ impl Cli {
             match key.to_ascii_lowercase().as_str() {
                 "-h" | "--help" => print_help(value),
                 "-v" | "--version" => {
-                    println!("fastfetch 2.71.0 (x86_64)");
+                    // The self-identification is rustfetch's own; set
+                    // RUSTFETCH_PARITY_VERSION to emit the pinned upstream
+                    // string for byte-for-byte parity suites.
+                    if std::env::var_os("RUSTFETCH_PARITY_VERSION").is_some() {
+                        println!("fastfetch 2.71.0 (x86_64)");
+                    } else {
+                        println!("rustfetch {} (x86_64)", env!("CARGO_PKG_VERSION"));
+                    }
                     std::process::exit(0);
                 },
                 "--version-raw" => {
-                    println!("2.71.0");
+                    if std::env::var_os("RUSTFETCH_PARITY_VERSION").is_some() {
+                        println!("2.71.0");
+                    } else {
+                        println!("{}", env!("CARGO_PKG_VERSION"));
+                    }
                     std::process::exit(0);
                 },
                 "--list-modules" => {
