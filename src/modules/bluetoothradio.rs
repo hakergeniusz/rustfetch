@@ -183,16 +183,47 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    // The key is name-based, like fastfetch's "%s (%s)".
+    // NO_CUSTOM_KEY: the module prebuilds its key as "%s (%s)" (display
+    // name and radio alias) and ffPrintFormat receives that built text as
+    // its moduleName, so both print paths key the row identically.
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        return enabled
+            .iter()
+            .map(|radio| {
+                let value = match lmp_version_str(radio.lmp_version) {
+                    Some(version) => format!("Bluetooth {version} ({})", radio.vendor),
+                    None => radio.vendor.clone(),
+                };
+                Row::new(&format!("{} ({})", instance.display_name("bluetoothradio"), radio.name), value)
+            })
+            .collect();
+    };
 
     enabled
         .iter()
-        .map(|radio| {
-            let value = match lmp_version_str(radio.lmp_version) {
-                Some(version) => format!("Bluetooth {version} ({})", radio.vendor),
-                None => radio.vendor.clone(),
-            };
-            Row::new(&format!("{} ({})", instance.display_name("bluetoothradio"), radio.name), value)
+        .enumerate()
+        .map(|(index, radio)| {
+            // FF_PRINT_FORMAT_CHECKED's eight args, in upstream order. The
+            // i32s are raw: lmpSubversion's i32::MIN is the deliberate
+            // unset sentinel (JSON maps it to null; the format prints it
+            // verbatim), and an unknown LMP version string is empty.
+            let version = lmp_version_str(radio.lmp_version).unwrap_or("");
+            let args = [
+                crate::format_args::FormatArg { name: "name", value: crate::format_args::ArgValue::Str(&radio.name) },
+                crate::format_args::FormatArg { name: "address", value: crate::format_args::ArgValue::Str(&radio.address) },
+                crate::format_args::FormatArg { name: "lmp-version", value: crate::format_args::ArgValue::Int(radio.lmp_version) },
+                crate::format_args::FormatArg { name: "lmp-subversion", value: crate::format_args::ArgValue::Int(radio.lmp_subversion) },
+                crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(version) },
+                crate::format_args::FormatArg { name: "vendor", value: crate::format_args::ArgValue::Str(&radio.vendor) },
+                crate::format_args::FormatArg { name: "discoverable", value: crate::format_args::ArgValue::Bool(radio.discoverable) },
+                crate::format_args::FormatArg { name: "connectable", value: crate::format_args::ArgValue::Bool(radio.connectable) },
+            ];
+            let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+            // Upstream numbers enabled radios 1..N for the key template's
+            // {index} arg; the prebuilt NO_CUSTOM_KEY key ignores it here,
+            // but the row carries the same per-radio counter.
+            Row::new(&format!("{} ({})", instance.display_name("bluetoothradio"), radio.name), rendered)
+                .with_index(index as u32 + 1)
         })
         .collect()
 }
