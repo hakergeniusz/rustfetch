@@ -1,0 +1,5 @@
+rustfetch (0.1.0-1) unstable; urgency=medium
+
+  * Initial release of rustfetch: fastfetch, rewritten in Rust.
+
+ -- hakergeniusz <hakergeniusz@users.noreply.github.com>  Sat, 21 Nov 2026 00:00:00 +0000

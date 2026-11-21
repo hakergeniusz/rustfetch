@@ -1,0 +1,21 @@
+#!/usr/bin/make -f
+# debian/rules for rustfetch. Builds the Rust binary with Cargo and installs
+# it plus documentation into the debhelper staging tree.
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	export CARGO_TARGET_DIR=$$(pwd)/target
+	cargo build --release
+
+override_dh_auto_test:
+
+override_dh_auto_install:
+	install -d debian/rustfetch/usr/bin
+	install -m 0755 target/release/rustfetch debian/rustfetch/usr/bin/rustfetch
+	install -d debian/rustfetch/usr/share/doc/rustfetch
+	install -m 0644 README.md debian/rustfetch/usr/share/doc/rustfetch/README.md
+	install -m 0644 LICENSE debian/rustfetch/usr/share/doc/rustfetch/copyright

@@ -1,0 +1,25 @@
+# Maintainer: hakergeniusz
+# Prebuilt-binary PKGBUILD: installs the release .tar.zst asset.
+# NOTE: replace the sha256sums placeholder before using this PKGBUILD (see
+# packaging/README.md for the exact command).
+pkgname=rustfetch-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Fastfetch, rewritten in Rust (prebuilt binary)'
+arch=('x86_64')
+url='https://github.com/hakergeniusz/rustfetch'
+license=('MIT')
+# libc, libm and libgcc_s come from glibc and gcc-libs. fastfetch is NOT needed.
+depends=('glibc' 'gcc-libs')
+provides=('rustfetch')
+conflicts=('rustfetch')
+_TARBALL="rustfetch-${pkgver}-x86_64-unknown-linux-gnu.tar.zst"
+source=("$_TARBALL::https://github.com/hakergeniusz/rustfetch/releases/download/v${pkgver}/${_TARBALL}")
+sha256sums=('REPLACE_WITH_SHA256_OF_RELEASE_TARBALL')
+
+package() {
+  tar --zstd -xf "$_TARBALL" -C "$srcdir"
+  install -Dm755 "$srcdir/rustfetch" "$pkgdir/usr/bin/rustfetch"
+  install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
