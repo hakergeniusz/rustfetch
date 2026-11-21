@@ -1,3 +1,10 @@
+rustfetch (0.2.3-1) unstable; urgency=medium
+
+  * Patch release: -v/--version now identifies as rustfetch; the pinned
+    upstream strings remain available via RUSTFETCH_PARITY_VERSION.
+
+ -- hakergeniusz <hakergeniusz@users.noreply.github.com>  Sat, 21 Nov 2026 22:30:00 +0000
+
 rustfetch (0.2.2-1) unstable; urgency=medium
 
   * Patch release: complete CLI parity (specific -h help for all flags,
