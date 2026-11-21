@@ -220,6 +220,7 @@ fn main() {
         key_padding_left: cli.key_padding_left.or(cfg.and_then(|config| config.key_padding_left)).unwrap_or(0),
         key_type: cli.key_type.or(cfg.and_then(|config| config.key_type)).unwrap_or(instance::KEY_TYPE_STRING),
         key_language: cli.key_language.or(cfg.and_then(|config| config.key_language)),
+        constants: cfg.and_then(|config| config.constants.clone()).unwrap_or_default(),
     };
     // The FFOptionsDisplay format half: the config sub-objects built one
     // struct in document order; each command-line flag overwrites its own

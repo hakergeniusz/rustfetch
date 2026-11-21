@@ -87,6 +87,10 @@ pub struct Config {
     /// `display.key.language` (optionParseLanguageString's canonical
     /// code); None keeps the default English column.
     pub key_language: Option<&'static str>,
+    /// `display.constants`: the {$N} substitutions of the format-args
+    /// engine; non-string items become empty constants
+    /// (ffStrbufInitJsonVal).
+    pub constants: Option<Vec<String>>,
     /// `display.pipe` (applies unless `--pipe` was given on the command
     /// line, which is parsed after the config).
     pub pipe: bool,
@@ -141,6 +145,7 @@ impl Config {
             key_padding_left: None,
             key_type: None,
             key_language: None,
+            constants: None,
             pipe: false,
             player_name: String::new(),
             display_format: None,
@@ -823,6 +828,18 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
                 if !matches!(value, jsonc::Value::Array(_)) {
                     section_error("display", Some(key), "display.constants must be an array");
                 }
+                // ffStrbufInitJsonVal: strings set the content, everything
+                // else initializes an empty constant.
+                let items = match value {
+                    jsonc::Value::Array(items) => items.as_slice(),
+                    _ => &[],
+                };
+                config.constants = Some(
+                    items
+                        .iter()
+                        .map(|item| item.as_str().map(str::to_owned).unwrap_or_default())
+                        .collect(),
+                );
             },
             "duration" | "size" | "freq" => {
                 if !value.is_object() {

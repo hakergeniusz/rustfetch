@@ -56,6 +56,9 @@ pub struct DisplaySurface {
     /// None keeps the default English column. Selects the display-name
     /// table column (FF_MODULE_GET_DISPLAY_NAME's offsetof delta).
     pub key_language: Option<&'static str>,
+    /// display.constants: the {$N} substitutions the format-args engine
+    /// expands (empty entries from non-string JSON values).
+    pub constants: Vec<String>,
 }
 
 impl Default for DisplaySurface {
@@ -71,6 +74,7 @@ impl Default for DisplaySurface {
             key_padding_left: 0,
             key_type: KEY_TYPE_STRING,
             key_language: None,
+            constants: Vec::new(),
         }
     }
 }

@@ -1179,256 +1179,51 @@ const TYPE_K_KEY_MODULES: &[&str] = &[
     "zpool",
 ];
 
-/// ffParseFormatString (format.c) over a custom key: the spec grammar the
-/// key paths exercise — `{}`/`{0}` sequential positionals, numeric and
-/// named args (case-insensitive), `{#color}` through ffOptionParseColor
-/// and `{#}` as a reset (pipe drops both), `{{` escapes, an unmatched
-/// trailing brace expanding like any spec, `{-}` stopping the expansion,
-/// and the truncation specs `:` (trim-right-space), `<`/`>`/`|`
-/// (pad/align) with negative lengths taking an ellipsis. Conditionals
-/// {?}/{/}, {$env}/{$constants} and `~` ranges are the format-engine
-/// work and stay verbatim; Type K module-specific args likewise;
-/// invalid placeholders mirror upstream's appendInvalidPlaceholder
-/// bytes. The TTY expansion closes with a reset. An invalid `{#color}`
-/// defers its exit(479) into `pending` like the common-arg colors.
+/// ffParseFormatString (format.c) over a custom key, through the shared
+/// format-args engine (src/format_args.rs): the spec grammar — `{}`/`{0}`
+/// sequential positionals, numeric and named args (case-insensitive),
+/// `{#color}`/`{#}` (pipe drops both), `{{` escapes, `{-}` stopping the
+/// expansion, the `{?arg}`…`{?}`/`{/arg}`…`{/}` conditionals, `{$env}`/
+/// `{$N}` constants, `~` ranges and the truncation specs `:`/`<`/`>`/`|`
+/// — all resolve against the {index, icon, module-name} arg list of
+/// ffPrintLogoAndKey. The self-expanding (Type K) modules prebuild their
+/// key against their own module-specific arg list, of which only the
+/// trailing {icon}/{module-name} entries are known here: their named args
+/// resolve, but every module-specific name and positional — and thus any
+/// placeholder that needs the full list — stays verbatim until those
+/// lists land (positional_len 0). Invalid placeholders mirror upstream's
+/// appendInvalidPlaceholder bytes; an invalid `{#color}` defers its
+/// exit(479) into `pending` like the common-arg colors.
 fn expand_key(
     template: &str,
     args: &KeyArgs<'_>,
     instance: &Instance,
 ) -> String {
-    let colors = crate::cli::ColorState::from_instance(instance);
-    let pipe = instance.pipe;
-    let num_args = match args {
-        KeyArgs::Common { .. } => 3,
-        KeyArgs::Prebuilt { .. } => 0,
+    let (list, positional_len): (Vec<crate::format_args::FormatArg<'_>>, u32) = match args {
+        KeyArgs::Common { index, icon, module_name } => (
+            vec![
+                crate::format_args::FormatArg { name: "index", value: crate::format_args::ArgValue::UInt(*index) },
+                crate::format_args::FormatArg { name: "icon", value: crate::format_args::ArgValue::Str(icon) },
+                crate::format_args::FormatArg { name: "module-name", value: crate::format_args::ArgValue::Str(module_name) },
+            ],
+            3,
+        ),
+        KeyArgs::Prebuilt { icon, module_name } => (
+            vec![
+                crate::format_args::FormatArg { name: "icon", value: crate::format_args::ArgValue::Str(icon) },
+                crate::format_args::FormatArg { name: "module-name", value: crate::format_args::ArgValue::Str(module_name) },
+            ],
+            0,
+        ),
     };
-    let named = |name: &str| -> Option<String> {
-        let icon_module = |icon: &str, module_name: &str| -> Option<String> {
-            if name.eq_ignore_ascii_case("icon") {
-                Some(icon.to_string())
-            } else if name.eq_ignore_ascii_case("module-name") {
-                Some(module_name.to_string())
-            } else {
-                None
-            }
-        };
-        match args {
-            KeyArgs::Common { index, icon, module_name } => {
-                if name.eq_ignore_ascii_case("index") {
-                    Some(index.to_string())
-                } else {
-                    icon_module(icon, module_name)
-                }
-            },
-            KeyArgs::Prebuilt { icon, module_name } => icon_module(icon, module_name),
-        }
+    let env = crate::format_args::EngineEnv {
+        pipe: instance.pipe,
+        constants: &instance.display.constants,
+        df: &instance.display_format,
+        colors: crate::cli::ColorState::from_instance(instance),
+        pending: &instance.pending_exit,
     };
-    let positional = |i: u32| -> Option<String> {
-        match args {
-            KeyArgs::Common { index, icon, module_name } => match i {
-                1 => Some(index.to_string()),
-                2 => Some(icon.to_string()),
-                3 => Some(module_name.to_string()),
-                _ => None,
-            },
-            KeyArgs::Prebuilt { .. } => None,
-        }
-    };
-    // strToInt32: strtoll base 10 clamped to i32. No digits convert only
-    // when the whole value is empty (valid 0); otherwise leftover
-    // characters make the placeholder invalid, like upstream's *pEnd.
-    let str_to_i32 = |value: &str| -> Option<i32> {
-        let bytes = value.as_bytes();
-        let mut offset = 0;
-        while offset < bytes.len() && matches!(bytes[offset], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r') {
-            offset += 1;
-        }
-        let negative = offset < bytes.len() && bytes[offset] == b'-';
-        if offset < bytes.len() && (bytes[offset] == b'+' || bytes[offset] == b'-') {
-            offset += 1;
-        }
-        let start = offset;
-        while offset < bytes.len() && bytes[offset].is_ascii_digit() {
-            offset += 1;
-        }
-        if offset == start {
-            return value.is_empty().then_some(0);
-        }
-        if offset != bytes.len() {
-            return None;
-        }
-        let magnitude = value[start..offset].parse::<i128>().unwrap_or(i128::from(i64::MAX));
-        let signed = if negative { -magnitude } else { magnitude };
-        Some(signed.clamp(i32::MIN as i128, i32::MAX as i128) as i32)
-    };
-    // ffStrbufSubstrBefore is byte-based; the port cuts at the nearest
-    // char boundary below the length so its Strings stay valid UTF-8.
-    let byte_floor = |value: &str, mut end: usize| -> usize {
-        while end > 0 && !value.is_char_boundary(end) {
-            end -= 1;
-        }
-        end
-    };
-    let mut out = String::new();
-    let mut arg_counter = 0u32;
-    let mut rest = template;
-    while !rest.is_empty() {
-        let Some(open) = rest.find('{') else {
-            out.push_str(rest);
-            break;
-        };
-        out.push_str(&rest[..open]);
-        let after = &rest[open + 1..];
-        if let Some(remainder) = after.strip_prefix('{') {
-            out.push('{');
-            rest = remainder;
-            continue;
-        }
-        // An unmatched trailing brace turns the remainder into the spec;
-        // the closing brace only prints when it was actually found.
-        let (spec, terminated) = match after.find('}') {
-            Some(close) => (&after[..close], true),
-            None => (after, false),
-        };
-        rest = after.find('}').map_or("", |close| &after[close + 1..]);
-        if spec.len() == 1 {
-            match spec.as_bytes()[0] {
-                // {-} stops the whole expansion; the TTY reset still closes.
-                b'-' => break,
-                b'#' => {
-                    if !pipe {
-                        out.push_str("\x1b[m");
-                    }
-                    continue;
-                },
-                // Conditionals defer to the format engine: an unmatched
-                // end token prints verbatim, a matched one skips.
-                b'?' | b'/' => {
-                    out.push('{');
-                    out.push_str(spec);
-                    if terminated {
-                        out.push('}');
-                    }
-                    continue;
-                },
-                // Everything else, including single digits, is a
-                // positional arg lookup.
-                _ => {},
-            }
-        }
-        if let Some(color) = spec.strip_prefix('#') {
-            if !pipe {
-                out.push_str("\x1b[");
-                out.push_str(&colors.parse_color_deferred(color, &instance.pending_exit));
-                out.push('m');
-            }
-            continue;
-        }
-        if spec.starts_with('$') || spec.starts_with('?') || spec.starts_with('/') {
-            // Constants/env vars and conditionals defer to the format
-            // engine; upstream would resolve or skip them.
-            out.push('{');
-            out.push_str(spec);
-            if terminated {
-                out.push('}');
-            }
-            continue;
-        }
-        let invalid = |out: &mut String| {
-            out.push('{');
-            out.push_str(spec);
-            if terminated {
-                out.push('}');
-            }
-        };
-        let sep_at = spec.find([':', '<', '>', '|', '~']);
-        let (head, sep, tail) = match sep_at {
-            Some(at) => (&spec[..at], spec.as_bytes()[at], Some(&spec[at + 1..])),
-            None => (spec, 0, None),
-        };
-        let resolved = if head.is_empty() {
-            arg_counter += 1;
-            positional(arg_counter)
-        } else if head.as_bytes()[0].is_ascii_digit() {
-            // strtoul's whole-string parse and tail check; "0" falls back
-            // to the sequential counter.
-            match head.parse::<u32>() {
-                Ok(0) => {
-                    arg_counter += 1;
-                    positional(arg_counter)
-                },
-                Ok(n) if n <= num_args => positional(n),
-                _ => None,
-            }
-        } else if head.as_bytes()[0].is_ascii_alphabetic() {
-            named(head)
-        } else {
-            None
-        };
-        let Some(value) = resolved else {
-            invalid(&mut out);
-            continue;
-        };
-        let Some(sep) = (sep != 0).then_some(sep) else {
-            out.push_str(&value);
-            continue;
-        };
-        let Some(tail) = tail else {
-            out.push_str(&value);
-            continue;
-        };
-        if sep == b'~' {
-            // Substring ranges are the format engine's skipAnsiEscape
-            // work; they stay verbatim here.
-            invalid(&mut out);
-            continue;
-        }
-        let Some(mut trunc) = str_to_i32(tail) else {
-            invalid(&mut out);
-            continue;
-        };
-        let mut ellipsis = false;
-        if trunc < 0 {
-            ellipsis = true;
-            trunc = if trunc == i32::MIN { i32::MAX } else { -trunc };
-        }
-        let trunc = trunc as u32;
-        let value_len = value.len() as u32;
-        if value_len == trunc {
-            out.push_str(&value);
-        } else if value_len > trunc {
-            let end = if sep == b':' {
-                let end = byte_floor(&value, trunc as usize);
-                value[..end].trim_end_matches(|c: char| c.is_ascii_whitespace()).len()
-            } else {
-                byte_floor(&value, if ellipsis { trunc.saturating_sub(1) } else { trunc } as usize)
-            };
-            out.push_str(&value[..end]);
-            if ellipsis {
-                out.push('…');
-            }
-        } else if sep == b':' {
-            out.push_str(&value);
-        } else {
-            let padding = trunc - value_len;
-            if sep == b'<' {
-                out.push_str(&value);
-                out.push_str(&" ".repeat(padding as usize));
-            } else if sep == b'>' {
-                out.push_str(&" ".repeat(padding as usize));
-                out.push_str(&value);
-            } else {
-                let half = padding / 2;
-                out.push_str(&" ".repeat(half as usize));
-                out.push_str(&value);
-                out.push_str(&" ".repeat((padding - half) as usize));
-            }
-        }
-    }
-    if !pipe {
-        out.push_str("\x1b[m");
-    }
-    out
+    crate::format_args::parse_format_string(template, &list, positional_len, &env)
 }
 
 /// Upstream error sites that pass FF_PRINT_TYPE_NO_CUSTOM_KEY: their
