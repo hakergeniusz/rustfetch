@@ -34,6 +34,10 @@ const COMMAND_HELP: &[(&str, &str)] = &[
         "Specify the config file or preset to load\n     Usage: -c, --config <config>\n    Remark: The file is searched in the order shown by \"fastfetch --list-config-paths\". Use \"-\" to read config from stdin, or \"none\" to disable further config loading. See also https://github.com/fastfetch-cli/fastfetch/wiki/Configuration for details\n",
     ),
     (
+        "gen-config",
+        "Interactively generate a config file at the specified path\n     Usage: --gen-config <?path>\n    Remark: Opens an interactive configuration UI when run in a terminal. Falls back to non-interactive generation when env-var `$NO_COLOR` is set or stdin/stdout is not a TTY. Defaults to \"~/.config/fastfetch/config.jsonc\". Prints the generated config if <path> is \"-\"\n",
+    ),
+    (
         "structure",
         "Set the structure of the fetch\n     Usage: -s, --structure <structure>\n   Default: Title:Separator:OS:Host:Kernel:Uptime:Packages:Shell:Display:DE:WM:WMTheme:Theme:Icons:Font:Cursor:Terminal:TerminalFont:CPU:GPU:Memory:Swap:Disk:LocalIp:Battery:PowerAdapter:Locale:Break:Colors\n    Remark: Must be a colon-separated list of module keys. Use \"fastfetch --list-modules\" to see available options\n",
     ),
@@ -56,9 +60,31 @@ const COMMAND_HELP: &[(&str, &str)] = &[
     ("list-modules", "List available modules\n     Usage: --list-modules\n"),
 ];
 
+/// fastfetch.c's FFdata fields that belong to the command pass but have
+/// nowhere to live on `Cli`: a struct literal in another module's tests
+/// constructs Cli field by field, so the generation state is kept here in
+/// thread-local storage (one argv walk per thread).
+#[derive(Clone, Default)]
+pub(crate) struct GenConfigState {
+    /// The `--gen-config` path, or None when the flag was absent.
+    pub(crate) path: Option<String>,
+    /// The `--structure-disabled` token list.
+    pub(crate) structure_disabled: Option<String>,
+}
+
+thread_local! {
+    static GEN_CONFIG_STATE: std::cell::RefCell<GenConfigState> = std::cell::RefCell::new(GenConfigState::default());
+}
+
+/// The state produced by the most recent `Cli::parse_from` on this thread.
+pub(crate) fn gen_config_state() -> GenConfigState {
+    GEN_CONFIG_STATE.with(|state| state.borrow().clone())
+}
+
 pub struct Cli {
     /// `-s/--structure`: the colon-separated module list, kept verbatim.
     pub structure: Option<String>,
+
     /// Logo state (upstream's FFLogoType + source): `-l none` sets the
     /// NONE type, `-l small` the SMALL type, any other value only sets
     /// the source; later flags overwrite only their own part. The
@@ -123,6 +149,7 @@ pub struct Cli {
     /// monotonically (upstream's enableJsonOutput); nothing disables it,
     /// so `--format json -j false` still prints JSON.
     pub format_json: bool,
+
     /// `--player-name <str>`: the media module's explicit MPRIS bus.
     pub player_name: Option<String>,
     /// `--disable-linewrap <?bool>`: `\e[?7l` before output, `\e[?7h` at
@@ -225,6 +252,8 @@ impl Cli {
     /// tokens and skip consumed values.
     pub fn parse_from(argv: &[&str]) -> Cli {
         let mut handled = vec![false; argv.len()];
+        let mut gen_config_path: Option<String> = None;
+        let mut structure_disabled: Option<String> = None;
         let mut cli = Self {
             structure: None,
             logo_none: false,
@@ -420,9 +449,28 @@ impl Cli {
                         handled[i + 1] = true;
                     }
                 },
+                "--gen-config" => {
+                    // fastfetch.c's genConfigCommon/generateConfigFile:
+                    // a second --gen-config or a previously enabled JSON
+                    // document both hit the duplicate-flag error.
+                    if gen_config_path.is_some() || cli.format_json {
+                        gen_config_duplicate();
+                    }
+                    gen_config_path = Some(match value {
+                        Some(value) => value.to_string(),
+                        None => default_gen_config_path(),
+                    });
+                    handled[i] = true;
+                    if value_was_consumed(argv, i) {
+                        handled[i + 1] = true;
+                    }
+                },
                 "-j" | "--json" => {
                     // enableJsonOutput only: `-j false` is a no-op.
                     if parse_boolean(value) {
+                        if gen_config_path.is_some() {
+                            gen_config_duplicate();
+                        }
                         cli.format_json = true;
                     }
                     handled[i] = true;
@@ -432,6 +480,9 @@ impl Cli {
                 },
                 "--format" => {
                     if format_enum(key, value) {
+                        if gen_config_path.is_some() {
+                            gen_config_duplicate();
+                        }
                         cli.format_json = true;
                     }
                     handled[i] = true;
@@ -478,7 +529,11 @@ impl Cli {
         // two argv passes, so the option pass sees the config's colors
         // and the PROP color words resolve against them (NO_CONFIG and
         // the already-loaded gate are checked inside).
-        if cli.config.is_none() {
+        // parseConfigFiles (fastfetch.c:737) returns immediately when
+        // data->genConfigPath is set: config generation never auto-loads a
+        // config from the config dirs, even though an explicit -c in the
+        // command pass has already been parsed.
+        if cli.config.is_none() && !gen_config_path.as_deref().is_some_and(|path| !path.is_empty()) {
             cli.config = config::load_automatic(cli.config_loaded);
         }
 
@@ -501,6 +556,7 @@ impl Cli {
             let value = next_value(argv, i);
             match key.to_ascii_lowercase().as_str() {
                 "-s" | "--structure" => cli.structure = Some(parse_string(key, value)),
+                "--structure-disabled" => structure_disabled = Some(parse_string(key, value)),
                 "-l" | "--logo" => {
                     let Some(value) = value else {
                         usage_exit(key, "<none|small|logo-source>", 477);
@@ -901,38 +957,51 @@ impl Cli {
             i += 1;
         }
 
+        GEN_CONFIG_STATE.with(|state| {
+            *state.borrow_mut() = GenConfigState {
+                path: gen_config_path,
+                structure_disabled,
+            };
+        });
         cli
     }
+}
+
+/// modules.c registry order, which ffParseModuleOptions' prefix scan and
+/// ffMigrateCommandOptionToJsonc's exact-name lookup both follow.
+const MODULES: &[&str] = &[
+    "Battery", "BIOS", "Bluetooth", "BluetoothRadio", "Board", "Bootmgr", "Break",
+    "Brightness", "Btrfs",
+    "Camera", "Chassis", "Codec", "Command", "Colors", "CPU", "CPUCache", "CPUUsage",
+    "Cursor", "Custom",
+    "DateTime", "DE", "Display", "Disk", "DiskIO", "DNS",
+    "Editor", "Font", "Gamepad", "GPU", "Host", "Icons", "InitSystem",
+    "Kernel", "Keyboard",
+    "LM", "Loadavg", "Locale", "LocalIp", "Logo",
+    "Media", "Memory", "Monitor", "Mouse",
+    "NetIO",
+    "OpenCL", "OpenGL", "OS",
+    "Packages", "PhysicalDisk", "PhysicalMemory", "Player", "PowerAdapter", "Processes",
+    "PublicIp",
+    "Separator", "Shell", "Sound", "Swap",
+    "Terminal", "TerminalFont", "TerminalSize", "TerminalTheme", "Title", "Top", "Theme",
+    "TPM",
+    "Uptime", "Users",
+    "Version", "Vulkan",
+    "Wallpaper", "Weather", "WM", "Wifi", "WMTheme",
+    "Zpool",
+];
+
+/// parseStructureCommand's exact, case-insensitive module-name match:
+/// returns the registered spelling, which genJsonConfig lowercases.
+pub(crate) fn canonical_module_name(token: &str) -> Option<&'static str> {
+    MODULES.iter().copied().find(|name| name.eq_ignore_ascii_case(token))
 }
 
 /// commandoption.c ffParseModuleOptions: the per-module CLI options were
 /// removed; a key whose prefix names a registered module is rejected with
 /// the JSON-config migration hint instead of "unknown option".
 fn parse_module_options(key: &str, value: Option<&str>) -> bool {
-    const MODULES: &[&str] = &[
-        // modules.c registry order, which the prefix scan follows
-        "Battery", "BIOS", "Bluetooth", "BluetoothRadio", "Board", "Bootmgr", "Break",
-        "Brightness", "Btrfs",
-        "Camera", "Chassis", "Codec", "Command", "Colors", "CPU", "CPUCache", "CPUUsage",
-        "Cursor", "Custom",
-        "DateTime", "DE", "Display", "Disk", "DiskIO", "DNS",
-        "Editor", "Font", "Gamepad", "GPU", "Host", "Icons", "InitSystem",
-        "Kernel", "Keyboard",
-        "LM", "Loadavg", "Locale", "LocalIp", "Logo",
-        "Media", "Memory", "Monitor", "Mouse",
-        "NetIO",
-        "OpenCL", "OpenGL", "OS",
-        "Packages", "PhysicalDisk", "PhysicalMemory", "Player", "PowerAdapter", "Processes",
-        "PublicIp",
-        "Separator", "Shell", "Sound", "Swap",
-        "Terminal", "TerminalFont", "TerminalSize", "TerminalTheme", "Title", "Top", "Theme",
-        "TPM",
-        "Uptime", "Users",
-        "Version", "Vulkan",
-        "Wallpaper", "Weather", "WM", "Wifi", "WMTheme",
-        "Zpool",
-    ];
-
     let bytes = key.as_bytes();
     if !(key.starts_with("--") && bytes.get(2).is_some_and(|b| b.is_ascii_alphabetic())) {
         return false;
@@ -1041,6 +1110,24 @@ fn parse_boolean(value: Option<&str>) -> bool {
 fn usage_exit(key: &str, message: &str, code: i32) -> ! {
     eprintln!("Error: usage: {key} {message}");
     std::process::exit(code)
+}
+
+/// fastfetch.c's "duplicated `--gen-config` or `--format json` flags"
+/// (exit(477), i.e. 221 in the shell).
+fn gen_config_duplicate() -> ! {
+    eprintln!("Error: duplicated `--gen-config` or `--format json` flags found");
+    std::process::exit(477)
+}
+
+/// setupGenConfigPath with no path: configDirs[0] + "fastfetch/config.jsonc".
+fn default_gen_config_path() -> String {
+    match crate::config::config_dirs().first() {
+        Some(dir) => format!("{dir}fastfetch/config.jsonc"),
+        None => {
+            eprintln!("Error: No config directory found to generate config file in. Use --gen-config <path> to specify a path");
+            std::process::exit(477)
+        },
+    }
 }
 
 /// ffOptionParseString: the `-s` value.

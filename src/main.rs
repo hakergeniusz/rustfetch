@@ -8,6 +8,7 @@ mod ffont;
 mod dbus;
 mod format;
 mod format_args;
+mod genconfig;
 mod instance;
 mod json;
 mod jsonc;
@@ -69,12 +70,20 @@ extern "C" fn exit_signal_handler(_signal: libc::c_int) {
 
 fn main() {
     let mut cli = cli::Cli::parse();
+    let gen_state = cli::gen_config_state();
 
     // main()'s guard before the config files load: the watch loop cannot
     // share stdout with the JSON document writer.
-    if cli.watch_interval > 0 && cli.format_json {
+    if cli.watch_interval > 0 && (cli.format_json || gen_state.path.is_some()) {
         eprintln!("Error: --dynamic-interval cannot be used with --json");
         std::process::exit(400);
+    }
+
+    // fastfetch.c:929 — the gen-config branch of main() runs after both
+    // argv passes but before run()/ffStart, so there is no console setup
+    // and no module detection for a generated config.
+    if genconfig::generate_if_requested(&cli, &gen_state) {
+        return;
     }
 
     // ffStart installs these for every run; without a watch interval the
@@ -108,6 +117,13 @@ fn main() {
     {
         structure_given = true;
         structure_modules.extend(structure.split(':').map(str::to_owned));
+    }
+    // ffPrintCommandOption skips disabled tokens before parsing them; the
+    // same gate is applied in ffMigrateCommandOptionToJsonc (gen-config).
+    if let Some(disabled) = gen_state.structure_disabled.as_deref() {
+        structure_modules.retain(|module| {
+            !disabled.split(':').any(|name| name.eq_ignore_ascii_case(module))
+        });
     }
 
     // The command module's text only exists in the JSON config, which the
