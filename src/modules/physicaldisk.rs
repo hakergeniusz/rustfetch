@@ -265,7 +265,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             };
             let read_only_type = if dev.type_bits & READONLY != 0 { "Read-only" } else { "" };
 
-            let mut value = util::fmt_bytes(dev.size);
+            let mut value = String::new();
+            crate::format::size_append_num(&mut value, dev.size, &instance.display_format);
             if !physical_type.is_empty() || !removable_type.is_empty() || !read_only_type.is_empty()
             {
                 value.push_str(" [");

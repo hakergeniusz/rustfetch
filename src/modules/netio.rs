@@ -443,13 +443,15 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             } else {
                 inf.name.clone()
             };
+            let mut value = String::new();
+            let df = &instance.display_format;
+            crate::format::size_append_num(&mut value, inf.rx_bytes, df);
+            value.push_str("/s (IN) - ");
+            crate::format::size_append_num(&mut value, inf.tx_bytes, df);
+            value.push_str("/s (OUT)");
             Row::new(
                 &format!("{} ({name})", instance.display_name("netio")),
-                format!(
-                    "{}/s (IN) - {}/s (OUT)",
-                    util::fmt_bytes(inf.rx_bytes),
-                    util::fmt_bytes(inf.tx_bytes)
-                ),
+                value,
             )
         })
         .collect()

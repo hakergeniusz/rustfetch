@@ -381,7 +381,7 @@ fn detect_cpu_temp(options: &CpuOptions) -> Option<f64> {
 }
 
 /// The module's text value: "name (coreTypes|cores) @ freq - temp".
-fn format_value(cpu: &CpuResult, options: &CpuOptions, color: bool) -> String {
+fn format_value(cpu: &CpuResult, options: &CpuOptions, color: bool, df: &crate::format::DisplayFormat) -> String {
     let mut value = String::new();
     if !cpu.name.is_empty() {
         value.push_str(&cpu.name);
@@ -411,7 +411,7 @@ fn format_value(cpu: &CpuResult, options: &CpuOptions, color: bool) -> String {
     let freq = if cpu.frequency_max > 0 { cpu.frequency_max } else { cpu.frequency_base };
     if freq > 0 {
         value.push_str(" @ ");
-        value.push_str(&util::fmt_freq(freq));
+        crate::format::freq_append_num(&mut value, freq, df);
     }
 
     if let Some(temperature) = cpu.temperature {
@@ -433,7 +433,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     if cpu.vendor.is_empty() && cpu.name.is_empty() && cpu.cores_online <= 1 {
         return Vec::new();
     }
-    vec![Row::new(instance.display_name("cpu"), format_value(&cpu, &options, instance.color))]
+    vec![Row::new(instance.display_name("cpu"), format_value(&cpu, &options, instance.color, &instance.display_format))]
 }
 
 /// ffGenerateCPUJsonResult.

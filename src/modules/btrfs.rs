@@ -203,12 +203,16 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             } else {
                 0.0
             };
+            let mut used_pretty = String::new();
+            crate::format::size_append_num(&mut used_pretty, used, &instance.display_format);
+            let mut total_pretty = String::new();
+            crate::format::size_append_num(&mut total_pretty, total, &instance.display_format);
             Row::new(
                 &key,
                 format!(
                     "{} / {} ({}, {} allocated)",
-                    util::fmt_bytes(used),
-                    util::fmt_bytes(total),
+                    used_pretty,
+                    total_pretty,
                     colorize_percent(used_pct, 50, 80, instance.color),
                     colorize_percent(allocated_pct, 50, 80, instance.color),
                 ),

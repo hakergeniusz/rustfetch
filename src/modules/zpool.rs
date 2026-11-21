@@ -217,7 +217,7 @@ fn detect() -> Result<Vec<ZpoolItem>, &'static str> {
 
 /// The default-format value for one pool: the used/total percents, the
 /// fragmentation (or "-" when the pool reports none) and the state.
-fn item_value(item: &ZpoolItem, color: bool) -> String {
+fn item_value(item: &ZpoolItem, color: bool, df: &crate::format::DisplayFormat) -> String {
     let used_percent = if item.total > 0 {
         item.used as f64 / item.total as f64 * 100.0
     } else {
@@ -228,7 +228,11 @@ fn item_value(item: &ZpoolItem, color: bool) -> String {
     } else {
         0.0
     };
-    let mut value = format!("{} / {} (", util::fmt_bytes(item.used), util::fmt_bytes(item.total));
+    let mut used_pretty = String::new();
+    crate::format::size_append_num(&mut used_pretty, item.used, df);
+    let mut total_pretty = String::new();
+    crate::format::size_append_num(&mut total_pretty, item.total, df);
+    let mut value = format!("{} / {} (", used_pretty, total_pretty);
     value.push_str(&colorize_percent(used_percent, 50, 80, color));
     value.push_str(", ");
     value.push_str(&colorize_percent(allocated_percent, 50, 80, color));
@@ -267,7 +271,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             if !single {
                 key.push_str(&format!(" {}", index + 1));
             }
-            Row::new(&key, item_value(&item, instance.color))
+            Row::new(&key, item_value(&item, instance.color, &instance.display_format))
         })
         .collect()
 }
@@ -326,7 +330,7 @@ mod tests {
             read_only: false,
         };
         assert_eq!(
-            item_value(&item, false),
+            item_value(&item, false, &Default::default()),
             "500.00 GiB / 1000.00 GiB (50%, 45% allocated, 12% frag) - ONLINE"
         );
         let read_only = ZpoolItem {
@@ -336,7 +340,7 @@ mod tests {
             ..item
         };
         assert_eq!(
-            item_value(&read_only, false),
+            item_value(&read_only, false, &Default::default()),
             "500.00 GiB / 1000.00 GiB (50%, 45% allocated, - frag) - DEGRADED [Read-only]"
         );
     }

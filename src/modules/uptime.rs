@@ -51,7 +51,9 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     };
     // The module prints ffDurationAppendNum((uptime + 500) / 1000).
     let total_seconds = (uptime.uptime + 500) / 1000;
-    vec![Row::new(instance.display_name("uptime"), util::duration_parts(total_seconds).join(", "))]
+    let mut value = String::new();
+    crate::format::duration_append_num(&mut value, total_seconds, &instance.display_format);
+    vec![Row::new(instance.display_name("uptime"), value)]
 }
 
 /// ffGenerateUptimeJsonResult: raw milliseconds plus the formatted boot

@@ -173,13 +173,15 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             } else {
                 dev.name.clone()
             };
+            let mut value = String::new();
+            let df = &instance.display_format;
+            crate::format::size_append_num(&mut value, dev.bytes_read, df);
+            value.push_str("/s (R) - ");
+            crate::format::size_append_num(&mut value, dev.bytes_written, df);
+            value.push_str("/s (W)");
             Row::new(
                 &format!("{} ({key_name})", instance.display_name("diskio")),
-                format!(
-                    "{}/s (R) - {}/s (W)",
-                    util::fmt_bytes(dev.bytes_read),
-                    util::fmt_bytes(dev.bytes_written)
-                ),
+                value,
             )
         })
         .collect()

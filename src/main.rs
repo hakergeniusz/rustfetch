@@ -6,6 +6,7 @@ mod cpu_tables;
 mod cpu_x86;
 mod ffont;
 mod dbus;
+mod format;
 mod instance;
 mod json;
 mod jsonc;
@@ -219,6 +220,36 @@ fn main() {
         key_type: cli.key_type.or(cfg.and_then(|config| config.key_type)).unwrap_or(instance::KEY_TYPE_STRING),
         key_language: cli.key_language.or(cfg.and_then(|config| config.key_language)),
     };
+    // The FFOptionsDisplay format half: the config sub-objects built one
+    // struct in document order; each command-line flag overwrites its own
+    // field afterward (upstream's config pass then command-line pass).
+    let mut display_format = cfg
+        .and_then(|config| config.display_format.clone())
+        .unwrap_or_default();
+    if let Some(abbreviated) = cli.duration_abbreviation {
+        display_format.duration_abbreviation = abbreviated;
+    }
+    if let Some(space) = cli.duration_space_before_unit {
+        display_format.duration_space_before_unit = space;
+    }
+    if let Some(prefix) = cli.size_binary_prefix {
+        display_format.size_binary_prefix = prefix;
+    }
+    if let Some(ndigits) = cli.size_ndigits {
+        display_format.size_ndigits = ndigits as u8;
+    }
+    if let Some(max_prefix) = cli.size_max_prefix {
+        display_format.size_max_prefix = max_prefix;
+    }
+    if let Some(space) = cli.size_space_before_unit {
+        display_format.size_space_before_unit = space;
+    }
+    if let Some(ndigits) = cli.freq_ndigits {
+        display_format.freq_ndigits = ndigits as i8;
+    }
+    if let Some(space) = cli.freq_space_before_unit {
+        display_format.freq_space_before_unit = space;
+    }
     let instance = instance::Instance::new(
         &cli,
         config.as_ref().is_some_and(|config| config.pipe),
@@ -228,6 +259,7 @@ fn main() {
         disable_linewrap,
         hide_cursor,
         display,
+        display_format,
         logo_options,
         logo_color_overrides.leak(),
     );

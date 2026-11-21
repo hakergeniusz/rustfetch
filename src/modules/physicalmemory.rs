@@ -8,7 +8,6 @@ use crate::{
     json::{Json, JsonOutcome},
     modules::Row,
     smbios::SmbiosTable,
-    util,
 };
 
 const FF_SMBIOS_TYPE_MEMORY_DEVICE: u8 = 17;
@@ -285,8 +284,9 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 format!("{} {index}", instance.display_name("physicalmemory"))
             };
             let mut value = String::new();
+            let df = &instance.display_format;
             if device.installed {
-                value.push_str(&util::fmt_bytes(device.size));
+                crate::format::size_append_num(&mut value, device.size, df);
                 value.push_str(" - ");
                 value.push_str(&device.type_);
                 if device.max_speed > 0 {

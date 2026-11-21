@@ -245,7 +245,7 @@ fn status_texts(status: u8) -> Vec<&'static str> {
 
 /// printBattery's default format for one battery; the USB and wireless
 /// bits are unreachable on Linux detection but kept for parity.
-fn item_value(battery: &BatteryResult, options: &BatteryOptions, color: bool) -> String {
+fn item_value(battery: &BatteryResult, options: &BatteryOptions, color: bool, df: &crate::format::DisplayFormat) -> String {
     let mut value = String::new();
     if battery.capacity >= 0.0 {
         // ffPercentAppendNum with the battery's { green: 50, yellow: 20 }
@@ -253,7 +253,11 @@ fn item_value(battery: &BatteryResult, options: &BatteryOptions, color: bool) ->
         value.push_str(&super::colorize_percent(battery.capacity, 50, 20, color));
         if battery.time_remaining > 0 {
             value.push_str(" (");
-            value.push_str(&util::duration_parts(battery.time_remaining as u32 as u64).join(", "));
+            crate::format::duration_append_num(
+                &mut value,
+                battery.time_remaining as u32 as u64,
+                df,
+            );
             value.push_str(" remaining)");
         }
     }
@@ -302,7 +306,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             } else {
                 format!("{} ({})", instance.display_name("battery"), battery.model_name)
             };
-            Row::new(&key, item_value(battery, &options, instance.color))
+            Row::new(&key, item_value(battery, &options, instance.color, &instance.display_format))
         })
         .collect()
 }
@@ -389,16 +393,16 @@ mod tests {
         let options = super::BatteryOptions { temp: true, temp_range: super::super::TempRange::default() };
         let mut hot = battery(STATUS_DISCHARGING, 85.0, -1);
         hot.temperature = 95.5;
-        assert_eq!(item_value(&hot, &options, false), "85% [Discharging] - 95.5°C");
+        assert_eq!(item_value(&hot, &options, false, &Default::default()), "85% [Discharging] - 95.5°C");
         // The capacity block prints even when no status bit is recognized.
         hot.status = 0;
-        assert_eq!(item_value(&hot, &options, false), "85% - 95.5°C");
+        assert_eq!(item_value(&hot, &options, false, &Default::default()), "85% - 95.5°C");
         // A battery with no other info prints the bare temperature.
         hot.capacity = -1.0;
-        assert_eq!(item_value(&hot, &options, false), "95.5°C");
+        assert_eq!(item_value(&hot, &options, false, &Default::default()), "95.5°C");
         // The unset sentinel prints nothing, even with temp enabled.
         let cold = battery(0, 50.0, -1);
-        assert_eq!(item_value(&cold, &options, false), "50%");
+        assert_eq!(item_value(&cold, &options, false, &Default::default()), "50%");
     }
 
     #[test]
@@ -417,15 +421,15 @@ mod tests {
         let options = super::BatteryOptions { temp: false, temp_range: super::super::TempRange::default() };
         // A discharging battery with a known time remaining.
         assert_eq!(
-            item_value(&battery(STATUS_DISCHARGING, 85.0, 95_400), &options, false),
+            item_value(&battery(STATUS_DISCHARGING, 85.0, 95_400), &options, false, &Default::default()),
             "85% (1 day, 2 hours, 30 mins remaining) [Discharging]"
         );
         // A full battery has no status bits, so no brackets print.
-        assert_eq!(item_value(&battery(0, 100.0, -1), &options, false), "100%");
+        assert_eq!(item_value(&battery(0, 100.0, -1), &options, false, &Default::default()), "100%");
         // The status text alone still prints, without brackets (capacity 0
         // still passes the capacity >= 0 gate).
         assert_eq!(
-            item_value(&battery(STATUS_AC_CONNECTED, 0.0, -1), &options, false),
+            item_value(&battery(STATUS_AC_CONNECTED, 0.0, -1), &options, false, &Default::default()),
             "0% [AC Connected]"
         );
     }

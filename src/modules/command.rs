@@ -119,6 +119,14 @@ mod tests {
         crate::instance::Instance::new(
             &crate::cli::Cli {
                 key_language: None,
+                duration_abbreviation: None,
+                duration_space_before_unit: None,
+                size_binary_prefix: None,
+                size_ndigits: None,
+                size_max_prefix: None,
+                size_space_before_unit: None,
+                freq_ndigits: None,
+                freq_space_before_unit: None,
                 logo_position: None,
                 structure: None,
                 logo_none: false,
@@ -166,6 +174,7 @@ mod tests {
             false,
             false,
             crate::instance::DisplaySurface::default(),
+            Default::default(),
             crate::logo::LogoOptions::default(),
             &[],
         )

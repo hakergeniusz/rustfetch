@@ -595,7 +595,7 @@ pub fn detect(options: &GpuOptions) -> Result<Vec<GpuResult>, &'static str> {
 
 /// The text value: "{vendor} {name}", the vendor dropped when the name
 /// already starts with it, plus the temp/memory blocks and the [type] tag.
-fn item_value(gpu: &GpuResult, range: super::TempRange, color: bool) -> String {
+fn item_value(gpu: &GpuResult, range: super::TempRange, color: bool, df: &crate::format::DisplayFormat) -> String {
     let mut value = String::new();
     if !gpu.vendor.is_empty() && !gpu.name.to_ascii_lowercase().starts_with(&gpu.vendor.to_ascii_lowercase()) {
         value.push_str(&gpu.vendor);
@@ -606,7 +606,8 @@ fn item_value(gpu: &GpuResult, range: super::TempRange, color: bool) -> String {
         value.push_str(&format!(" ({core_count})"));
     }
     if gpu.frequency > 0 {
-        value.push_str(&format!(" @ {}", util::fmt_freq(gpu.frequency)));
+        value.push_str(" @ ");
+        crate::format::freq_append_num(&mut value, gpu.frequency, df);
     }
     if let Some(temperature) = gpu.temperature {
         value.push_str(" - ");
@@ -618,10 +619,10 @@ fn item_value(gpu: &GpuResult, range: super::TempRange, color: bool) -> String {
     {
         value.push_str(" (");
         if let Some(used) = gpu.dedicated_used {
-            value.push_str(&util::fmt_bytes(used));
+            crate::format::size_append_num(&mut value, used, df);
             value.push_str(" / ");
         }
-        value.push_str(&util::fmt_bytes(total));
+        crate::format::size_append_num(&mut value, total, df);
         if let Some(used) = gpu.dedicated_used {
             let percent = used as f64 / total as f64 * 100.0;
             value.push_str(", ");
@@ -652,7 +653,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             } else {
                 format!("{} {index}", instance.display_name("gpu"))
             };
-            Row::new(&key, item_value(gpu, options.temp_range, instance.color)).with_index(index as u32)
+            Row::new(&key, item_value(gpu, options.temp_range, instance.color, &instance.display_format))
+                .with_index(index as u32)
         })
         .collect()
 }

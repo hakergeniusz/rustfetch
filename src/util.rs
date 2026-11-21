@@ -193,32 +193,6 @@ pub fn data_dirs() -> Vec<std::path::PathBuf> {
     dirs
 }
 
-/// ffSizeAppendNum with fastfetch's defaults (IEC prefixes, 2 digits with
-/// trailing zeros kept, at most YiB): divide until below the base, then
-/// format via yyjson's fixed precision, which rounds the exact decimal
-/// expansion half away from zero (`mod >= p10 / 2`) — unlike Rust's
-/// ties-to-even `{:.2}` (glibc %.*f matches Rust here, but sizes go
-/// through ffStrbufAppendDouble).
-pub fn fmt_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 9] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
-
-    let mut size = bytes as f64;
-    let mut counter = 0usize;
-    while size >= 1024.0 && counter < 8 {
-        size /= 1024.0;
-        counter += 1;
-    }
-    if counter == 0 {
-        return format!("{bytes} B");
-    }
-    // scaled stays below 102400, so the multiply, truncation and the
-    // half-way compare are exact for every dyadic byte count.
-    let scaled = size * 100.0;
-    let truncated = scaled.trunc();
-    let units = truncated as u64 + if scaled - truncated >= 0.5 { 1 } else { 0 };
-    format!("{}.{:02} {}", units / 100, units % 100, UNITS[counter])
-}
-
 /// Unquotes a gdbus-rendered string, undoing the \' and \\ escapes the
 /// renderer emits; non-strings pass through.
 pub fn unquote(text: &str) -> String {
@@ -337,50 +311,6 @@ pub fn time_to_full_str(msec: u64) -> String {
     )
 }
 
-/// ffDurationAppendNum: "<N days, [N hours,] N mins>" for a duration in
-/// whole seconds. Seconds fold into minutes with a >= 30 bump, zero tails
-/// are omitted, and 100+ days carry the "(!)" marker. Sub-minute
-/// durations print "<N seconds>".
-pub fn duration_parts(total_seconds: u64) -> Vec<String> {
-    if total_seconds < 60 {
-        return vec![plural(total_seconds, "second")];
-    }
-
-    let mut minutes_total = total_seconds / 60;
-    if total_seconds % 60 >= 30 {
-        minutes_total += 1;
-    }
-    let days = minutes_total / (60 * 24);
-    let hours = (minutes_total / 60) % 24;
-    let minutes = minutes_total % 60;
-
-    let mut parts = Vec::new();
-    if days > 0 {
-        let mut text = plural(days, "day");
-        if days >= 100 {
-            text.push_str("(!)");
-        }
-        parts.push(text);
-    }
-    if hours > 0 {
-        parts.push(plural(hours, "hour"));
-    }
-    if minutes > 0 {
-        parts.push(plural(minutes, "min"));
-    }
-    parts
-}
-
-fn plural(count: u64, unit: &str) -> String {
-    if count == 1 {
-        format!("{count} {unit}")
-    } else {
-        format!("{count} {unit}s")
-    }
-}
-
-
-
 /// The kernel escapes spaces and control characters in /proc device names
 /// as \NNN octal triples; getmntent decodes them the same way.
 pub fn decode_octal_escapes(name: &str) -> String {
@@ -421,16 +351,6 @@ pub fn glob_match(pattern: &str, value: &str) -> bool {
         }
     }
     inner(pattern.as_bytes(), value.as_bytes())
-}
-
-/// ffFreqAppendNum with the display.freq defaults: mhz/1000 with 2 decimal
-/// digits and trailing zeros kept ("4.40 GHz", "2.10 GHz"); empty when 0.
-pub fn fmt_freq(mhz: u32) -> String {
-    if mhz == 0 {
-        return String::new();
-    }
-    let ghz = mhz as f64 / 1000.0;
-    format!("{ghz:.2} GHz")
 }
 
 /// ffSuppressIO (io_unix.c): point stdout and stderr at /dev/null so noisy
@@ -514,30 +434,6 @@ mod tests {
     }
 
     #[test]
-    fn fmt_bytes_units() {
-        assert_eq!(fmt_bytes(999), "999 B");
-        assert_eq!(fmt_bytes(1024), "1.00 KiB");
-        assert_eq!(fmt_bytes(1024 * 1024), "1.00 MiB");
-        assert_eq!(fmt_bytes(1024 * 1024 * 1024), "1.00 GiB");
-        assert_eq!(fmt_bytes(1024 * 1024 * 999), "999.00 MiB");
-        assert_eq!(fmt_bytes(1024 * 1024 * 1024 * 58), "58.00 GiB");
-        assert_eq!(fmt_bytes(1024 * 1024 * 1024 * 11 + 125 * 1024 * 1024), "11.12 GiB");
-    }
-
-    #[test]
-    fn fmt_bytes_ties_round_half_up_like_yyjson() {
-        // 14.625 GiB exactly: Rust {:.2} would print 14.62 (ties-to-even),
-        // yyjson rounds the exact tail up.
-        assert_eq!(fmt_bytes(117 * (1 << 27)), "14.63 GiB");
-        // 1.125 KiB exactly: even would be 1.12.
-        assert_eq!(fmt_bytes(1152), "1.13 KiB");
-        // 14.875: both rules agree on 14.88.
-        assert_eq!(fmt_bytes(119 * (1 << 27)), "14.88 GiB");
-        // 999.995 MiB carries over.
-        assert_eq!(fmt_bytes(999 * (1 << 20) + 1023 * 1024), "1000.00 MiB");
-    }
-
-    #[test]
     fn first_line_works() {
         assert_eq!(first_line("one\ntwo\n"), "one");
         assert_eq!(first_line(""), "");
@@ -596,19 +492,4 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap_or_default();
     }
 
-    #[test]
-    fn duration_rounds_like_ffdurationappendnum() {
-        // 54 min 59 s still bumps to "55 mins"; 54 min 29 s does not.
-        assert_eq!(duration_parts(3299).join(", "), "55 mins");
-        assert_eq!(duration_parts(3269).join(", "), "54 mins");
-        assert_eq!(duration_parts(3300).join(", "), "55 mins");
-        // 55 min 30 s bumps into "56 mins".
-        assert_eq!(duration_parts(3330).join(", "), "56 mins");
-        assert_eq!(duration_parts(45).join(", "), "45 seconds");
-        assert_eq!(duration_parts(1).join(", "), "1 second");
-        assert_eq!(duration_parts(90_000).join(", "), "1 day, 1 hour");
-        assert_eq!(duration_parts(95_400).join(", "), "1 day, 2 hours, 30 mins");
-        assert_eq!(duration_parts(8_640_000).join(", "), "100 days(!)");
-        assert_eq!(duration_parts(60).join(", "), "1 min");
-    }
 }

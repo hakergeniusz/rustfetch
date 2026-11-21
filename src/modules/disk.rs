@@ -336,7 +336,7 @@ fn show_types_match(volume_type: u8) -> bool {
 }
 
 /// printDisk's default format for one disk.
-fn item_value(disk: &DiskResult, color: bool) -> String {
+fn item_value(disk: &DiskResult, color: bool, df: &crate::format::DisplayFormat) -> String {
     let bytes_used = disk.bytes_total.saturating_sub(disk.bytes_free);
     let pct = if disk.bytes_total > 0 {
         bytes_used as f64 * 100.0 / disk.bytes_total as f64
@@ -346,12 +346,11 @@ fn item_value(disk: &DiskResult, color: bool) -> String {
 
     let mut value = if disk.bytes_total > 0 {
         // "used / total " then the percentage then a separator space
-        format!(
-            "{} / {} ({}) ",
-            util::fmt_bytes(bytes_used),
-            util::fmt_bytes(disk.bytes_total),
-            colorize_percent(pct, 50, 80, color)
-        )
+        let mut used_pretty = String::new();
+        crate::format::size_append_num(&mut used_pretty, bytes_used, df);
+        let mut total_pretty = String::new();
+        crate::format::size_append_num(&mut total_pretty, disk.bytes_total, df);
+        format!("{} / {} ({}) ", used_pretty, total_pretty, colorize_percent(pct, 50, 80, color))
     } else {
         "Unknown ".to_string()
     };
@@ -377,7 +376,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         .map(|disk| {
             Row::new(
                 &format!("{} ({})", instance.display_name("disk"), disk.mountpoint),
-                item_value(disk, instance.color),
+                item_value(disk, instance.color, &instance.display_format),
             )
         })
         .collect()

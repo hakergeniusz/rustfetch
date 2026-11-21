@@ -150,6 +150,21 @@ pub struct Cli {
     /// missing value auto-detects (upstream wraps nullptr in an empty
     /// FFstrbuf, whose length 0 is the `detected` flag).
     pub key_language: Option<&'static str>,
+    /// `--duration-abbreviation` / `--duration-space-before-unit`: the
+    /// ffDurationAppendNum text toggles.
+    pub duration_abbreviation: Option<bool>,
+    pub duration_space_before_unit: Option<crate::format::SpaceBeforeUnit>,
+    /// `--size-binary-prefix` / `--size-ndigits` (rejects > 9 with exit
+    /// 479) / `--size-max-prefix` / `--size-space-before-unit`: the
+    /// ffSizeAppendNum knobs.
+    pub size_binary_prefix: Option<crate::format::SizeBinaryPrefix>,
+    pub size_ndigits: Option<u32>,
+    pub size_max_prefix: Option<u8>,
+    pub size_space_before_unit: Option<crate::format::SpaceBeforeUnit>,
+    /// `--freq-ndigits` (ffOptionParseInt32, cast to int8_t at the merge)
+    /// / `--freq-space-before-unit`.
+    pub freq_ndigits: Option<i32>,
+    pub freq_space_before_unit: Option<crate::format::SpaceBeforeUnit>,
     /// `--bright-color <?bool>`: the bolt ahead of the key/title colors.
     pub bright_color: Option<bool>,
     /// The config document loaded during the command pass: upstream
@@ -208,6 +223,14 @@ impl Cli {
             key_padding_left: None,
             key_type: None,
             key_language: None,
+            duration_abbreviation: None,
+            duration_space_before_unit: None,
+            size_binary_prefix: None,
+            size_ndigits: None,
+            size_max_prefix: None,
+            size_space_before_unit: None,
+            freq_ndigits: None,
+            freq_space_before_unit: None,
             bright_color: None,
             pipe: None,
             watch_interval: 0,
@@ -637,6 +660,68 @@ impl Cli {
                     state.bright = bright;
                     cli.bright_color = Some(bright);
                 },
+                key if key.to_ascii_lowercase().starts_with("--duration-") => {
+                    let subkey = &key.to_ascii_lowercase()["--duration-".len()..];
+                    match subkey {
+                        "abbreviation" => cli.duration_abbreviation = Some(parse_boolean(value)),
+                        "space-before-unit" => {
+                            cli.duration_space_before_unit = Some(space_before_unit_enum(key, value));
+                        },
+                        _ => {
+                            if !parse_module_options(key, value) {
+                                eprintln!("Error: unknown option: {key}");
+                                std::process::exit(400);
+                            }
+                        },
+                    }
+                },
+                key if key.to_ascii_lowercase().starts_with("--size-") => {
+                    let subkey = &key.to_ascii_lowercase()["--size-".len()..];
+                    match subkey {
+                        "binary-prefix" => {
+                            cli.size_binary_prefix = Some(size_binary_prefix_enum(key, value));
+                        },
+                        "ndigits" => {
+                            let num = parse_uint32(key, value);
+                            if num > 9 {
+                                eprintln!("Error: {key} must be between 0 and 9");
+                                std::process::exit(479);
+                            }
+                            cli.size_ndigits = Some(num);
+                        },
+                        "max-prefix" => {
+                            const PAIRS: &[(&str, i32)] = &[
+                                ("B", 0), ("kB", 1), ("MB", 2), ("GB", 3), ("TB", 4),
+                                ("PB", 5), ("EB", 6), ("ZB", 7), ("YB", 8),
+                            ];
+                            cli.size_max_prefix = Some(parse_enum(key, value, PAIRS) as u8);
+                        },
+                        "space-before-unit" => {
+                            cli.size_space_before_unit = Some(space_before_unit_enum(key, value));
+                        },
+                        _ => {
+                            if !parse_module_options(key, value) {
+                                eprintln!("Error: unknown option: {key}");
+                                std::process::exit(400);
+                            }
+                        },
+                    }
+                },
+                key if key.to_ascii_lowercase().starts_with("--freq-") => {
+                    let subkey = &key.to_ascii_lowercase()["--freq-".len()..];
+                    match subkey {
+                        "ndigits" => cli.freq_ndigits = Some(parse_int32(key, value)),
+                        "space-before-unit" => {
+                            cli.freq_space_before_unit = Some(space_before_unit_enum(key, value));
+                        },
+                        _ => {
+                            if !parse_module_options(key, value) {
+                                eprintln!("Error: unknown option: {key}");
+                                std::process::exit(400);
+                            }
+                        },
+                    }
+                },
                 "--stat" => {
                     // A truthy value or a full strtoul number times the
                     // modules and implies showErrors; anything else (bare
@@ -862,8 +947,38 @@ fn enum_pairs(key: &str, value: Option<&str>, names: &[&str]) {
 
 /// --key-type's ffOptionParseEnum pairs (display.c:749): FF_MODULE_KEY_TYPE
 /// values, `both` aliasing BOTH_1.
-fn key_type_enum(key: &str, value: Option<&str>) -> u8 {
-    const PAIRS: &[(&str, u8)] = &[
+/// ffOptionParseEnum: case-insensitive pair match; a missing value exits
+/// 476, an unknown one 478.
+fn parse_enum(key: &str, value: Option<&str>, pairs: &[(&str, i32)]) -> i32 {
+    let Some(value) = value else {
+        usage_exit(key, "<value>", 476);
+    };
+    if let Some((_, code)) = pairs.iter().find(|(name, _)| value.eq_ignore_ascii_case(name)) {
+        return *code;
+    }
+    eprintln!("Error: unknown {key} value: {value}");
+    std::process::exit(478)
+}
+
+fn space_before_unit_enum(key: &str, value: Option<&str>) -> crate::format::SpaceBeforeUnit {
+    const PAIRS: &[(&str, i32)] = &[("default", 0), ("always", 1), ("never", 2)];
+    match parse_enum(key, value, PAIRS) {
+        1 => crate::format::SpaceBeforeUnit::Always,
+        2 => crate::format::SpaceBeforeUnit::Never,
+        _ => crate::format::SpaceBeforeUnit::Default,
+    }
+}
+
+fn size_binary_prefix_enum(key: &str, value: Option<&str>) -> crate::format::SizeBinaryPrefix {
+    const PAIRS: &[(&str, i32)] = &[("iec", 0), ("si", 1), ("jedec", 2)];
+    match parse_enum(key, value, PAIRS) {
+        1 => crate::format::SizeBinaryPrefix::Si,
+        2 => crate::format::SizeBinaryPrefix::Jedec,
+        _ => crate::format::SizeBinaryPrefix::Iec,
+    }
+}
+
+fn key_type_enum(key: &str, value: Option<&str>) -> u8 {    const PAIRS: &[(&str, u8)] = &[
         ("none", crate::instance::KEY_TYPE_NONE),
         ("string", crate::instance::KEY_TYPE_STRING),
         ("icon", crate::instance::KEY_TYPE_ICON),

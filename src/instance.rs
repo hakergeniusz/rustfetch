@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::sync::{Mutex, OnceLock};
 
-use crate::{cli::Cli, util};
+use crate::{cli::Cli, format::DisplayFormat, util};
 
 /// The title/key colors fastfetch derives from the logo definition
 /// (colorTitle = colors[0], colorKeys = colors[1]); set even when the
@@ -139,6 +139,10 @@ pub struct Instance {
     /// The display-surface options (separator, colors, key geometry):
     /// assembled in main.rs from the config and the command line.
     pub display: DisplaySurface,
+    /// The FFOptionsDisplay format half (size/duration/frequency/percent/
+    /// temperature fields): defaults from ffOptionsInitDisplay, merged
+    /// config-then-CLI in main.rs. Read by the crate::format formatters.
+    pub display_format: DisplayFormat,
     /// Memoized GSettings/dconf reads per (schema, key), filled lazily by the
     /// GTK modules. A Mutex because modules run in parallel threads.
     pub gnome_settings: Mutex<HashMap<String, Option<String>>>,
@@ -175,6 +179,7 @@ impl Clone for Instance {
             disable_linewrap: self.disable_linewrap,
             hide_cursor: self.hide_cursor,
             display: self.display.clone(),
+            display_format: self.display_format.clone(),
             player_name: self.player_name.clone(),
             title_fqdn: Cell::new(self.title_fqdn.get()),
             gnome_settings: Mutex::new(self.gnome_settings.lock().unwrap_or_else(|e| e.into_inner()).clone()),
@@ -194,6 +199,7 @@ impl Instance {
         disable_linewrap: bool,
         hide_cursor: bool,
         display: DisplaySurface,
+        display_format: DisplayFormat,
         logo_options: crate::logo::LogoOptions,
         logo_color_overrides: &'static [(usize, &'static str)],
     ) -> Self {
@@ -249,6 +255,7 @@ impl Instance {
             disable_linewrap: disable_linewrap && !pipe,
             hide_cursor: hide_cursor && !pipe,
             display,
+            display_format,
             ff_started: Cell::new(false),
             gnome_settings: Mutex::new(HashMap::new()),
             logo_colors: OnceLock::new(),

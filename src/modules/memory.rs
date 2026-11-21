@@ -69,14 +69,13 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     };
 
     let pct = memory.used as f64 * 100.0 / memory.total as f64;
+    let mut used_pretty = String::new();
+    crate::format::size_append_num(&mut used_pretty, memory.used, &instance.display_format);
+    let mut total_pretty = String::new();
+    crate::format::size_append_num(&mut total_pretty, memory.total, &instance.display_format);
     vec![Row::new(
         instance.display_name("memory"),
-        format!(
-            "{} / {} ({})",
-            util::fmt_bytes(memory.used),
-            util::fmt_bytes(memory.total),
-            colorize_percent(pct, 50, 80, instance.color)
-        ),
+        format!("{} / {} ({})", used_pretty, total_pretty, colorize_percent(pct, 50, 80, instance.color)),
     )]
 }
 

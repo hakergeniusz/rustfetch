@@ -92,6 +92,10 @@ pub struct Config {
     pub pipe: bool,
     /// `general.playerName`, stored for the media module's custom bus.
     pub player_name: String,
+    /// The FFOptionsDisplay format half the display.* sub-objects built:
+    /// one struct mutated in document order (so `common.ndigits` after
+    /// `size.ndigits` overwrites it), None when no format key appeared.
+    pub display_format: Option<crate::format::DisplayFormat>,
     /// The modules array; empty when the key is absent. An entry list that
     /// stopped at `walk_error` keeps the entries before it.
     pub entries: Vec<Entry>,
@@ -139,6 +143,7 @@ impl Config {
             key_language: None,
             pipe: false,
             player_name: String::new(),
+            display_format: None,
             entries: Vec::new(),
             walk_error: None,
         }
@@ -790,6 +795,7 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
                 if let Some(kind) = value.get("type") {
                     config.key_type = Some(json_config_enum(
                         kind,
+                        "key",
                         &[
                             ("none", crate::instance::KEY_TYPE_NONE),
                             ("string", crate::instance::KEY_TYPE_STRING),
@@ -818,7 +824,83 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
                     section_error("display", Some(key), "display.constants must be an array");
                 }
             },
-            "duration" | "size" | "temp" | "percent" | "bar" | "fraction" | "freq" | "common" => {
+            "duration" | "size" | "freq" => {
+                if !value.is_object() {
+                    section_error(
+                        "display",
+                        Some(key),
+                        &format!("display.{key} must be an object"),
+                    );
+                }
+                // Upstream probes the sub-keys with yyjson_obj_get in a
+                // fixed order, mutating the one FFOptionsDisplay struct.
+                let format = config.display_format.get_or_insert_with(Default::default);
+                match key.as_str() {
+                    "duration" => {
+                        if let Some(abbreviation) = value.get("abbreviation") {
+                            format.duration_abbreviation = abbreviation.as_bool().unwrap_or(false);
+                        }
+                        if let Some(space) = value.get("spaceBeforeUnit") {
+                            format.duration_space_before_unit = space_before_unit_enum(space, key);
+                        }
+                    },
+                    "size" => {
+                        if let Some(max_prefix) = value.get("maxPrefix") {
+                            format.size_max_prefix = json_config_enum(
+                                max_prefix,
+                                key,
+                                &[("B", 0), ("kB", 1), ("MB", 2), ("GB", 3), ("TB", 4), ("PB", 5), ("EB", 6), ("ZB", 7), ("YB", 8)],
+                            );
+                        }
+                        if let Some(binary_prefix) = value.get("binaryPrefix") {
+                            format.size_binary_prefix = match json_config_enum(
+                                binary_prefix,
+                                key,
+                                &[("iec", 0), ("si", 1), ("jedec", 2)],
+                            ) {
+                                1 => crate::format::SizeBinaryPrefix::Si,
+                                2 => crate::format::SizeBinaryPrefix::Jedec,
+                                _ => crate::format::SizeBinaryPrefix::Iec,
+                            };
+                        }
+                        if let Some(ndigits) = value.get("ndigits") {
+                            let raw = json_get_uint(ndigits, "display.size.ndigits must be an unsigned integer", key);
+                            if raw > 9 {
+                                section_error(
+                                    "display",
+                                    Some(key),
+                                    "display.size.ndigits must be between 0 and 9",
+                                );
+                            }
+                            format.size_ndigits = raw as u8;
+                        }
+                        if let Some(space) = value.get("spaceBeforeUnit") {
+                            format.size_space_before_unit = space_before_unit_enum(space, key);
+                        }
+                    },
+                    _ => {
+                        if let Some(ndigits) = value.get("ndigits") {
+                            if matches!(ndigits, jsonc::Value::Null) {
+                                format.freq_ndigits = -1;
+                            } else {
+                                let raw = json_get_int(ndigits, "display.freq.ndigits must be an integer", key);
+                                if !(-1..=9).contains(&raw) {
+                                    section_error(
+                                        "display",
+                                        Some(key),
+                                        "display.freq.ndigits must be between -1 and 9",
+                                    );
+                                }
+                                format.freq_ndigits = raw as i8;
+                            }
+                        }
+                        if let Some(space) = value.get("spaceBeforeUnit") {
+                            format.freq_space_before_unit = space_before_unit_enum(space, key);
+                        }
+                    },
+                }
+            },
+            "temp" | "percent" | "bar" | "fraction" | "common" => {
                 if !value.is_object() {
                     section_error(
                         "display",
@@ -855,30 +937,58 @@ fn json_get_uint16(value: &jsonc::Value) -> u16 {
 /// integer"), strings match names case-insensitively ("Invalid enum
 /// string"), anything else is a type error. The section/key pair is
 /// display.key because upstream's walk leaves `*pkey` at the outer key.
-fn json_config_enum(value: &jsonc::Value, pairs: &[(&str, u8)]) -> u8 {
+fn json_config_enum(value: &jsonc::Value, section_key: &str, pairs: &[(&str, u8)]) -> u8 {
     match value {
         jsonc::Value::Int(num) => {
             if let Some((_, code)) = pairs.iter().find(|(_, code)| *num == *code as i64) {
                 *code
             } else {
-                section_error("display", Some("key"), "Invalid enum integer");
+                section_error("display", Some(section_key), "Invalid enum integer");
             }
         },
         jsonc::Value::UInt(num) => {
             if let Some((_, code)) = pairs.iter().find(|(_, code)| *num == *code as u64) {
                 *code
             } else {
-                section_error("display", Some("key"), "Invalid enum integer");
+                section_error("display", Some(section_key), "Invalid enum integer");
             }
         },
         jsonc::Value::Str(text) => {
             if let Some((_, code)) = pairs.iter().find(|(name, _)| text.eq_ignore_ascii_case(name)) {
                 *code
             } else {
-                section_error("display", Some("key"), "Invalid enum string");
+                section_error("display", Some(section_key), "Invalid enum string");
             }
         },
-        _ => section_error("display", Some("key"), "Invalid enum value type; must be a string or integer"),
+        _ => section_error("display", Some(section_key), "Invalid enum value type; must be a string or integer"),
+    }
+}
+
+/// The ffJsonConfigParseEnum spaceBeforeUnit pairs shared by all five
+/// ndigits-bearing sub-objects.
+fn space_before_unit_enum(value: &jsonc::Value, section_key: &str) -> crate::format::SpaceBeforeUnit {
+    match json_config_enum(value, section_key, &[("default", 0), ("always", 1), ("never", 2)]) {
+        1 => crate::format::SpaceBeforeUnit::Always,
+        2 => crate::format::SpaceBeforeUnit::Never,
+        _ => crate::format::SpaceBeforeUnit::Default,
+    }
+}
+
+/// ffJsonConfigParseUInt32 with an unsigned-integer usage error.
+fn json_get_uint(value: &jsonc::Value, message: &str, section_key: &str) -> u64 {
+    match value {
+        jsonc::Value::UInt(amount) => *amount,
+        jsonc::Value::Int(amount) if *amount >= 0 => *amount as u64,
+        _ => section_error("display", Some(section_key), message),
+    }
+}
+
+/// The signed variant (freq/fraction ndigits).
+fn json_get_int(value: &jsonc::Value, message: &str, section_key: &str) -> i64 {
+    match value {
+        jsonc::Value::UInt(amount) => *amount as i64,
+        jsonc::Value::Int(amount) => *amount,
+        _ => section_error("display", Some(section_key), message),
     }
 }
 

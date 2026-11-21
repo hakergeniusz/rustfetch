@@ -117,6 +117,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         .filter(|(_, caches)| !caches.is_empty())
         .map(|(level, caches)| {
             let mut value = String::new();
+            let df = &instance.display_format;
             for cache in caches {
                 if !value.is_empty() {
                     value.push_str(", ");
@@ -124,7 +125,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 if cache.num > 1 {
                     value.push_str(&format!("{}x", cache.num));
                 }
-                value.push_str(&util::fmt_bytes(cache.size));
+                crate::format::size_append_num(&mut value, cache.size, df);
                 let letter = match cache.type_ {
                     CacheType::Data => 'D',
                     CacheType::Instruction => 'I',

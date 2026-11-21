@@ -9,7 +9,6 @@ use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
     modules::Row,
-    util,
 };
 
 const PF_KTHREAD: u64 = 0x0020_0000;
@@ -236,11 +235,11 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             value.push_str(" - CPU ");
             value.push_str(&super::colorize_percent(top.cpu_percent, 50, 80, instance.color));
             value.push_str(" - MEM ");
-            value.push_str(&util::fmt_bytes(process.mem_bytes));
+            crate::format::size_append_num(&mut value, process.mem_bytes, &instance.display_format);
             value.push_str(" - DSK ");
-            value.push_str(&util::fmt_bytes(top.bytes_read));
+            crate::format::size_append_num(&mut value, top.bytes_read, &instance.display_format);
             value.push_str("/s / ");
-            value.push_str(&util::fmt_bytes(top.bytes_written));
+            crate::format::size_append_num(&mut value, top.bytes_written, &instance.display_format);
             value.push_str("/s");
             Row::new(&key, value).with_index(key_index)
         })
