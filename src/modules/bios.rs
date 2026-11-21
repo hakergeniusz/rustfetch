@@ -58,16 +58,22 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    // bios.c maps an ignCase "BIOS" type to "Legacy" (empty would be
-    // "Unknown"; the detection here always yields UEFI or BIOS) and always
-    // interpolates: "%s (%s)". The mapping happens in the key branch,
-    // before FF_PRINT_FORMAT_CHECKED, so the custom-format `type` argument
-    // reads the same mapped value.
+    // bios.c only maps an ignCase "BIOS" type to "Legacy" inside the
+    // key.length == 0 branch (bios.c:30-40); with a custom key, bios.type
+    // stays raw for both the key template and the output-format `type` arg.
+    // The composed key is overridden by stamp_common when a custom key is
+    // set, so it can keep the mapped value unconditionally.
+    let has_custom_key = instance
+        .entry
+        .and_then(|opts| opts.get("key"))
+        .and_then(crate::jsonc::Value::as_str)
+        .is_some_and(|key| !key.is_empty() && key != " ");
     let bios_type = if bios.firmware_type.eq_ignore_ascii_case("BIOS") {
         "Legacy"
     } else {
         &bios.firmware_type
     };
+    let type_arg = if has_custom_key { bios.firmware_type.as_str() } else { bios_type };
     let key = format!("{} ({bios_type})", instance.display_name("bios"));
 
     let Some(format) = crate::modules::entry_format(instance.entry) else {
@@ -85,14 +91,14 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     };
 
     // Upstream FF_PRINT_FORMAT_CHECKED passes the five bios strbufs as
-    // FF_ARG_TYPE_STRBUF values: date, release, vendor, version and the
-    // mapped type above.
+    // FF_ARG_TYPE_STRBUF values: date, release, vendor, version and type
+    // (raw when a custom key is set, mapped otherwise).
     let args = [
         crate::format_args::FormatArg { name: "date", value: crate::format_args::ArgValue::Str(&bios.date) },
         crate::format_args::FormatArg { name: "release", value: crate::format_args::ArgValue::Str(&bios.release) },
         crate::format_args::FormatArg { name: "vendor", value: crate::format_args::ArgValue::Str(&bios.vendor) },
         crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(&bios.version) },
-        crate::format_args::FormatArg { name: "type", value: crate::format_args::ArgValue::Str(bios_type) },
+        crate::format_args::FormatArg { name: "type", value: crate::format_args::ArgValue::Str(type_arg) },
     ];
     let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
     vec![Row::new(&key, rendered)]
