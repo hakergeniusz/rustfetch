@@ -12,6 +12,7 @@ mod jsonc;
 mod logo;
 mod logo_entries;
 mod module_formats;
+mod module_icons;
 mod modules;
 mod networking;
 mod platform;

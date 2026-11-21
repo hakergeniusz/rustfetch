@@ -114,7 +114,7 @@ fn print(_instance: &Instance) -> Vec<Row> {
         value.push_str(&format!(" ({width_px}px x {height_px}px)"));
     }
 
-    vec![Row::new("Terminal Size", value)]
+    vec![Row::new("Terminal Size", value).stamped(crate::module_icons::icon_for("terminalsize"))]
 }
 
 /// ffGenerateTerminalSizeJsonResult.

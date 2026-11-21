@@ -106,6 +106,10 @@ pub struct Row {
     pub key: Option<String>,
     pub value: String,
     pub kind: Kind,
+    /// ffOptionInitModuleArg's default keyIcon for the module, stamped by
+    /// collect(); empty when the module has none. Printed when
+    /// display.keyType carries the ICON bit.
+    pub key_icon: &'static str,
 }
 
 impl Row {
@@ -115,6 +119,7 @@ impl Row {
             key: Some(key.to_string()),
             value: value.into(),
             kind: Kind::Value,
+            key_icon: "",
         }
     }
 
@@ -125,6 +130,7 @@ impl Row {
             key: Some(key.to_string()),
             value: value.into(),
             kind: Kind::Error,
+            key_icon: "",
         }
     }
 
@@ -134,6 +140,7 @@ impl Row {
             key: None,
             value: value.into(),
             kind: Kind::Value,
+            key_icon: "",
         }
     }
 
@@ -143,6 +150,7 @@ impl Row {
             key: None,
             value: value.into(),
             kind: Kind::Raw,
+            key_icon: "",
         }
     }
 
@@ -153,7 +161,19 @@ impl Row {
             key: None,
             value: String::new(),
             kind: Kind::Late(late),
+            key_icon: "",
         }
+    }
+
+    /// ffOptionInitModuleArg's default keyIcon: every keyed row the module
+    /// produced prints its icon when display.keyType carries the ICON bit.
+    /// Keyless rows stand in for the magic `" "` key and print none, like
+    /// upstream's hidden key block.
+    pub fn stamped(mut self, icon: &'static str) -> Self {
+        if self.key.is_some() {
+            self.key_icon = icon;
+        }
+        self
     }
 }
 
@@ -1006,6 +1026,20 @@ fn prepare_rate_modules(jobs: &[PresetJob]) {
 /// deadlock when initialized concurrently, and upstream's watchdog-thread
 /// network timeouts assume a single-threaded walk. Rows are emitted in
 /// structure order.
+/// Stamps the module's default key icon onto the rows it produced, like
+/// ffOptionInitModuleArg filling moduleArgs.keyIcon before ffPrintLogoAndKey.
+fn stamp_icons(rows: &mut [Row], name: &str) {
+    let icon = crate::module_icons::icon_for(name);
+    if icon.is_empty() {
+        return;
+    }
+    for row in rows.iter_mut() {
+        if row.key.is_some() {
+            row.key_icon = icon;
+        }
+    }
+}
+
 pub fn collect(
     selected: &[String],
     structure_given: bool,
@@ -1028,22 +1062,31 @@ pub fn collect(
     for job in &jobs {
         let started = if stat_on { crate::spin::time_get_tick() } else { 0.0 };
         match job {
-            PresetJob::Module(module) => rows.extend((module.run)(instance)),
+            PresetJob::Module(module) => {
+                let mut produced = (module.run)(instance);
+                stamp_icons(&mut produced, module.name);
+                rows.extend(produced);
+            },
             PresetJob::ModuleOpts { def, opts } => {
                 // Each object entry runs with its own options: the job
                 // gets a private instance carrying the entry.
                 let mut instance = instance.clone();
                 instance.entry = Some(opts);
-                rows.extend((def.run)(&instance));
+                let mut produced = (def.run)(&instance);
+                stamp_icons(&mut produced, def.name);
+                rows.extend(produced);
             },
             // ffPrintError(line, 0, nullptr, FF_PRINT_TYPE_NO_CUSTOM_KEY,
             // "<no implementation provided>"): visible only with
-            // display.showErrors.
+            // display.showErrors. The moduleArgs are null here, so the
+            // row carries no key icon.
             PresetJob::Unknown(token) => {
                 if instance.show_errors {
                     rows.push(Row::error(token, "<no implementation provided>"));
                 }
             },
+            // The custom module's default key is the magic " ", so its
+            // rows are keyless and never carry an icon.
             PresetJob::Custom(text) => rows.extend(custom::render_rows(text, instance)),
             PresetJob::Command {
                 text,
@@ -1051,13 +1094,15 @@ pub fn collect(
                 param,
                 split_lines,
             } => {
-                rows.extend(command::run_text(
+                let mut produced = command::run_text(
                     text,
                     shell,
                     param.as_deref(),
                     *split_lines,
                     instance,
-                ));
+                );
+                stamp_icons(&mut produced, "command");
+                rows.extend(produced);
             },
         }
         if stat_on {

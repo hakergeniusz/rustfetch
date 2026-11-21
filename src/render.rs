@@ -138,7 +138,7 @@ struct KeyStyle<'a> {
 /// reset+outputColor tail. `logo_width` is instance.state.logoWidth at
 /// the call site; the `\e[{n}G` jump and the padding spaces run in pipe
 /// mode too.
-fn key_prefix(row_key: Option<&str>, style: &KeyStyle<'_>, logo_width: usize) -> String {
+fn key_prefix(row_key: Option<&str>, key_icon: &str, style: &KeyStyle<'_>, logo_width: usize) -> String {
     let mut out = String::new();
     if let Some(key) = row_key {
         if style.key_type != crate::instance::KEY_TYPE_NONE {
@@ -154,8 +154,11 @@ fn key_prefix(row_key: Option<&str>, style: &KeyStyle<'_>, logo_width: usize) ->
                     out.push_str(&format!("\x1b[{}m", style.color_keys));
                 }
             }
-            // The key-icon bits print moduleArgs->keyIcon, which no module
-            // carries yet (the icon table lands with the key-icon commit).
+            // The key-icon bits print moduleArgs->keyIcon, only when
+            // non-empty.
+            if style.key_type & crate::instance::KEY_TYPE_ICON != 0 && !key_icon.is_empty() {
+                out.push_str(key_icon);
+            }
             if style.key_type & crate::instance::KEY_TYPE_STRING != 0 {
                 for _ in 0..(style.key_type >> crate::instance::KEY_TYPE_SPACE_SHIFT) {
                     out.push(' ');
@@ -191,13 +194,13 @@ fn key_prefix(row_key: Option<&str>, style: &KeyStyle<'_>, logo_width: usize) ->
 fn row_line(row: &Row, style: &KeyStyle<'_>, logo_width: usize) -> String {
     match (&row.key, row.kind) {
         (Some(key), Kind::Value) => {
-            let mut out = key_prefix(Some(key), style, logo_width);
+            let mut out = key_prefix(Some(key), row.key_icon, style, logo_width);
             out.push_str(&row.value);
             out
         },
         // ffPrintError's message: bold red outside pipe mode, plain in it.
         (_, Kind::Error) => {
-            let mut out = key_prefix(row.key.as_deref(), style, logo_width);
+            let mut out = key_prefix(row.key.as_deref(), row.key_icon, style, logo_width);
             if style.color {
                 out.push_str("\x1b[1;31m");
             }
@@ -211,7 +214,7 @@ fn row_line(row: &Row, style: &KeyStyle<'_>, logo_width: usize) -> String {
         // escapes; the renderer adds the tail reset (and outputColor) of
         // the key writer.
         (None, Kind::Value) => {
-            let mut out = key_prefix(None, style, logo_width);
+            let mut out = key_prefix(None, row.key_icon, style, logo_width);
             out.push_str(&row.value);
             out
         },

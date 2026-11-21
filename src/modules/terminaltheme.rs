@@ -179,7 +179,7 @@ fn print(_instance: &Instance) -> Vec<Row> {
         bg.b,
         if bg.dark { "Dark" } else { "Light" }
     );
-    vec![Row::new("Terminal Theme", value)]
+    vec![Row::new("Terminal Theme", value).stamped(crate::module_icons::icon_for("terminaltheme"))]
 }
 
 /// ffGenerateTerminalThemeJsonResult: {fg, bg} with r/g/b/dark each.
