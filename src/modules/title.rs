@@ -21,7 +21,13 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     }
     let platform = platform::platform();
     let user = &platform.user_name;
-    let host = &platform.host_name;
+    // ffStrbufSubstrBeforeFirstC: unless fqdn, the hostname cuts at the
+    // first dot; the JSON result keeps the full platform hostname.
+    let host = if instance.title_fqdn.get() {
+        &platform.host_name[..]
+    } else {
+        &platform.host_name[..platform.host_name.find('.').unwrap_or(platform.host_name.len())]
+    };
 
     // appendText: the bright bolt (display.brightColor-gated), then the
     // effective title color (the module's colorUser is not set through
