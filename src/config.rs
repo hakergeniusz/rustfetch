@@ -894,11 +894,10 @@ pub(crate) fn parse_language_string(value: &str) -> &'static str {
     // locale" exit stays unreachable here.
     let detected = value.is_empty();
     let mut language = if detected {
-        let locale = ["LC_ALL", "LANG", "LC_TIME"]
+        ["LC_ALL", "LANG", "LC_TIME"]
             .iter()
             .find_map(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
-            .unwrap_or_else(|| "C".to_string());
-        locale
+            .unwrap_or_else(|| "C".to_string())
     } else {
         value.to_string()
     };
@@ -944,10 +943,10 @@ pub(crate) fn parse_language_string(value: &str) -> &'static str {
             _ => unsupported(&language),
         };
     }
-    if !LANGS.contains(&&language[..2]) {
+    let Some(lang) = LANGS.iter().find(|lang| **lang == &language[..2]) else {
         return unsupported(&language);
-    }
-    LANGS.iter().find(|lang| **lang == &language[..2]).copied().unwrap()
+    };
+    lang
 }
 
 fn section_error(section: &str, key: Option<&str>, message: &str) -> ! {

@@ -159,58 +159,58 @@ fn key_prefix(row: &Row, style: &KeyStyle<'_>, logo_width: usize) -> String {
         row.key.as_deref()
     };
     let mut out = String::new();
-    if let Some(key) = key_text {
-        if style.key_type != crate::instance::KEY_TYPE_NONE {
-            for _ in 0..style.key_padding_left {
+    if let Some(key) = key_text
+        && style.key_type != crate::instance::KEY_TYPE_NONE
+    {
+        for _ in 0..style.key_padding_left {
+            out.push(' ');
+        }
+        if style.color {
+            out.push_str("\x1b[m");
+            if style.bright_color {
+                out.push_str("\x1b[1m");
+            }
+            let color_keys = common
+                .and_then(|args| args.key_color.as_deref())
+                .filter(|code| !code.is_empty())
+                .unwrap_or(style.color_keys);
+            if !color_keys.is_empty() {
+                out.push_str(&format!("\x1b[{color_keys}m"));
+            }
+        }
+        // The key-icon bits print moduleArgs->keyIcon: the entry's
+        // keyIcon replaces the module default (an empty string clears
+        // it, like upstream's ffStrbufSetJsonVal clearing the buffer).
+        let key_icon = match common.and_then(|args| args.key_icon.as_deref()) {
+            Some(icon) => icon,
+            None => row.key_icon,
+        };
+        if style.key_type & crate::instance::KEY_TYPE_ICON != 0 && !key_icon.is_empty() {
+            out.push_str(key_icon);
+        }
+        if style.key_type & crate::instance::KEY_TYPE_STRING != 0 {
+            for _ in 0..(style.key_type >> crate::instance::KEY_TYPE_SPACE_SHIFT) {
                 out.push(' ');
             }
-            if style.color {
-                out.push_str("\x1b[m");
-                if style.bright_color {
-                    out.push_str("\x1b[1m");
-                }
-                let color_keys = common
-                    .and_then(|args| args.key_color.as_deref())
-                    .filter(|code| !code.is_empty())
-                    .unwrap_or(style.color_keys);
-                if !color_keys.is_empty() {
-                    out.push_str(&format!("\x1b[{color_keys}m"));
-                }
+            out.push_str(key);
+        }
+        if style.color {
+            out.push_str("\x1b[m");
+            if !style.color_separator.is_empty() {
+                out.push_str(&format!("\x1b[{}m", style.color_separator));
             }
-            // The key-icon bits print moduleArgs->keyIcon: the entry's
-            // keyIcon replaces the module default (an empty string clears
-            // it, like upstream's ffStrbufSetJsonVal clearing the buffer).
-            let key_icon = match common.and_then(|args| args.key_icon.as_deref()) {
-                Some(icon) => icon,
-                None => row.key_icon,
-            };
-            if style.key_type & crate::instance::KEY_TYPE_ICON != 0 && !key_icon.is_empty() {
-                out.push_str(key_icon);
-            }
-            if style.key_type & crate::instance::KEY_TYPE_STRING != 0 {
-                for _ in 0..(style.key_type >> crate::instance::KEY_TYPE_SPACE_SHIFT) {
-                    out.push(' ');
-                }
-                out.push_str(key);
-            }
-            if style.color {
-                out.push_str("\x1b[m");
-                if !style.color_separator.is_empty() {
-                    out.push_str(&format!("\x1b[{}m", style.color_separator));
-                }
-            }
-            out.push_str(style.separator);
-            if style.color && !style.color_separator.is_empty() {
-                out.push_str("\x1b[m");
-            }
-            let key_width = common
-                .map(|args| args.key_width)
-                .filter(|width| *width > 0)
-                .unwrap_or(style.key_width as u32);
-            if key_width > 0 {
-                // u32 arithmetic like upstream's printf("%u", keyWidth + logoWidth).
-                out.push_str(&format!("\x1b[{}G", key_width.wrapping_add(logo_width as u32)));
-            }
+        }
+        out.push_str(style.separator);
+        if style.color && !style.color_separator.is_empty() {
+            out.push_str("\x1b[m");
+        }
+        let key_width = common
+            .map(|args| args.key_width)
+            .filter(|width| *width > 0)
+            .unwrap_or(style.key_width as u32);
+        if key_width > 0 {
+            // u32 arithmetic like upstream's printf("%u", keyWidth + logoWidth).
+            out.push_str(&format!("\x1b[{}G", key_width.wrapping_add(logo_width as u32)));
         }
     }
     if style.color {

@@ -92,7 +92,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             // ffPrintCharTimes prints the first byte N times; a one-byte
             // string is always ASCII.
             let byte = options.string.as_bytes()[0] as char;
-            std::iter::repeat(byte).take(options.times as usize).collect::<String>()
+            std::iter::repeat_n(byte, options.times as usize).collect::<String>()
         } else {
             options.string.repeat(options.times as usize)
         }
@@ -110,7 +110,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
         if options.string.len() == 1 {
             let byte = options.string.as_bytes()[0] as char;
-            std::iter::repeat(byte).take(title_length).collect::<String>()
+            std::iter::repeat_n(byte, title_length).collect::<String>()
         } else {
             let string_width = utf8_str_width(&options.string);
             let mut remaining = title_length as i32;

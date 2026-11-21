@@ -67,14 +67,14 @@ fn process_append_stdout(argv: &[&str]) -> Result<String, &'static str> {
 fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
-    let mut chunks = data.chunks_exact(3);
-    for chunk in &mut chunks {
+    let (chunks, remainder) = data.as_chunks::<3>();
+    for chunk in chunks {
         let n = ((chunk[0] as u32) << 16) | ((chunk[1] as u32) << 8) | chunk[2] as u32;
         for shift in [18u32, 12, 6, 0] {
             out.push(CHARS[((n >> shift) & 63) as usize] as char);
         }
     }
-    match chunks.remainder() {
+    match remainder {
         [a] => {
             let n = (*a as u32) << 16;
             out.push(CHARS[((n >> 18) & 63) as usize] as char);
@@ -396,7 +396,7 @@ fn append_icat_output(buf: &mut Vec<u8>, output: &str, opts: &LogoOptions) {
             if kind == 1 {
                 offset = first;
                 cursor = end;
-            } else if kind == 2 && second >= opts.padding_left + 1 {
+            } else if kind == 2 && second > opts.padding_left {
                 offset = second - opts.padding_left - 1;
                 cursor = end;
             }
@@ -492,6 +492,15 @@ fn print_kitty_icat(
 mod tests {
     use super::*;
 
+    /// The unwrap-free assert alias: the icat printer emits ASCII escapes
+    /// only, so a non-utf8 buffer is a bug.
+    fn utf8(buf: Vec<u8>) -> String {
+        match String::from_utf8(buf) {
+            Ok(string) => string,
+            Err(_) => panic!("non-utf8 output"),
+        }
+    }
+
     #[test]
     fn base64_matches_reference_vectors() {
         assert_eq!(base64_encode(b""), "");
@@ -508,10 +517,10 @@ mod tests {
     #[test]
     fn icat_csi_parses_both_forms() {
         let data = b"\r\x1b[5C\x1b_Ga=T,f=100,t=f;AAAA\x1b\\";
-        let (end, first, second, kind) = parse_icat_csi(data, 1).unwrap();
+        let Some((end, first, second, kind)) = parse_icat_csi(data, 1) else { panic!("csi not parsed") };
         assert_eq!((end, first, second, kind), (5, 5, 0, 1));
         let data = b"\r\x1b[3;11H\x1b_Ga=T,f=100,t=f;AAAA\x1b\\";
-        let (end, first, second, kind) = parse_icat_csi(data, 1).unwrap();
+        let Some((end, first, second, kind)) = parse_icat_csi(data, 1) else { panic!("csi not parsed") };
         assert_eq!((end, first, second, kind), (8, 3, 11, 2));
         // No digits before the terminator, or a non-CSI payload: none.
         assert!(parse_icat_csi(b"\r\x1b[Cx", 1).is_none());
@@ -520,18 +529,17 @@ mod tests {
 
     #[test]
     fn icat_output_drops_positioning_and_keeps_centering() {
-        let mut opts = LogoOptions::default();
-        opts.padding_left = 3;
+        let opts = LogoOptions { padding_left: 3, ..Default::default() };
         let mut buf = Vec::new();
         append_icat_output(&mut buf, "\r\x1b[7C\x1b_Ga=T,f=100,t=f;AAAA\x1b\\", &opts);
-        assert_eq!(String::from_utf8(buf).unwrap(), "\x1b[7C\x1b_Ga=T,f=100,t=f;AAAA\x1b\\");
+        assert_eq!(utf8(buf), "\x1b[7C\x1b_Ga=T,f=100,t=f;AAAA\x1b\\");
         // The absolute --place move keeps only the centering offset.
         let mut buf = Vec::new();
         append_icat_output(&mut buf, "\r\x1b[1;9H\x1b_Ga=T,f=100,t=f;AAAA\x1b\\", &opts);
-        assert_eq!(String::from_utf8(buf).unwrap(), "\x1b[5C\x1b_Ga=T,f=100,t=f;AAAA\x1b\\");
+        assert_eq!(utf8(buf), "\x1b[5C\x1b_Ga=T,f=100,t=f;AAAA\x1b\\");
         // An unrecognised layout passes through untouched.
         let mut buf = Vec::new();
         append_icat_output(&mut buf, "\x1b_Ga=T,f=100,t=f;AAAA\x1b\\", &opts);
-        assert_eq!(String::from_utf8(buf).unwrap(), "\x1b_Ga=T,f=100,t=f;AAAA\x1b\\");
+        assert_eq!(utf8(buf), "\x1b_Ga=T,f=100,t=f;AAAA\x1b\\");
     }
 }

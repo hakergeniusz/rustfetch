@@ -14,10 +14,10 @@ use crate::{
 pub fn run(instance: &Instance) -> Vec<Row> {
     // instance.state.titleFqdn: the separator's default length reads it.
     // Like upstream, it survives after the title module ran.
-    if let Some(entry) = instance.entry {
-        if let Some(value) = entry.get("fqdn") {
-            instance.title_fqdn.set(value.as_bool().unwrap_or(false));
-        }
+    if let Some(entry) = instance.entry
+        && let Some(value) = entry.get("fqdn")
+    {
+        instance.title_fqdn.set(value.as_bool().unwrap_or(false));
     }
     let platform = platform::platform();
     let user = &platform.user_name;

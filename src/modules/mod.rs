@@ -1287,9 +1287,9 @@ fn expand_key(
         };
         out.push_str(&rest[..open]);
         let after = &rest[open + 1..];
-        if after.starts_with('{') {
+        if let Some(remainder) = after.strip_prefix('{') {
             out.push('{');
-            rest = &after[1..];
+            rest = remainder;
             continue;
         }
         // An unmatched trailing brace turns the remainder into the spec;
@@ -1582,8 +1582,9 @@ pub fn collect(
                 // before ffStart upstream, so their errors abort before
                 // any output (no reset, no logo, no rows).
                 if instance.pending_exit.borrow().is_some() {
-                    if matches!(def.name, "command" | "diskio" | "netio" | "publicip" | "top" | "weather") {
-                        let (code, message) = instance.pending_exit.borrow_mut().take().unwrap();
+                    if matches!(def.name, "command" | "diskio" | "netio" | "publicip" | "top" | "weather")
+                        && let Some((code, message)) = instance.pending_exit.borrow_mut().take()
+                    {
                         eprintln!("{message}");
                         std::process::exit(code);
                     }
