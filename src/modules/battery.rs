@@ -330,13 +330,18 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     }
     results
         .iter()
-        .map(|battery| {
+        .enumerate()
+        .map(|(i, battery)| {
             let key = if battery.model_name.is_empty() {
                 "Battery".to_string()
             } else {
                 format!("{} ({})", instance.display_name("battery"), battery.model_name)
             };
             Row::new(&key, item_value(battery, &options, percent, &ctx, &instance.display_format))
+                .with_key_args(vec![
+                    crate::modules::RowKeyArg::uint("index", crate::modules::numbered_index(i, results.len())),
+                    crate::modules::RowKeyArg::text("model-name", battery.model_name.clone()),
+                ])
         })
         .collect()
 }

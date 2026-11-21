@@ -103,6 +103,38 @@ pub enum Kind {
     Late(fn(&Instance) -> Vec<Row>, &'static str),
 }
 
+/// An owned value for a module-specific custom-key format argument. The
+/// NO_CUSTOM_KEY modules prebuild their key against their own FF_ARG list;
+/// these carry the values until stamp_common resolves the layout into the
+/// borrowed format-engine args.
+#[derive(Clone, Debug)]
+pub enum KeyArgValue {
+    Str(String),
+    UInt(u32),
+    UInt64(u64),
+}
+
+/// One named argument of a module-specific custom-key layout. The name is
+/// one of the static names in TYPE_K_KEY_LAYOUT; `icon`/`module-name` are
+/// resolved from the common args instead and never appear here.
+#[derive(Clone, Debug)]
+pub struct RowKeyArg {
+    pub name: &'static str,
+    pub value: KeyArgValue,
+}
+
+impl RowKeyArg {
+    pub fn text(name: &'static str, value: impl Into<String>) -> Self {
+        Self { name, value: KeyArgValue::Str(value.into()) }
+    }
+    pub fn uint(name: &'static str, value: u32) -> Self {
+        Self { name, value: KeyArgValue::UInt(value) }
+    }
+    pub fn uint64(name: &'static str, value: u64) -> Self {
+        Self { name, value: KeyArgValue::UInt64(value) }
+    }
+}
+
 pub struct Row {
     pub key: Option<String>,
     pub value: String,
@@ -122,6 +154,11 @@ pub struct Row {
     /// {module-name} form); set only on rows that take a custom key.
     /// Rows without one keep their built-in key text.
     pub key_override: Option<String>,
+    /// Module-specific FF_ARG values for the NO_CUSTOM_KEY modules whose
+    /// custom key is prebuilt against their own layout (TYPE_K_KEY_LAYOUT).
+    /// Empty on every other row, which then uses the common {index}/{icon}/
+    /// {module-name} list like ffPrintLogoAndKey's default sites.
+    pub key_args: Vec<RowKeyArg>,
 }
 
 impl Row {
@@ -135,6 +172,7 @@ impl Row {
             key_index: 0,
             common: None,
             key_override: None,
+            key_args: Vec::new(),
         }
     }
 
@@ -149,6 +187,7 @@ impl Row {
             key_index: 0,
             common: None,
             key_override: None,
+            key_args: Vec::new(),
         }
     }
 
@@ -162,6 +201,7 @@ impl Row {
             key_index: 0,
             common: None,
             key_override: None,
+            key_args: Vec::new(),
         }
     }
 
@@ -175,6 +215,7 @@ impl Row {
             key_index: 0,
             common: None,
             key_override: None,
+            key_args: Vec::new(),
         }
     }
 
@@ -189,6 +230,7 @@ impl Row {
             key_index: 0,
             common: None,
             key_override: None,
+            key_args: Vec::new(),
         }
     }
 
@@ -210,6 +252,20 @@ impl Row {
         self.key_index = index;
         self
     }
+
+    /// The module-specific FF_ARG list a NO_CUSTOM_KEY module prebuilds its
+    /// custom key against (TYPE_K_KEY_LAYOUT). Order matters: numeric
+    /// placeholders address the layout positionally.
+    pub fn with_key_args(mut self, args: Vec<RowKeyArg>) -> Self {
+        self.key_args = args;
+        self
+    }
+}
+
+/// Upstream's `results.length == 1 ? 0 : i + 1` key index: a lone result is
+/// unnumbered, otherwise the 1-based row position.
+pub(crate) fn numbered_index(i: usize, len: usize) -> u32 {
+    if len == 1 { 0 } else { (i + 1) as u32 }
 }
 
 /// The common module args of one entry (ffJsonConfigParseModuleArgs's
@@ -1152,14 +1208,18 @@ pub(crate) fn percent_config(entry: Option<&crate::jsonc::Value>, default: crate
 }
 
 /// The key-path arg lists: ffPrintLogoAndKey's DEFAULT sites expand the
-/// custom key against {index, icon, module-name}; the self-expanding
-/// modules prebuild theirs against a module-specific list in which only
-/// the trailing {icon}/{module-name} entries are known here — every
-/// module-specific name and position (and thus any positional) is the
-/// format-engine work and stays verbatim.
+/// custom key against {index, icon, module-name}; the self-expanding Type K
+/// modules prebuild theirs against a module-specific FF_ARG list — the
+/// layout below fixes the exact upstream order and each row supplies the
+/// values, while `icon`/`module-name` come from the common args.
 enum KeyArgs<'a> {
     Common { index: u32, icon: &'a str, module_name: &'a str },
-    Prebuilt { icon: &'a str, module_name: &'a str },
+    Prebuilt {
+        layout: &'static [&'static str],
+        extra: &'a [RowKeyArg],
+        icon: &'a str,
+        module_name: &'a str,
+    },
 }
 
 /// Modules whose print prebuilds their key (their ffPrintLogoAndKey call
@@ -1188,21 +1248,43 @@ const TYPE_K_KEY_MODULES: &[&str] = &[
     "zpool",
 ];
 
+/// The exact upstream FF_ARG order each Type K module prebuilds its custom
+/// key against. Every position is addressable both by name and by numeric
+/// placeholder (`{}`/`{N}` index into this list). `icon` and `module-name`
+/// resolve from the common args; the other names come from the row's
+/// `key_args` (a missing one resolves to the empty string).
+const TYPE_K_KEY_LAYOUT: &[(&str, &[&str])] = &[
+    ("battery", &["index", "model-name", "icon", "module-name"]),
+    ("bios", &["type", "icon", "module-name"]),
+    ("bluetoothradio", &["index", "name", "icon", "module-name"]),
+    ("brightness", &["index", "name", "icon", "module-name"]),
+    ("btrfs", &["index", "name", "icon", "module-name"]),
+    ("codec", &["index", "gpu", "direction", "icon", "module-name"]),
+    ("cpucache", &["index", "level", "icon", "module-name"]),
+    ("disk", &["mountpoint", "name", "mount-from", "icon", "index", "filesystem", "mountpoint-link", "name-link", "module-name"]),
+    ("diskio", &["index", "name", "dev-path", "icon", "module-name"]),
+    ("display", &["index", "name", "type", "icon", "module-name"]),
+    ("loadavg", &["index", "duration", "icon", "module-name"]),
+    ("localip", &["index", "ifname", "mac", "icon", "module-name"]),
+    ("monitor", &["index", "name", "icon", "module-name"]),
+    ("netio", &["index", "ifname", "icon", "module-name"]),
+    ("os", &["sysname", "name", "icon", "module-name"]),
+    ("physicaldisk", &["index", "name", "dev-path", "icon", "module-name"]),
+    ("swap", &["index", "name", "icon", "module-name"]),
+    ("zpool", &["index", "name", "guid", "icon", "module-name"]),
+];
+
 /// ffParseFormatString (format.c) over a custom key, through the shared
 /// format-args engine (src/format_args.rs): the spec grammar — `{}`/`{0}`
 /// sequential positionals, numeric and named args (case-insensitive),
 /// `{#color}`/`{#}` (pipe drops both), `{{` escapes, `{-}` stopping the
 /// expansion, the `{?arg}`…`{?}`/`{/arg}`…`{/}` conditionals, `{$env}`/
 /// `{$N}` constants, `~` ranges and the truncation specs `:`/`<`/`>`/`|`
-/// — all resolve against the {index, icon, module-name} arg list of
-/// ffPrintLogoAndKey. The self-expanding (Type K) modules prebuild their
-/// key against their own module-specific arg list, of which only the
-/// trailing {icon}/{module-name} entries are known here: their named args
-/// resolve, but every module-specific name and positional — and thus any
-/// placeholder that needs the full list — stays verbatim until those
-/// lists land (positional_len 0). Invalid placeholders mirror upstream's
-/// appendInvalidPlaceholder bytes; an invalid `{#color}` defers its
-/// exit(479) into `pending` like the common-arg colors.
+/// — all resolve against either ffPrintLogoAndKey's {index, icon,
+/// module-name} list or a Type K module's own FF_ARG list (the static
+/// layout below plus the row's `key_args`). Invalid placeholders mirror
+/// upstream's appendInvalidPlaceholder bytes; an invalid `{#color}`
+/// defers its exit(479) into `pending` like the common-arg colors.
 fn expand_key(
     template: &str,
     args: &KeyArgs<'_>,
@@ -1217,13 +1299,25 @@ fn expand_key(
             ],
             3,
         ),
-        KeyArgs::Prebuilt { icon, module_name } => (
-            vec![
-                crate::format_args::FormatArg { name: "icon", value: crate::format_args::ArgValue::Str(icon) },
-                crate::format_args::FormatArg { name: "module-name", value: crate::format_args::ArgValue::Str(module_name) },
-            ],
-            0,
-        ),
+        KeyArgs::Prebuilt { layout, extra, icon, module_name } => {
+            let mut list = Vec::with_capacity(layout.len());
+            for name in *layout {
+                let value = match *name {
+                    "icon" => crate::format_args::ArgValue::Str(icon),
+                    "module-name" => crate::format_args::ArgValue::Str(module_name),
+                    other => extra.iter().find(|arg| arg.name == other).map_or(
+                        crate::format_args::ArgValue::Str(""),
+                        |arg| match &arg.value {
+                            KeyArgValue::Str(value) => crate::format_args::ArgValue::Str(value),
+                            KeyArgValue::UInt(value) => crate::format_args::ArgValue::UInt(*value),
+                            KeyArgValue::UInt64(value) => crate::format_args::ArgValue::UInt64(*value),
+                        },
+                    ),
+                };
+                list.push(crate::format_args::FormatArg { name, value });
+            }
+            (list, layout.len() as u32)
+        },
     };
     let env = crate::format_args::EngineEnv::new(instance);
     crate::format_args::parse_format_string(template, &list, positional_len, &env)
@@ -1259,10 +1353,18 @@ pub(crate) fn stamp_common(rows: &mut [Row], args: &CommonArgs, module: &str, in
         row.common = Some(args.clone());
         if has_custom && !(error_fixed && matches!(row.kind, Kind::Error)) {
             let icon = args.key_icon.as_deref().unwrap_or(default_icon);
-            let key_args = if TYPE_K_KEY_MODULES.contains(&module) {
-                KeyArgs::Prebuilt { icon, module_name }
+            // A row with no module-specific args (an error row, or a
+            // compact/alternate print path that used FF_PRINT_TYPE_DEFAULT
+            // upstream) keeps ffPrintLogoAndKey's common {index, icon,
+            // module-name} list even on a Type K module.
+            let layout = if TYPE_K_KEY_MODULES.contains(&module) && !row.key_args.is_empty() {
+                TYPE_K_KEY_LAYOUT.iter().find(|(name, _)| *name == module).map(|(_, layout)| *layout)
             } else {
-                KeyArgs::Common { index: row.key_index, icon, module_name }
+                None
+            };
+            let key_args = match layout {
+                Some(layout) => KeyArgs::Prebuilt { layout, extra: &row.key_args, icon, module_name },
+                None => KeyArgs::Common { index: row.key_index, icon, module_name },
             };
             row.key_override = Some(expand_key(args.key.as_deref().unwrap_or_default(), &key_args, instance));
         }

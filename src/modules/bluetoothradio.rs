@@ -189,12 +189,18 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     let Some(format) = crate::modules::entry_format(instance.entry) else {
         return enabled
             .iter()
-            .map(|radio| {
+            .enumerate()
+            .map(|(i, radio)| {
                 let value = match lmp_version_str(radio.lmp_version) {
                     Some(version) => format!("Bluetooth {version} ({})", radio.vendor),
                     None => radio.vendor.clone(),
                 };
                 Row::new(&format!("{} ({})", instance.display_name("bluetoothradio"), radio.name), value)
+                    .with_index(i as u32 + 1)
+                    .with_key_args(vec![
+                        crate::modules::RowKeyArg::uint("index", i as u32 + 1),
+                        crate::modules::RowKeyArg::text("name", radio.name.clone()),
+                    ])
             })
             .collect();
     };
@@ -220,10 +226,13 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             ];
             let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
             // Upstream numbers enabled radios 1..N for the key template's
-            // {index} arg; the prebuilt NO_CUSTOM_KEY key ignores it here,
-            // but the row carries the same per-radio counter.
+            // {index} arg — the prebuilt NO_CUSTOM_KEY key uses it too.
             Row::new(&format!("{} ({})", instance.display_name("bluetoothradio"), radio.name), rendered)
                 .with_index(index as u32 + 1)
+                .with_key_args(vec![
+                    crate::modules::RowKeyArg::uint("index", index as u32 + 1),
+                    crate::modules::RowKeyArg::text("name", radio.name.clone()),
+                ])
         })
         .collect()
 }

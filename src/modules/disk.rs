@@ -396,11 +396,50 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     disks
         .iter()
         .filter(|disk| show_types_match(disk.volume_type))
-        .map(|disk| {
+        .enumerate()
+        .map(|(i, disk)| {
+            // disk.c builds the two OSC-8 hyperlinks only on the custom-key
+            // path; reproduce them verbatim (including on --pipe, where
+            // they remain literal bytes in the format arg).
+            let (mountpoint_link, name_link) = match (std::env::var("WSL_DISTRO_NAME"), std::env::var("WT_SESSION")) {
+                (Ok(distro), Ok(_)) => {
+                    if disk.filesystem == "9p" && disk.mountpoint.starts_with("/mnt/") {
+                        let drive = disk.mountpoint.as_bytes().get(5).copied().unwrap_or(b' ') as char;
+                        let prefix = format!("\x1b]8;;file:///{drive}:/\x1b\\");
+                        (
+                            format!("{prefix}{}\x1b]8;;\x1b\\", disk.mountpoint),
+                            format!("{prefix}{}\x1b]8;;\x1b\\", disk.name),
+                        )
+                    } else {
+                        let prefix = format!("\x1b]8;;file:////wsl.localhost/{distro}{}\x1b\\", disk.mountpoint);
+                        (
+                            format!("{prefix}{}\x1b]8;;\x1b\\", disk.mountpoint),
+                            format!("{prefix}{}\x1b]8;;\x1b\\", disk.name),
+                        )
+                    }
+                },
+                _ => {
+                    let prefix = format!("\x1b]8;;file://{}\x1b\\", disk.mountpoint);
+                    (
+                        format!("{prefix}{}\x1b]8;;\x1b\\", disk.mountpoint),
+                        format!("{prefix}{}\x1b]8;;\x1b\\", disk.name),
+                    )
+                },
+            };
             Row::new(
                 &format!("{} ({})", instance.display_name("disk"), disk.mountpoint),
                 item_value(disk, percent, &ctx, &instance.display_format),
             )
+            .with_key_args(vec![
+                crate::modules::RowKeyArg::text("mountpoint", disk.mountpoint.clone()),
+                crate::modules::RowKeyArg::text("name", disk.name.clone()),
+                crate::modules::RowKeyArg::text("mount-from", disk.mount_from.clone()),
+                // disk.c pre-increments its row counter unconditionally.
+                crate::modules::RowKeyArg::uint("index", i as u32 + 1),
+                crate::modules::RowKeyArg::text("filesystem", disk.filesystem.clone()),
+                crate::modules::RowKeyArg::text("mountpoint-link", mountpoint_link),
+                crate::modules::RowKeyArg::text("name-link", name_link),
+            ])
         })
         .collect()
 }

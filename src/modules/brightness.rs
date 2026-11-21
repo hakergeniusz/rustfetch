@@ -378,7 +378,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
     result
         .iter()
-        .map(|display| {
+        .enumerate()
+        .map(|(i, display)| {
             // Brightness hardcodes green=100/yellow=100: the number is
             // green (red only past 100, impossible here).
             let pct = display.current / display.max * 100.0;
@@ -398,6 +399,10 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 &format!("{} ({})", instance.display_name("brightness"), display.name),
                 value,
             )
+            .with_key_args(vec![
+                crate::modules::RowKeyArg::uint("index", crate::modules::numbered_index(i, result.len())),
+                crate::modules::RowKeyArg::text("name", display.name.clone()),
+            ])
         })
         .collect()
 }

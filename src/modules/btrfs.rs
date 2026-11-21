@@ -183,7 +183,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
     volumes
         .iter()
-        .map(|volume| {
+        .enumerate()
+        .map(|(i, volume)| {
             let key = if volume.name.is_empty() {
                 "BTRFS".to_string()
             } else {
@@ -220,7 +221,10 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             value.push_str(", ");
             crate::format::percent_append_num(&mut value, allocated_pct, percent, false, &ctx, df);
             value.push_str(" allocated)");
-            Row::new(&key, value)
+            Row::new(&key, value).with_key_args(vec![
+                crate::modules::RowKeyArg::uint("index", crate::modules::numbered_index(i, volumes.len())),
+                crate::modules::RowKeyArg::text("name", volume.name.clone()),
+            ])
         })
         .collect()
 }

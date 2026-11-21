@@ -167,7 +167,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
     counters2
         .iter()
-        .map(|dev| {
+        .enumerate()
+        .map(|(i, dev)| {
             let key_name = if dev.name.is_empty() {
                 dev.dev_path.clone()
             } else {
@@ -183,6 +184,11 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 &format!("{} ({key_name})", instance.display_name("diskio")),
                 value,
             )
+            .with_key_args(vec![
+                crate::modules::RowKeyArg::uint("index", crate::modules::numbered_index(i, counters2.len())),
+                crate::modules::RowKeyArg::text("name", dev.name.clone()),
+                crate::modules::RowKeyArg::text("dev-path", dev.dev_path.clone()),
+            ])
         })
         .collect()
 }

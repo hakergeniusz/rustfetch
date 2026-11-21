@@ -376,7 +376,7 @@ impl CodecOptions {
 
 /// printCodecLine: "Codec (Direction - gpu)" when the device string is
 /// non-empty, "Codec (Direction)" otherwise; empty lists print "None".
-fn codec_row(instance: &Instance, direction: &str, gpu: &str, types: CodecType) -> Row {
+fn codec_row(instance: &Instance, index: u32, direction: &str, gpu: &str, types: CodecType) -> Row {
     let mut value = String::new();
     for type_ in VA_TYPES {
         if types.0 & type_.0 != 0 {
@@ -394,7 +394,11 @@ fn codec_row(instance: &Instance, direction: &str, gpu: &str, types: CodecType) 
     } else {
         format!("{} ({direction} - {gpu})", instance.display_name("codec"))
     };
-    Row::new(&key, value)
+    Row::new(&key, value).with_key_args(vec![
+        crate::modules::RowKeyArg::uint("index", index),
+        crate::modules::RowKeyArg::text("gpu", gpu),
+        crate::modules::RowKeyArg::text("direction", direction),
+    ])
 }
 
 /// ffPrintCodec: with splitGPU, one Encoder/Decoder row per device; else
@@ -412,12 +416,15 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
     let mut rows = Vec::new();
     if options.split_gpu {
-        for result in &results {
+        for (i, result) in results.iter().enumerate() {
+            // Upstream numbers GPU results, not the two Encoder/Decoder
+            // rows they expand into; both share the same {index}.
+            let index = crate::modules::numbered_index(i, results.len());
             if options.show_encoder {
-                rows.push(codec_row(instance, "Encoder", &result.gpu, result.encoders));
+                rows.push(codec_row(instance, index, "Encoder", &result.gpu, result.encoders));
             }
             if options.show_decoder {
-                rows.push(codec_row(instance, "Decoder", &result.gpu, result.decoders));
+                rows.push(codec_row(instance, index, "Decoder", &result.gpu, result.decoders));
             }
         }
     } else {
@@ -433,10 +440,10 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             merged.platform_api = result.platform_api;
         }
         if options.show_encoder {
-            rows.push(codec_row(instance, "Encoder", &merged.gpu, merged.encoders));
+            rows.push(codec_row(instance, 0, "Encoder", &merged.gpu, merged.encoders));
         }
         if options.show_decoder {
-            rows.push(codec_row(instance, "Decoder", &merged.gpu, merged.decoders));
+            rows.push(codec_row(instance, 0, "Decoder", &merged.gpu, merged.decoders));
         }
     }
     rows

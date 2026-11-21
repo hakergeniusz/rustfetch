@@ -753,6 +753,11 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             };
             let mark_default = show & show::DEFAULT_ROUTE_ONLY == 0;
             Row::new(&format!("{} ({name})", instance.display_name("localip")), print_ip(ip, mark_default, &instance.display_format))
+                .with_key_args(vec![
+                    crate::modules::RowKeyArg::uint("index", crate::modules::numbered_index(index, results.len())),
+                    crate::modules::RowKeyArg::text("ifname", ip.name.clone()),
+                    crate::modules::RowKeyArg::text("mac", ip.mac.clone()),
+                ])
         })
         .collect()
 }

@@ -169,7 +169,14 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         value.push(' ');
         value.push_str(architecture);
     }
-    vec![Row::new(instance.display_name("os"), value)]
+    // os.c prebuilds the custom key against [sysname, name, icon,
+    // module-name]; `name` is the raw NAME field, not the composed value
+    // printed on the right-hand side.
+    let key_args = vec![
+        crate::modules::RowKeyArg::text("sysname", platform::platform().sysinfo.name.clone()),
+        crate::modules::RowKeyArg::text("name", os.name.clone()),
+    ];
+    vec![Row::new(instance.display_name("os"), value).with_key_args(key_args)]
 }
 
 /// ffGenerateOSJsonResult: all ten fields, empty ones included.

@@ -46,11 +46,15 @@ fn format_value(
     value
 }
 
-fn row(instance: &Instance, name: &str, value: String) -> Row {
+fn row(instance: &Instance, name: &str, value: String, index: u32) -> Row {
+    let key_args = vec![
+        crate::modules::RowKeyArg::uint("index", index),
+        crate::modules::RowKeyArg::text("name", name),
+    ];
     if name.is_empty() {
-        Row::new(instance.display_name("monitor"), value)
+        Row::new(instance.display_name("monitor"), value).with_key_args(key_args)
     } else {
-        Row::new(&format!("{} ({name})", instance.display_name("monitor")), value)
+        Row::new(&format!("{} ({name})", instance.display_name("monitor")), value).with_key_args(key_args)
     }
 }
 
@@ -60,7 +64,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             let edids = display::edids_by_connector();
             displays
                 .iter()
-                .map(|display| {
+                .enumerate()
+                .map(|(i, display)| {
                     let edid = edids.iter().find(|(connector, _)| *connector == display.connector);
                     // mutterApplyMonitorProperties: color-mode 2 (BT2100) is
                     // HDR enabled and wins over everything; with an EDID the
@@ -83,19 +88,23 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                     let name = edid
                         .and_then(|(_, edid)| edid.name.clone())
                         .unwrap_or_else(|| display.model.clone());
-                    row(instance, &name, value)
+                    row(instance, &name, value, crate::modules::numbered_index(i, displays.len()))
                 })
                 .collect()
         },
-        None => display::edids_by_connector()
-            .iter()
-            .map(|(_, edid)| {
-                let value =
-                    format_value(edid.width, edid.height, edid.refresh, edid.physical_mm, edid.hdr);
-                let name = edid.name.clone().unwrap_or_default();
-                row(instance, &name, value)
-            })
-            .collect(),
+        None => {
+            let edids = display::edids_by_connector();
+            edids
+                .iter()
+                .enumerate()
+                .map(|(i, (_, edid))| {
+                    let value =
+                        format_value(edid.width, edid.height, edid.refresh, edid.physical_mm, edid.hdr);
+                    let name = edid.name.clone().unwrap_or_default();
+                    row(instance, &name, value, crate::modules::numbered_index(i, edids.len()))
+                })
+                .collect()
+        },
     }
 }
 

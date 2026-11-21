@@ -162,13 +162,19 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         // One "Swap (device)" row per swap entry.
         return items
             .iter()
-            .map(|item| {
+            .enumerate()
+            .map(|(i, item)| {
                 let key = if item.name.is_empty() {
                     "Swap".to_string()
                 } else {
                     format!("{} ({})", instance.display_name("swap"), item.name)
                 };
                 Row::new(&key, aggregate_value(item, items.len(), percent, &ctx, &instance.display_format))
+                    .with_key_args(vec![
+                        // printSwap's separate path pre-increments the index.
+                        crate::modules::RowKeyArg::uint("index", i as u32 + 1),
+                        crate::modules::RowKeyArg::text("name", item.name.clone()),
+                    ])
             })
             .collect();
     }
@@ -182,7 +188,12 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     vec![Row::new(
         instance.display_name("swap"),
         aggregate_value(&total, items.len(), percent, &ctx, &instance.display_format),
-    )]
+    )
+    .with_key_args(vec![
+        // The aggregate path calls printSwap with index 0 and an empty name.
+        crate::modules::RowKeyArg::uint("index", 0),
+        crate::modules::RowKeyArg::text("name", ""),
+    ])]
 }
 
 /// ffGenerateSwapJsonResult: one object per device, empty array when none.

@@ -437,7 +437,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
     counters2
         .iter()
-        .map(|inf| {
+        .enumerate()
+        .map(|(i, inf)| {
             let name = if inf.name.is_empty() {
                 "unknown".to_string()
             } else {
@@ -453,6 +454,10 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 &format!("{} ({name})", instance.display_name("netio")),
                 value,
             )
+            .with_key_args(vec![
+                crate::modules::RowKeyArg::uint("index", crate::modules::numbered_index(i, counters2.len())),
+                crate::modules::RowKeyArg::text("ifname", inf.name.clone()),
+            ])
         })
         .collect()
 }

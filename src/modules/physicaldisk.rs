@@ -246,7 +246,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
     result
         .iter()
-        .map(|dev| {
+        .enumerate()
+        .map(|(i, dev)| {
             let key_name = if dev.name.is_empty() { &dev.dev_path } else { &dev.name };
             let physical_type = if dev.type_bits & VIRTUAL != 0 {
                 "Virtual"
@@ -301,6 +302,11 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 );
             }
             Row::new(&format!("{} ({key_name})", instance.display_name("physicaldisk")), value)
+                .with_key_args(vec![
+                    crate::modules::RowKeyArg::uint("index", crate::modules::numbered_index(i, result.len())),
+                    crate::modules::RowKeyArg::text("name", dev.name.clone()),
+                    crate::modules::RowKeyArg::text("dev-path", dev.dev_path.clone()),
+                ])
         })
         .collect()
 }

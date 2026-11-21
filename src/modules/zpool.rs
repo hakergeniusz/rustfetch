@@ -259,7 +259,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         // "No zpool found" is an error row, hidden by default.
         return Vec::new();
     }
-    let single = items.len() == 1;
+    let count = items.len();
+    let single = count == 1;
     items
         .into_iter()
         .enumerate()
@@ -273,6 +274,11 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 key.push_str(&format!(" {}", index + 1));
             }
             Row::new(&key, item_value(&item, percent, &ctx, &instance.display_format))
+                .with_key_args(vec![
+                    crate::modules::RowKeyArg::uint("index", crate::modules::numbered_index(index, count)),
+                    crate::modules::RowKeyArg::text("name", item.name.clone()),
+                    crate::modules::RowKeyArg::uint64("guid", item.guid),
+                ])
         })
         .collect()
 }

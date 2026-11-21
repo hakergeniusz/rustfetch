@@ -423,7 +423,8 @@ fn format_value(
 fn rows_from_mutter(instance: &Instance, displays: &[MutterDisplay], edids: &[(String, Edid)]) -> Vec<Row> {
     displays
         .iter()
-        .map(|display| {
+        .enumerate()
+        .map(|(i, display)| {
             let edid = edids.iter().find(|(name, _)| *name == display.connector);
             let physical_mm = edid.map_or((0, 0), |(_, edid)| edid.physical_mm);
             let built_in = display.connector.contains("eDP") || display.connector.contains("LVDS");
@@ -433,6 +434,11 @@ fn rows_from_mutter(instance: &Instance, displays: &[MutterDisplay], edids: &[(S
                 .and_then(|(_, edid)| edid.name.clone())
                 .unwrap_or_else(|| display.model.clone());
             Row::new(&format!("{} ({name})", instance.display_name("display")), value)
+                .with_key_args(vec![
+                    crate::modules::RowKeyArg::uint("index", crate::modules::numbered_index(i, displays.len())),
+                    crate::modules::RowKeyArg::text("name", name.clone()),
+                    crate::modules::RowKeyArg::text("type", if built_in { "Built-in" } else { "External" }),
+                ])
         })
         .collect()
 }
@@ -440,14 +446,18 @@ fn rows_from_mutter(instance: &Instance, displays: &[MutterDisplay], edids: &[(S
 /// Fallback without D-Bus: every connected connector's preferred timing.
 fn rows_from_edid(instance: &Instance, edids: &[(String, Edid)]) -> Vec<Row> {
     let mut rows = Vec::new();
-    for (connector, edid) in edids {
+    for (i, (connector, edid)) in edids.iter().enumerate() {
         let built_in = connector.contains("eDP") || connector.contains("LVDS");
         let value = format_value(edid.width, edid.height, edid.refresh, edid.physical_mm, built_in);
         let key = match &edid.name {
             Some(name) => format!("{} ({name})", instance.display_name("display")),
             None => "Display".to_string(),
         };
-        rows.push(Row::new(&key, value));
+        rows.push(Row::new(&key, value).with_key_args(vec![
+            crate::modules::RowKeyArg::uint("index", crate::modules::numbered_index(i, edids.len())),
+            crate::modules::RowKeyArg::text("name", edid.name.clone().unwrap_or_default()),
+            crate::modules::RowKeyArg::text("type", if built_in { "Built-in" } else { "External" }),
+        ]));
     }
     rows
 }

@@ -87,7 +87,9 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             value.push_str(&format!(" ({release})"));
         }
 
-        return vec![Row::new(&key, value)];
+        return vec![Row::new(&key, value).with_key_args(vec![
+            crate::modules::RowKeyArg::text("type", type_arg),
+        ])];
     };
 
     // Upstream FF_PRINT_FORMAT_CHECKED passes the five bios strbufs as
@@ -101,7 +103,9 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         crate::format_args::FormatArg { name: "type", value: crate::format_args::ArgValue::Str(type_arg) },
     ];
     let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
-    vec![Row::new(&key, rendered)]
+    vec![Row::new(&key, rendered).with_key_args(vec![
+        crate::modules::RowKeyArg::text("type", type_arg),
+    ])]
 }
 
 /// ffGenerateBiosJsonResult.

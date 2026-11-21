@@ -135,6 +135,10 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 value.push_str(&format!(" ({letter})"));
             }
             Row::new(&format!("{} (L{})", instance.display_name("cpucache"), level + 1), value)
+                .with_key_args(vec![
+                    crate::modules::RowKeyArg::uint("index", level as u32 + 1),
+                    crate::modules::RowKeyArg::text("level", format!("L{}", level + 1)),
+                ])
         })
         .collect()
 }
