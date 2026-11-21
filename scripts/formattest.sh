@@ -66,6 +66,7 @@ run_tty "percent padding" --structure memory --percent-ndigits 1 --percent-width
 run_tty "bar border-as-value" --structure battery --bar-border-left-elapsed '<' --bar-border-right-elapsed '>' --percent-type bar
 run_tty "bar colors" --structure swap --bar-color-elapsed red --bar-color-total blue --bar-color-border green
 run_tty "bar mixed flags" --structure disk --bar-char-elapsed '#' --bar-char-total '.' --bar-width 8 --percent-type bar num
+run_tty "fraction flags" --structure localip --fraction-ndigits 3 --fraction-trailing-zeros always
 
 # --- JSON config: display + module level -----------------------------------
 cat > /tmp/formattest-full.jsonc <<'EOF'
@@ -96,6 +97,16 @@ EOF
 run_tty "module config group1" --config /tmp/formattest-modules.jsonc -s memory,sound,wifi
 run_tty "module config group2" --config /tmp/formattest-modules.jsonc -s gpu,battery,cpu,physicaldisk
 
+# localip speed is the only default-format fraction consumer; this box's wlan0
+# reports no speed, so the ≥1000 branches stay unit-test territory.
+cat > /tmp/formattest-fraction.jsonc <<'EOF'
+{
+  "localip": { "showSpeed": true },
+  "display": { "fraction": { "ndigits": 3, "trailingZeros": "always" } }
+}
+EOF
+run_tty "fraction config localip" --config /tmp/formattest-fraction.jsonc -s localip
+
 # --- config error paths (stderr + exit code) -------------------------------
 run_err "bar legacy char" '{"display":{"bar":{"charElapsed":"x"}}}'
 run_err "bar legacy border" '{"display":{"bar":{"borderRight":"x"}}}'
@@ -107,6 +118,9 @@ run_err "bar non-object" '{"display":{"bar":123}}'
 run_err "color invalid" '{"display":{"percent":{"color":{"green":"bogus"}}}}'
 run_err "module percent non-obj" '{"memory":{"percent":5}}'
 run_err "module temp bool" '{"memory":{"temp":true}}'
+run_err "fraction ndigits 10" '{"display":{"fraction":{"ndigits":10}}}'
+run_err "fraction ndigits -2" '{"display":{"fraction":{"ndigits":-2}}}'
+run_err "fraction trailingZeros bogus" '{"display":{"fraction":{"trailingZeros":"bogus"}}}'
 
 if [ "$FAIL" -eq 0 ]; then
     echo "all scenarios matched"

@@ -1071,37 +1071,45 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
                         }
                     },
                     "fraction" => {
-                        // The fraction formatter joins with the format-args
-                        // engine; the usage errors are validated now so the
-                        // config reject paths match, the values drop.
-                        if let Some(ndigits) = value.get("ndigits")
-                            && !matches!(ndigits, jsonc::Value::Null)
-                        {
-                            let raw = json_get_int(ndigits, "display.fraction.ndigits must be an integer", key);
-                            if !(-1..=9).contains(&raw) {
-                                section_error("display", Some(key), "display.fraction.ndigits must be between -1 and 9");
+                        // ffStrbufAppendDouble's knobs; localip's speed is
+                        // the only default-format consumer.
+                        if let Some(ndigits) = value.get("ndigits") {
+                            if matches!(ndigits, jsonc::Value::Null) {
+                                format.fraction_ndigits = -1;
+                            } else {
+                                let raw = json_get_int(ndigits, "display.fraction.ndigits must be an integer", key);
+                                if !(-1..=9).contains(&raw) {
+                                    section_error("display", Some(key), "display.fraction.ndigits must be between -1 and 9");
+                                }
+                                format.fraction_ndigits = raw as i8;
                             }
                         }
-                        if let Some(zeros) = value.get("trailingZeros")
-                            && !matches!(zeros, jsonc::Value::Null)
-                        {
-                            json_config_enum(
-                                zeros,
-                                key,
-                                &[("default", 0), ("always", 1), ("never", 2)],
-                            );
+                        if let Some(zeros) = value.get("trailingZeros") {
+                            if matches!(zeros, jsonc::Value::Null) {
+                                format.fraction_trailing_zeros = crate::format::FractionTrailingZeros::Default;
+                            } else {
+                                format.fraction_trailing_zeros = match json_config_enum(
+                                    zeros,
+                                    key,
+                                    &[("default", 0), ("always", 1), ("never", 2)],
+                                ) {
+                                    1 => crate::format::FractionTrailingZeros::Always,
+                                    2 => crate::format::FractionTrailingZeros::Never,
+                                    _ => crate::format::FractionTrailingZeros::Default,
+                                };
+                            }
                         }
                     },
                     _ => {
                         // display.common: one ndigits write fans out to
-                        // every formatter (fraction included upstream; its
-                        // field drops with the fraction parse above), one
+                        // every formatter (fraction included upstream), one
                         // spaceBeforeUnit to all five.
                         if let Some(ndigits) = value.get("ndigits") {
                             let raw = json_get_uint(ndigits, "display.common.ndigits must be an unsigned integer", key);
                             if raw > 9 {
                                 section_error("display", Some(key), "display.common.ndigits must be between 0 and 9");
                             }
+                            format.fraction_ndigits = raw as i8;
                             format.freq_ndigits = raw as i8;
                             format.percent_ndigits = raw as u8;
                             format.size_ndigits = raw as u8;

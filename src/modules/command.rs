@@ -140,6 +140,8 @@ mod tests {
                 percent_color_red: None,
                 percent_space_before_unit: None,
                 percent_width: None,
+                fraction_ndigits: None,
+                fraction_trailing_zeros: None,
                 bar_char_elapsed: None,
                 bar_char_total: None,
                 bar_border_left: None,

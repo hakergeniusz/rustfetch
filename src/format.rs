@@ -36,6 +36,19 @@ pub enum TemperatureUnit {
     Kelvin,
 }
 
+/// FFFractionTrailingZerosType: how ffStrbufAppendDouble pads the fraction
+/// digits — DEFAULT strips a trailing zero, ALWAYS pads to ndigits. NEVER is
+/// DEFAULT-equivalent for the ffStrbufAppendDouble consumers (localip.c and
+/// display.c pass `== ALWAYS` there); the `!= NEVER` polarity only exists in
+/// the format-args engine (format.c).
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum FractionTrailingZeros {
+    #[default]
+    Default,
+    Always,
+    Never,
+}
+
 /// FF_COLOR_FG_* (common/color.h): the SGR parameters the default percent/
 /// temp/bar colors resolve to.
 pub const FG_GREEN: &str = "32";
@@ -123,6 +136,11 @@ pub struct DisplayFormat {
     pub percent_color_red: String,
     pub percent_space_before_unit: SpaceBeforeUnit,
     pub percent_width: u8,
+    /// ffStrbufAppendDouble's precision; -1 keeps yyjson's shortest form.
+    pub fraction_ndigits: i8,
+    /// DEFAULT strips a trailing ".0" / trailing zero, ALWAYS pads to the
+    /// ndigits width, NEVER keeps yyjson's output verbatim.
+    pub fraction_trailing_zeros: FractionTrailingZeros,
 }
 
 impl Default for DisplayFormat {
@@ -164,6 +182,8 @@ impl Default for DisplayFormat {
             percent_color_red: red.to_string(),
             percent_space_before_unit: SpaceBeforeUnit::Default,
             percent_width: 0,
+            fraction_ndigits: 2,
+            fraction_trailing_zeros: FractionTrailingZeros::Default,
         }
     }
 }
@@ -712,6 +732,13 @@ pub fn temps_append_num(out: &mut String, celsius: f64, config: ColorRangeConfig
     }
 }
 
+/// The fraction formatter: ffStrbufAppendDouble driven by the
+/// display.fraction ndigits/trailingZeros options (localip's link speed is
+/// the only default-format consumer).
+pub fn fraction_append_num(out: &mut String, value: f64, d: &DisplayFormat) {
+    append_double(out, value, d.fraction_ndigits, d.fraction_trailing_zeros == FractionTrailingZeros::Always);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1060,5 +1087,35 @@ mod tests {
         assert_eq!(temps_num(45.0, range, &plain, &spaced), "45.0 °C");
         let more_digits = DisplayFormat { temp_ndigits: 2, ..dark_display() };
         assert_eq!(temps_num(45.0, range, &plain, &more_digits), "45.00°C");
+    }
+
+    fn frac(value: f64, d: &DisplayFormat) -> String {
+        let mut out = String::new();
+        fraction_append_num(&mut out, value, d);
+        out
+    }
+
+    #[test]
+    fn fraction_append_num_trailing_zeros() {
+        let d = dark_display();
+        // DEFAULT strips one trailing zero (yyjson's "2.50" shrinks).
+        assert_eq!(frac(2.5, &d), "2.5");
+        assert_eq!(frac(2.0, &d), "2");
+        assert_eq!(frac(2.05, &d), "2.05");
+        assert_eq!(frac(-3.0, &d), "-3");
+        // ALWAYS pads back up to the ndigits width.
+        let always = DisplayFormat { fraction_trailing_zeros: FractionTrailingZeros::Always, ..d.clone() };
+        assert_eq!(frac(2.5, &always), "2.50");
+        assert_eq!(frac(2.0, &always), "2.00");
+        // NEVER strips too: localip.c passes `== ALWAYS` (not `!= NEVER`) to
+        // ffStrbufAppendDouble, so for this formatter NEVER ≡ DEFAULT.
+        let never = DisplayFormat { fraction_trailing_zeros: FractionTrailingZeros::Never, ..d.clone() };
+        assert_eq!(frac(2.5, &never), "2.5");
+        assert_eq!(frac(2.0, &never), "2");
+        // ndigits 0 rounds first; -1 falls back to the shortest form.
+        let zero = DisplayFormat { fraction_ndigits: 0, ..d.clone() };
+        assert_eq!(frac(2.4, &zero), "2");
+        let raw = DisplayFormat { fraction_ndigits: -1, ..d.clone() };
+        assert_eq!(frac(2.5, &raw), "2.5");
     }
 }

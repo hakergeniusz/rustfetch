@@ -290,6 +290,12 @@ fn main() {
     if let Some(width) = cli.percent_width {
         display_format.percent_width = width as u8;
     }
+    if let Some(ndigits) = cli.fraction_ndigits {
+        display_format.fraction_ndigits = ndigits as i8;
+    }
+    if let Some(zeros) = cli.fraction_trailing_zeros {
+        display_format.fraction_trailing_zeros = zeros;
+    }
     if let Some(chars) = &cli.bar_char_elapsed {
         display_format.bar_char_elapsed = chars.clone();
     }

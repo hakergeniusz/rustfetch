@@ -650,20 +650,23 @@ fn detect(options: &LocalIpOptions) -> Result<Vec<LocalIpResult>, &'static str> 
     Ok(results)
 }
 
-/// appendSpeed: Tbps/Gbps with the fraction defaults (2 digits, trailing
-/// zeros kept), Mbps as the raw integer.
-fn append_speed(speed: i32, buffer: &mut String) {
+/// appendSpeed: Tbps/Gbps through ffStrbufAppendDouble with the
+/// display.fraction options (DEFAULT strips the trailing zero, so 2.5
+/// Gbps never prints "2.50"), Mbps as the raw integer.
+fn append_speed(speed: i32, buffer: &mut String, df: &crate::format::DisplayFormat) {
     if speed >= 1_000_000 {
-        buffer.push_str(&format!("{:.2} Tbps", speed as f64 / 1e6));
+        crate::format::fraction_append_num(buffer, speed as f64 / 1e6, df);
+        buffer.push_str(" Tbps");
     } else if speed >= 1000 {
-        buffer.push_str(&format!("{:.2} Gbps", speed as f64 / 1e3));
+        crate::format::fraction_append_num(buffer, speed as f64 / 1e3, df);
+        buffer.push_str(" Gbps");
     } else {
         buffer.push_str(&format!("{speed} Mbps"));
     }
 }
 
 /// printIp: addresses, " (mac)", " [Speed X / MTU Y]", " <flags>", " *".
-fn print_ip(ip: &LocalIpResult, mark_default_route: bool) -> String {
+fn print_ip(ip: &LocalIpResult, mark_default_route: bool, df: &crate::format::DisplayFormat) -> String {
     let mut buffer = String::new();
     if !ip.ipv4.is_empty() {
         buffer.push_str(&ip.ipv4);
@@ -690,7 +693,7 @@ fn print_ip(ip: &LocalIpResult, mark_default_route: bool) -> String {
             if ip.mtu > 0 {
                 buffer.push_str("Speed ");
             }
-            append_speed(ip.speed, &mut buffer);
+            append_speed(ip.speed, &mut buffer, df);
             if ip.mtu > 0 {
                 buffer.push_str(" / MTU ");
             }
@@ -733,7 +736,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     if show & show::COMPACT != 0 {
         let joined = results
             .iter()
-            .map(|ip| print_ip(ip, false))
+            .map(|ip| print_ip(ip, false, &instance.display_format))
             .collect::<Vec<_>>()
             .join(" - ");
         return vec![Row::new(instance.display_name("localip"), joined)];
@@ -749,7 +752,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 ip.name.clone()
             };
             let mark_default = show & show::DEFAULT_ROUTE_ONLY == 0;
-            Row::new(&format!("{} ({name})", instance.display_name("localip")), print_ip(ip, mark_default))
+            Row::new(&format!("{} ({name})", instance.display_name("localip")), print_ip(ip, mark_default, &instance.display_format))
         })
         .collect()
 }
@@ -832,11 +835,23 @@ mod tests {
 
     #[test]
     fn formats_speed_units() {
+        let df = Default::default();
         let mut buffer = String::new();
-        super::append_speed(100, &mut buffer);
+        super::append_speed(100, &mut buffer, &df);
         assert_eq!(buffer, "100 Mbps");
         buffer.clear();
-        super::append_speed(2500, &mut buffer);
+        super::append_speed(2500, &mut buffer, &df);
+        // DEFAULT strips the trailing zero: "2.5", not "2.50".
+        assert_eq!(buffer, "2.5 Gbps");
+        buffer.clear();
+        super::append_speed(2_000_000, &mut buffer, &df);
+        assert_eq!(buffer, "2 Tbps");
+        let always = crate::format::DisplayFormat {
+            fraction_trailing_zeros: crate::format::FractionTrailingZeros::Always,
+            ..Default::default()
+        };
+        buffer.clear();
+        super::append_speed(2500, &mut buffer, &always);
         assert_eq!(buffer, "2.50 Gbps");
     }
 }

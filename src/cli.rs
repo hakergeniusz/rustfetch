@@ -184,6 +184,11 @@ pub struct Cli {
     pub percent_color_red: Option<String>,
     pub percent_space_before_unit: Option<crate::format::SpaceBeforeUnit>,
     pub percent_width: Option<u32>,
+    /// `--fraction-ndigits` (ffOptionParseInt32, cast to int8_t at the
+    /// merge) / `--fraction-trailing-zeros`: the ffStrbufAppendDouble
+    /// knobs (localip's speed is the only consumer).
+    pub fraction_ndigits: Option<i32>,
+    pub fraction_trailing_zeros: Option<crate::format::FractionTrailingZeros>,
     /// The `--bar-*` strings, width and colors of ffPercentAppendBar;
     /// `--bar-color-elapsed` keeps the literal "auto" (the band-selection
     /// mode) verbatim.
@@ -276,6 +281,8 @@ impl Cli {
             percent_color_red: None,
             percent_space_before_unit: None,
             percent_width: None,
+            fraction_ndigits: None,
+            fraction_trailing_zeros: None,
             bar_char_elapsed: None,
             bar_char_total: None,
             bar_border_left: None,
@@ -802,6 +809,12 @@ impl Cli {
                         },
                     }
                 },
+                key if key.eq_ignore_ascii_case("--fraction-ndigits") => {
+                    cli.fraction_ndigits = Some(parse_int32(key, value));
+                },
+                key if key.eq_ignore_ascii_case("--fraction-trailing-zeros") => {
+                    cli.fraction_trailing_zeros = Some(fraction_trailing_zeros_enum(key, value));
+                },
                 key if key.to_ascii_lowercase().starts_with("--percent-") => {
                     let subkey = &key.to_ascii_lowercase()["--percent-".len()..];
                     match subkey {
@@ -1114,6 +1127,17 @@ fn size_binary_prefix_enum(key: &str, value: Option<&str>) -> crate::format::Siz
         1 => crate::format::SizeBinaryPrefix::Si,
         2 => crate::format::SizeBinaryPrefix::Jedec,
         _ => crate::format::SizeBinaryPrefix::Iec,
+    }
+}
+
+/// ffOptionParseEnum for --fraction-trailing-zeros.
+fn fraction_trailing_zeros_enum(key: &str, value: Option<&str>) -> crate::format::FractionTrailingZeros {
+    const PAIRS: &[(&str, i32)] =
+        &[("default", 0), ("always", 1), ("never", 2)];
+    match parse_enum(key, value, PAIRS) {
+        1 => crate::format::FractionTrailingZeros::Always,
+        2 => crate::format::FractionTrailingZeros::Never,
+        _ => crate::format::FractionTrailingZeros::Default,
     }
 }
 
