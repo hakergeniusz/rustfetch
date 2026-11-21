@@ -40,19 +40,30 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     };
 
-    let mut value = icons1;
-    if !icons2.is_empty() {
-        if !value.is_empty() {
-            value.push_str(", ");
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        let mut value = icons1;
+        if !icons2.is_empty() {
+            if !value.is_empty() {
+                value.push_str(", ");
+            }
+            value.push_str(&icons2);
         }
-        value.push_str(&icons2);
-    }
 
-    if value.is_empty() {
-        Vec::new()
-    } else {
-        vec![Row::new(instance.display_name("icons"), value)]
-    }
+        return if value.is_empty() {
+            Vec::new()
+        } else {
+            vec![Row::new(instance.display_name("icons"), value)]
+        };
+    };
+
+    // Upstream FF_PRINT_FORMAT_CHECKED passes the two detected strbufs as
+    // `icons1` and `icons2` string args.
+    let args = [
+        crate::format_args::FormatArg { name: "icons1", value: crate::format_args::ArgValue::Str(&icons1) },
+        crate::format_args::FormatArg { name: "icons2", value: crate::format_args::ArgValue::Str(&icons2) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("icons"), rendered)]
 }
 
 /// ffGenerateIconsJsonResult.

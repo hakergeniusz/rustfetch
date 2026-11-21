@@ -154,11 +154,21 @@ pub fn detect(instance: &Instance) -> Result<String, String> {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
-    match detect(instance) {
-        Ok(theme) => vec![Row::new(instance.display_name("wmtheme"), theme)],
+    let Ok(theme) = detect(instance) else {
         // Detection errors are hidden rows by default.
-        Err(_) => Vec::new(),
-    }
+        return Vec::new();
+    };
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        return vec![Row::new(instance.display_name("wmtheme"), theme)];
+    };
+
+    // Upstream FF_PRINT_FORMAT_CHECKED passes the detected theme (or error)
+    // strbuf as the single `result` arg.
+    let args = [
+        crate::format_args::FormatArg { name: "result", value: crate::format_args::ArgValue::Str(&theme) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("wmtheme"), rendered)]
 }
 
 pub fn json(instance: &Instance) -> JsonOutcome {

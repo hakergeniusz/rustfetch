@@ -64,19 +64,30 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     };
 
-    let mut value = theme1;
-    if !theme2.is_empty() {
-        if !value.is_empty() {
-            value.push_str(", ");
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        let mut value = theme1;
+        if !theme2.is_empty() {
+            if !value.is_empty() {
+                value.push_str(", ");
+            }
+            value.push_str(&theme2);
         }
-        value.push_str(&theme2);
-    }
 
-    if value.is_empty() {
-        Vec::new()
-    } else {
-        vec![Row::new(instance.display_name("theme"), value)]
-    }
+        return if value.is_empty() {
+            Vec::new()
+        } else {
+            vec![Row::new(instance.display_name("theme"), value)]
+        };
+    };
+
+    // Upstream FF_PRINT_FORMAT_CHECKED passes the two detected strbufs as
+    // `theme1` and `theme2` string args.
+    let args = [
+        crate::format_args::FormatArg { name: "theme1", value: crate::format_args::ArgValue::Str(&theme1) },
+        crate::format_args::FormatArg { name: "theme2", value: crate::format_args::ArgValue::Str(&theme2) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("theme"), rendered)]
 }
 
 /// ffGenerateThemeJsonResult.
