@@ -83,6 +83,13 @@ pub struct Cli {
     /// `--logo-print-remaining <?bool>`: gates the closing
     /// ffLogoPrintRemaining (the watch rounds' call is not gated).
     pub logo_print_remaining: Option<bool>,
+    /// The explicit logo type: `--logo-type`'s enum or the source-type
+    /// setters (`--file`, `--data`, `--raw`, the image flags). The sticky
+    /// `-l none`/`-l small` bools predate this and win for their values.
+    pub logo_type: Option<crate::logo::LogoTypeOpt>,
+    /// `--logo-animation-frame <int32>`: the image-animation frame index
+    /// (parsed like upstream; no image renderer consumes it yet).
+    pub logo_animation_frame: Option<i32>,
     /// `--pipe <?bool>`: Some when the flag was given, with upstream's
     /// boolean parsing (empty/true/yes/on/1 → true, anything else false).
     pub pipe: Option<bool>,
@@ -128,6 +135,8 @@ impl Cli {
             logo_padding_left: None,
             logo_padding_right: None,
             logo_print_remaining: None,
+            logo_type: None,
+            logo_animation_frame: None,
             pipe: None,
             watch_interval: 0,
             format_json: false,
@@ -347,6 +356,97 @@ impl Cli {
                 "--logo-padding-left" => cli.logo_padding_left = Some(parse_uint32(key, value)),
                 "--logo-padding-right" => cli.logo_padding_right = Some(parse_uint32(key, value)),
                 "--logo-print-remaining" => cli.logo_print_remaining = Some(parse_boolean(value)),
+                "--logo-type" => cli.logo_type = Some(logo_type_enum(key, value)),
+                "--file" => {
+                    cli.logo_source = Some(parse_string(key, value));
+                    cli.logo_type = Some(crate::logo::LogoTypeOpt::File);
+                },
+                "--file-raw" => {
+                    cli.logo_source = Some(parse_string(key, value));
+                    cli.logo_type = Some(crate::logo::LogoTypeOpt::FileRaw);
+                },
+                "--data" => {
+                    cli.logo_source = Some(parse_string(key, value));
+                    cli.logo_type = Some(crate::logo::LogoTypeOpt::Data);
+                },
+                "--data-raw" => {
+                    cli.logo_source = Some(parse_string(key, value));
+                    cli.logo_type = Some(crate::logo::LogoTypeOpt::DataRaw);
+                },
+                "--raw" => {
+                    cli.logo_source = Some(parse_string(key, value));
+                    cli.logo_type = Some(crate::logo::LogoTypeOpt::ImageRaw);
+                },
+                "--sixel" => {
+                    cli.logo_source = Some(parse_string(key, value));
+                    cli.logo_type = Some(crate::logo::LogoTypeOpt::ImageSixel);
+                },
+                "--kitty" => {
+                    cli.logo_source = Some(parse_string(key, value));
+                    cli.logo_type = Some(crate::logo::LogoTypeOpt::ImageKitty);
+                },
+                "--kitty-direct" => {
+                    cli.logo_source = Some(parse_string(key, value));
+                    cli.logo_type = Some(crate::logo::LogoTypeOpt::ImageKittyDirect);
+                },
+                "--kitty-icat" => {
+                    cli.logo_source = Some(parse_string(key, value));
+                    cli.logo_type = Some(crate::logo::LogoTypeOpt::ImageKittyIcat);
+                },
+                "--iterm" => {
+                    cli.logo_source = Some(parse_string(key, value));
+                    cli.logo_type = Some(crate::logo::LogoTypeOpt::ImageIterm);
+                },
+                "--chafa" => {
+                    cli.logo_source = Some(parse_string(key, value));
+                    cli.logo_type = Some(crate::logo::LogoTypeOpt::ImageChafa);
+                },
+                "--chafa-fg-only" => {
+                    parse_boolean(value);
+                },
+                "--chafa-symbols" => {
+                    parse_string(key, value);
+                },
+                "--chafa-canvas-mode" => {
+                    enum_pairs(key, value, &[
+                        "TRUECOLOR", "INDEXED_256", "INDEXED_240", "INDEXED_16",
+                        "FGBG_BGFG", "FGBG", "INDEXED_8", "INDEXED_16_8",
+                    ]);
+                },
+                "--chafa-color-space" => {
+                    enum_pairs(key, value, &["RGB", "DIN99D"]);
+                },
+                "--chafa-dither-mode" => {
+                    enum_pairs(key, value, &["NONE", "ORDERED", "DIFFUSION"]);
+                },
+                "--logo-cache" => {
+                    // FF_LOGO_CACHE_ON/OFF/REGEN: this port caches nothing.
+                    if let Some(v) = value && v.eq_ignore_ascii_case("regen") { } else { parse_boolean(value); }
+                },
+                "--logo-recache" => {
+                    eprintln!("--logo-recache has been replaced by --logo-cache regen");
+                    std::process::exit(477);
+                },
+                "--logo-separate" => {
+                    eprintln!("--logo-separate has been renamed to --logo-position");
+                    std::process::exit(477);
+                },
+                "--logo-preserve-aspect-ratio" => {
+                    parse_boolean(value);
+                },
+                "--logo-animation-frame" => cli.logo_animation_frame = Some(parse_int32(key, value)),
+                "--logo-spin-speed-per-frame" => {
+                    parse_float(key, value, -360.0, 360.0);
+                },
+                "--logo-spin-speed-per-round" => {
+                    parse_float(key, value, -3600.0, 3600.0);
+                },
+                "--logo-spin-tilt" => {
+                    parse_float(key, value, -80.0, 80.0);
+                },
+                "--logo-spin-angle" => {
+                    parse_float(key, value, 0.0, 360.0);
+                },
                 _ => {
                     eprintln!("Error: unknown option: {key}");
                     std::process::exit(400);
@@ -410,6 +510,101 @@ fn parse_string(key: &str, value: Option<&str>) -> String {
     match value {
         Some(value) => value.to_string(),
         None => usage_exit(key, "<str>", 477),
+    }
+}
+
+/// --logo-type's ffOptionParseEnum pairs (options/logo.c:125).
+fn logo_type_enum(key: &str, value: Option<&str>) -> crate::logo::LogoTypeOpt {
+    use crate::logo::LogoTypeOpt as T;
+    let Some(value) = value else {
+        usage_exit(key, "<value>", 476);
+    };
+    let value = value.to_ascii_lowercase();
+    match value.as_str() {
+        "auto" => T::Auto,
+        "builtin" => T::Builtin,
+        "small" => T::Small,
+        "file" => T::File,
+        "file-raw" => T::FileRaw,
+        "data" => T::Data,
+        "data-raw" => T::DataRaw,
+        "command-raw" => T::CommandRaw,
+        "sixel" => T::ImageSixel,
+        "kitty" => T::ImageKitty,
+        "kitty-direct" => T::ImageKittyDirect,
+        "kitty-icat" => T::ImageKittyIcat,
+        "iterm" => T::ImageIterm,
+        "chafa" => T::ImageChafa,
+        "raw" => T::ImageRaw,
+        "spin" => T::Spin,
+        "none" => T::None,
+        _ => {
+            eprintln!("Error: unknown {key} value: {value}");
+            std::process::exit(478)
+        },
+    }
+}
+
+/// ffOptionParseEnum over a name list, used for the parse-only chafa
+/// suboptions: a missing value exits 476, an unknown name 478, and the
+/// matched index is dropped (no renderer consumes it yet).
+fn enum_pairs(key: &str, value: Option<&str>, names: &[&str]) {
+    let Some(value) = value else {
+        usage_exit(key, "<value>", 476);
+    };
+    if names.iter().any(|name| name.eq_ignore_ascii_case(value)) {
+        return;
+    }
+    eprintln!("Error: unknown {key} value: {value}");
+    std::process::exit(478)
+}
+
+/// ffOptionParseInt32: strtol base 10 with the strict tail check — a
+/// missing value exits 480, trailing junk or an out-of-range value 479.
+fn parse_int32(key: &str, value: Option<&str>) -> i32 {
+    let Some(value) = value else {
+        usage_exit(key, "<num>", 480);
+    };
+    let invalid = || -> ! {
+        eprintln!("Error: usage: {key} <num>");
+        std::process::exit(479)
+    };
+    let text = value.trim_start_matches([' ', '\t', '\n', '\x0b', '\x0c', '\r']);
+    let digits = text
+        .strip_prefix(['+', '-'])
+        .unwrap_or(text)
+        .len()
+        .saturating_sub(
+            text.strip_prefix(['+', '-'])
+                .unwrap_or(text)
+                .trim_start_matches(|c: char| c.is_ascii_digit())
+                .len(),
+        );
+    if digits == 0 || digits != text.strip_prefix(['+', '-']).unwrap_or(text).len() {
+        invalid();
+    }
+    match text.parse::<i64>() {
+        Ok(num) if (i32::MIN as i64..=i32::MAX as i64).contains(&num) => num as i32,
+        _ => invalid(),
+    }
+}
+
+/// logoParseFloat: strtod with the strict tail check and an inclusive
+/// range; a missing value prints the usage form, a bad value the bounds.
+fn parse_float(key: &str, value: Option<&str>, min: f64, max: f64) {
+    let Some(value) = value else {
+        usage_exit(key, "<number>", 477);
+    };
+    let parsed: f64 = match value.trim().parse() {
+        Ok(num) if !value.trim().is_empty() => num,
+        _ => {
+            eprintln!("Error: {key} must be a number between {min} and {max}");
+            std::process::exit(477)
+        },
+    };
+    if !(min..=max).contains(&parsed) {
+        eprintln!("Error: {key} must be a number between {min} and {max}");
+        std::process::exit(477)
     }
 }
 

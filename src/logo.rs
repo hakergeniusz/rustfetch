@@ -111,6 +111,28 @@ pub struct LogoOptions {
     pub print_remaining: bool,
 }
 
+/// FFLogoType: the --logo-type enum and the source-type setters' values.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LogoTypeOpt {
+    Auto,
+    Builtin,
+    Small,
+    File,
+    FileRaw,
+    Data,
+    DataRaw,
+    CommandRaw,
+    ImageSixel,
+    ImageKitty,
+    ImageKittyDirect,
+    ImageKittyIcat,
+    ImageIterm,
+    ImageChafa,
+    ImageRaw,
+    Spin,
+    None,
+}
+
 impl Default for LogoOptions {
     fn default() -> Self {
         Self {
@@ -436,6 +458,90 @@ fn maybe_image_attempt(source: &str, pipe: bool) {
     crate::modules::terminalsize::image_attempt_probe();
 }
 
+/// logoPrintData: the detected distro's palette applies to the `$N`
+/// markers only when doColorReplacement (DataRaw and CommandRaw pass
+/// None, so dollars stay literal and no carry color is seeded); the
+/// title/key colors always come from the detected logo.
+fn print_data(
+    content: &str,
+    palette: Option<&'static [&'static str]>,
+    pipe: bool,
+    configured: PositionOpt,
+    opts: &LogoOptions,
+    detected: &LogoEntry,
+) -> (Option<Logo>, LogoColors) {
+    let (lines, art_width) = parse_art(content, palette, pipe);
+    (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected))
+}
+
+/// updateLogoPath: resolve the source to readable file bytes — the direct
+/// path, "-" (stdin), a wordexp expansion ($VAR and ~, command
+/// substitution included: upstream passes 0 flags and picks a random
+/// match; the port takes the first), or a dataDirs fastfetch/logos/
+/// entry. "media-cover" is not resolvable (the media module's cover
+/// detection is not wired into the logo path).
+fn update_logo_path(source: &str, _instance: &Instance) -> Option<Vec<u8>> {
+    if source == "-" {
+        use std::io::Read;
+        let mut buf = Vec::new();
+        // A terminal stdin yields nothing readable (upstream's
+        // ffAppendFDBuffer fails on it) and the caller falls back to the
+        // detected logo; a real empty read is a failure too.
+        return match std::io::stdin().read_to_end(&mut buf) {
+            Ok(0) => None,
+            Ok(_) => Some(buf),
+            Err(_) => None,
+        };
+    }
+    if source == "media-cover" {
+        return None;
+    }
+    if std::path::Path::new(source).is_file() {
+        return std::fs::read(source).ok();
+    }
+    if let Some(path) = wordexp_first(source)
+        && std::path::Path::new(&path).is_file()
+    {
+        return std::fs::read(&path).ok();
+    }
+    for dir in crate::config::data_dirs() {
+        let candidate = format!("{dir}fastfetch/logos/{source}");
+        if std::path::Path::new(&candidate).is_file() {
+            return std::fs::read(&candidate).ok();
+        }
+    }
+    None
+}
+
+/// The first wordexp expansion of the source, like ffPathExpandEnv's
+/// wordexp(in, &exp, 0) without upstream's random pick among matches.
+fn wordexp_first(source: &str) -> Option<String> {
+    #[repr(C)]
+    struct Wordexp {
+        we_wordc: usize,
+        we_wordv: *mut *mut libc::c_char,
+        we_offs: usize,
+    }
+    unsafe extern "C" {
+        fn wordexp(in_: *const libc::c_char, out: *mut Wordexp, flags: libc::c_int) -> libc::c_int;
+        fn wordfree(out: *mut Wordexp);
+    }
+    let text = std::ffi::CString::new(source).ok()?;
+    unsafe {
+        let mut exp: Wordexp = std::mem::zeroed();
+        if wordexp(text.as_ptr(), &mut exp, 0) != 0 {
+            return None;
+        }
+        let result = if exp.we_wordc >= 1 {
+            Some(std::ffi::CStr::from_ptr(*exp.we_wordv).to_string_lossy().into_owned())
+        } else {
+            None
+        };
+        wordfree(&mut exp);
+        result
+    }
+}
+
 /// Resolves the logo to display, porting ffLogoPrint: the NONE type
 /// prints nothing, an empty source uses the detected distro, and a
 /// source tries the builtin logo table (SMALL variant under the SMALL
@@ -453,12 +559,21 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
         .unwrap_or(PositionOpt::Left);
     let logo_none = cli.logo_none || config.is_some_and(|config| config.logo_none);
     let logo_small = cli.logo_small || config.is_some_and(|config| config.logo_small);
+    let logo_type = cli.logo_type.or(config.and_then(|config| config.logo_type));
     let detected = get_builtin_detected(instance, Size::Normal);
-    if logo_none {
+    if logo_none || logo_type == Some(LogoTypeOpt::None) {
         return (None, entry_colors(detected));
     }
-    let Some(source) = &cli.logo_source else {
-        let size = if logo_small { Size::Small } else { Size::Normal };
+    let source: Option<&str> = cli
+        .logo_source
+        .as_deref()
+        .or(config.and_then(|config| config.logo_source.as_deref()));
+    let Some(source) = source else {
+        let size = if logo_small || logo_type == Some(LogoTypeOpt::Small) {
+            Size::Small
+        } else {
+            Size::Normal
+        };
         let entry = get_builtin_detected(instance, size);
         return (Some(build(entry, pipe, configured, opts)), entry_colors(entry));
     };
@@ -469,6 +584,123 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
         let entry = get_builtin_detected(instance, Size::Unknown);
         (Some(build(entry, pipe, configured, opts)), entry_colors(entry))
     };
+
+    // An explicit type routes through logoTryKnownType: builtin and small
+    // lookups (no file attempt), the data and command flavors verbatim,
+    // files through updateLogoPath, and image types through their attempt
+    // (this port's rendering is the chars fallback after the sizing probe).
+    match logo_type {
+        Some(LogoTypeOpt::Builtin) => {
+            return match get_builtin(source, Size::Unknown) {
+                Some(entry) => (Some(build(entry, pipe, configured, opts)), entry_colors(entry)),
+                None => fallback(),
+            };
+        },
+        Some(LogoTypeOpt::Small) => {
+            return match get_builtin(source, Size::Small) {
+                Some(entry) => (Some(build(entry, pipe, configured, opts)), entry_colors(entry)),
+                None => fallback(),
+            };
+        },
+        Some(LogoTypeOpt::Data) => {
+            // logoPrintData's empty-source bail reports false, and the
+            // caller falls back to the detected logo.
+            if source.is_empty() {
+                return fallback();
+            }
+            return print_data(source, Some(detected.colors), pipe, configured, opts, detected);
+        },
+        Some(LogoTypeOpt::DataRaw) => {
+            if source.is_empty() {
+                return fallback();
+            }
+            return print_data(source, None, pipe, configured, opts, detected);
+        },
+        Some(LogoTypeOpt::CommandRaw) => {
+            // ffProcessAppendStdOut inherits stdin, captures stdout only,
+            // ignores the exit status and trims trailing spaces; spawn
+            // failures fall back silently (the error message is
+            // display.showErrors-gated).
+            let output = std::process::Command::new("/bin/sh")
+                .arg("-c")
+                .arg(source)
+                .stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::inherit())
+                .output();
+            let Ok(output) = output else {
+                return fallback();
+            };
+            let text = String::from_utf8_lossy(&output.stdout);
+            let text = text.trim_end_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c']).to_string();
+            if text.is_empty() {
+                return fallback();
+            }
+            return print_data(&text, None, pipe, configured, opts, detected);
+        },
+        Some(LogoTypeOpt::File) => {
+            let Some(content) = update_logo_path(source, instance) else {
+                return fallback();
+            };
+            let Ok(art) = String::from_utf8(content) else {
+                return fallback();
+            };
+            let (lines, art_width) = parse_art(&art, Some(detected.colors), pipe);
+            return (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected));
+        },
+        Some(LogoTypeOpt::FileRaw) => {
+            // logoPrintFileIfExists(false, false): no `$N` replacement, but
+            // the bytes still go through the chars pipeline — FILE_RAW's
+            // "raw" means unprocessed palette, not unprocessed bytes.
+            let Some(content) = update_logo_path(source, instance) else {
+                return fallback();
+            };
+            let Ok(art) = String::from_utf8(content) else {
+                return fallback();
+            };
+            let (lines, art_width) = parse_art(&art, None, pipe);
+            return (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected));
+        },
+        Some(LogoTypeOpt::ImageRaw) => {
+            let Some(content) = update_logo_path(source, instance) else {
+                return fallback();
+            };
+            maybe_image_attempt(source, pipe);
+            return (
+                Some(Logo::Raw {
+                    content,
+                    position: resolve_position(
+                        configured,
+                        crate::modules::terminalsize::logo_terminal_columns(),
+                        opts.width + opts.padding_left + opts.padding_right,
+                    ),
+                    static_layout: None,
+                }),
+                entry_colors(detected),
+            );
+        },
+        Some(
+            kind @ (LogoTypeOpt::ImageSixel
+            | LogoTypeOpt::ImageKitty
+            | LogoTypeOpt::ImageKittyDirect
+            | LogoTypeOpt::ImageKittyIcat
+            | LogoTypeOpt::ImageIterm
+            | LogoTypeOpt::ImageChafa),
+        ) => {
+            // The image attempt costs the sizing probe, then the load fails
+            // without image support and the caller falls back to detected.
+            let _ = kind;
+            maybe_image_attempt(source, pipe);
+            return fallback();
+        },
+        Some(LogoTypeOpt::Spin) => {
+            // The 3D slab renderer is not ported; upstream would draw the
+            // spin logo and rotate it per watch round.
+            return fallback();
+        },
+        Some(LogoTypeOpt::None) | Some(LogoTypeOpt::Auto) | None => {},
+    }
+
     if logo_small {
         // A SMALL source matches a "_small"-suffixed entry name too.
         if let Some(entry) = get_builtin(source, Size::Small) {
@@ -479,19 +711,7 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
     if let Some(entry) = get_builtin(source, Size::Unknown) {
         return (Some(build(entry, pipe, configured, opts)), entry_colors(entry));
     }
-    // "-" reads the logo from stdin, like ffLogoPrintFileIfExists; raw
-    // files keep their exact bytes (ffLogoPrintCharsRaw writes them back
-    // unprocessed).
-    let Ok(content) = (if source == "-" {
-        use std::io::Read;
-        let mut buf = Vec::new();
-        match std::io::stdin().read_to_end(&mut buf) {
-            Ok(_) => Ok(buf),
-            Err(_) => Err(std::io::Error::other("stdin")),
-        }
-    } else {
-        std::fs::read(source)
-    }) else {
+    let Some(content) = update_logo_path(source, instance) else {
         return fallback();
     };
     if source.to_ascii_lowercase().ends_with(".raw") {

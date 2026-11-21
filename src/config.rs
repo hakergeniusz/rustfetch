@@ -44,6 +44,12 @@ pub struct Config {
     /// `logo.printRemaining` (yyjson_get_bool: only JSON true reads as
     /// true).
     pub logo_print_remaining: Option<bool>,
+    /// `logo.type` (all 17 enum values; none/small also set the sticky
+    /// bools).
+    pub logo_type: Option<crate::logo::LogoTypeOpt>,
+    /// `logo.source` (base state; the command line's `--logo`/`--file`/...
+    /// overwrite it).
+    pub logo_source: Option<String>,
     /// `display.pipe` (applies unless `--pipe` was given on the command
     /// line, which is parsed after the config).
     pub pipe: bool,
@@ -72,6 +78,8 @@ impl Config {
             logo_width: None,
             logo_height: None,
             logo_print_remaining: None,
+            logo_type: None,
+            logo_source: None,
             pipe: false,
             player_name: String::new(),
             entries: Vec::new(),
@@ -312,38 +320,123 @@ fn apply_logo(root: &jsonc::Value, config: &mut Config) {
     for (key, value) in entries {
         match key.as_str() {
             "type" => {
+                // The installed fastfetch builds with image logo support, so
+                // every enum name is accepted; the image types fall back to
+                // the detected logo after the sizing probe when rendering.
+                // ffJsonConfigParseEnum: strings match by name ("Invalid
+                // enum string"), integers index the FFLogoType order 0..=16
+                // ("Invalid enum integer"), and any other JSON type reports
+                // the generic message.
+                let parsed_error: Option<&str> = match value {
+                    jsonc::Value::Int(_) | jsonc::Value::UInt(_) => {
+                        let index = value.as_uint().unwrap_or(u64::MAX);
+                        match (value.as_int(), index) {
+                            (Some(i), _) if (0..=16).contains(&i) => None,
+                            (None, index) if (0..=16).contains(&index) => None,
+                            _ => Some("Invalid enum integer"),
+                        }
+                    },
+                    jsonc::Value::Str(_) => None,
+                    _ => Some("Invalid enum value type; must be a string or integer"),
+                };
+                if let Some(error) = parsed_error {
+                    section_error("logo", Some(key), error);
+                }
                 let error = match value.as_str() {
                     Some(name)
                         if [
                             "auto", "builtin", "small", "file", "file-raw", "data", "data-raw",
-                            "command-raw", "none",
+                            "command-raw", "sixel", "kitty", "kitty-direct", "kitty-icat",
+                            "iterm", "chafa", "raw", "spin", "none",
                         ]
                         .iter()
                         .any(|known| known.eq_ignore_ascii_case(name)) =>
                     {
-                        if name.eq_ignore_ascii_case("none") {
+                        let parsed = match name.to_ascii_lowercase().as_str() {
+                            "auto" => crate::logo::LogoTypeOpt::Auto,
+                            "builtin" => crate::logo::LogoTypeOpt::Builtin,
+                            "small" => crate::logo::LogoTypeOpt::Small,
+                            "file" => crate::logo::LogoTypeOpt::File,
+                            "file-raw" => crate::logo::LogoTypeOpt::FileRaw,
+                            "data" => crate::logo::LogoTypeOpt::Data,
+                            "data-raw" => crate::logo::LogoTypeOpt::DataRaw,
+                            "command-raw" => crate::logo::LogoTypeOpt::CommandRaw,
+                            "sixel" => crate::logo::LogoTypeOpt::ImageSixel,
+                            "kitty" => crate::logo::LogoTypeOpt::ImageKitty,
+                            "kitty-direct" => crate::logo::LogoTypeOpt::ImageKittyDirect,
+                            "kitty-icat" => crate::logo::LogoTypeOpt::ImageKittyIcat,
+                            "iterm" => crate::logo::LogoTypeOpt::ImageIterm,
+                            "chafa" => crate::logo::LogoTypeOpt::ImageChafa,
+                            "raw" => crate::logo::LogoTypeOpt::ImageRaw,
+                            "spin" => crate::logo::LogoTypeOpt::Spin,
+                            _ => crate::logo::LogoTypeOpt::None,
+                        };
+                        if matches!(parsed, crate::logo::LogoTypeOpt::None) {
                             config.logo_none = true;
-                        } else if name.eq_ignore_ascii_case("small") {
+                        }
+                        if matches!(parsed, crate::logo::LogoTypeOpt::Small) {
                             config.logo_small = true;
                         }
+                        config.logo_type = Some(parsed);
                         None
                     },
-                    Some(name)
-                        if ["sixel", "kitty", "kitty-direct", "kitty-icat", "iterm", "chafa", "raw"]
-                            .iter()
-                            .any(|known| known.eq_ignore_ascii_case(name)) =>
-                    {
-                        // Our port has no image logo support, like an
-                        // upstream build with FF_HAVE_IMAGE_LOGO off.
-                        Some(
-                            "Image logo types are not supported because Fastfetch was built without image logo support",
-                        )
-                    },
-                    _ => Some("Invalid enum value type; must be a string or integer"),
+                    // Integers were validated (or rejected) above; their
+                    // ordinal routing happens below.
+                    None => None,
+                    _ => Some("Invalid enum string"),
                 };
                 if let Some(error) = error {
                     section_error("logo", Some(key), error);
                 }
+                if config.logo_type.is_none() && !matches!(value, jsonc::Value::Str(_)) {
+                    // The integer path: the enum's ordinal indexes
+                    // LogoTypeOpt's declaration order, FFLogoType's own.
+                    let index = value.as_uint().unwrap_or(u64::MAX);
+                    let ordinal = match value.as_int() {
+                        Some(i) if (0..=16).contains(&i) => i as usize,
+                        _ if (0..=16).contains(&index) => index as usize,
+                        _ => unreachable!(),
+                    };
+                    let parsed = [
+                        crate::logo::LogoTypeOpt::Auto,
+                        crate::logo::LogoTypeOpt::Builtin,
+                        crate::logo::LogoTypeOpt::Small,
+                        crate::logo::LogoTypeOpt::File,
+                        crate::logo::LogoTypeOpt::FileRaw,
+                        crate::logo::LogoTypeOpt::Data,
+                        crate::logo::LogoTypeOpt::DataRaw,
+                        crate::logo::LogoTypeOpt::CommandRaw,
+                        crate::logo::LogoTypeOpt::ImageSixel,
+                        crate::logo::LogoTypeOpt::ImageKitty,
+                        crate::logo::LogoTypeOpt::ImageKittyDirect,
+                        crate::logo::LogoTypeOpt::ImageKittyIcat,
+                        crate::logo::LogoTypeOpt::ImageIterm,
+                        crate::logo::LogoTypeOpt::ImageChafa,
+                        crate::logo::LogoTypeOpt::ImageRaw,
+                        crate::logo::LogoTypeOpt::Spin,
+                        crate::logo::LogoTypeOpt::None,
+                    ][ordinal];
+                    if matches!(parsed, crate::logo::LogoTypeOpt::None) {
+                        config.logo_none = true;
+                    }
+                    if matches!(parsed, crate::logo::LogoTypeOpt::Small) {
+                        config.logo_small = true;
+                    }
+                    config.logo_type = Some(parsed);
+                }
+            },
+            "source" => {
+                // ffStrbufSetJsonVal stringifies every scalar and leaves
+                // null as the empty (unset) source.
+                config.logo_source = match value {
+                    jsonc::Value::Str(text) => Some(text.clone()),
+                    jsonc::Value::Int(num) => Some(num.to_string()),
+                    jsonc::Value::UInt(num) => Some(num.to_string()),
+                    jsonc::Value::Bool(flag) => Some(flag.to_string()),
+                    jsonc::Value::Float(num) => Some(num.to_string()),
+                    jsonc::Value::Null => None,
+                    _ => section_error("logo", Some(key), "Property 'source' must be a scalar"),
+                };
             },
             "position" => {
                 let error = match value {
@@ -385,7 +478,7 @@ fn apply_logo(root: &jsonc::Value, config: &mut Config) {
                     _ => section_error("logo", Some(key), &format!("Logo {key} must be a positive integer")),
                 });
             },
-            "source" | "preserveAspectRatio" | "cache" | "recache" | "animationFrame" | "spin" | "color" => {
+            "preserveAspectRatio" | "cache" | "recache" | "animationFrame" | "spin" | "color" => {
                 // accepted; rendering support grows with the logo rounds
             },
             "padding" => {
