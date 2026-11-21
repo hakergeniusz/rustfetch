@@ -126,6 +126,10 @@ pub struct LogoOptions {
     pub spin_speed_per_round: f32,
     pub spin_tilt: f32,
     pub spin_angle: f32,
+    /// rustfetch-only HyFetch coloring: when a HyFetch palette was resolved,
+    /// every logo line gets its own palette slot (a vertical flag gradient)
+    /// instead of filling only the art's existing `$N` placeholders.
+    pub hyfetch: bool,
 }
 
 /// FFLogoType: the --logo-type enum and the source-type setters' values.
@@ -165,6 +169,7 @@ impl Default for LogoOptions {
             spin_speed_per_round: 0.0,
             spin_tilt: 0.0,
             spin_angle: 0.0,
+            hyfetch: false,
         }
     }
 }
@@ -328,6 +333,70 @@ pub fn parse_art(art: &[u8], colors: Option<&'static [&'static str]>, pipe: bool
     }
 
     (lines, max_width as usize)
+}
+
+/// HyFetch art rewrite. Strips every existing `$[0-9]` marker (leaving `$$`
+/// escapes untouched) and prepends `$((line_index % 9) + 1)` to each line, so
+/// consecutive lines cycle through all nine palette slots — a vertical flag
+/// gradient like real `hyfetch`, which colors each line of the art instead
+/// of only filling the placeholders fastfetch ships. Lines are exactly the
+/// ones `parse_art` will see (`split('\n')`, including any trailing empty
+/// line), and joining them back with `\n` preserves whitespace, tabs, CR,
+/// line count and art width: markers count zero width, and a carried color
+/// is simply replaced at the head of every line.
+fn hyfetch_gradient_art(art: &[u8]) -> Vec<u8> {
+    let lines: Vec<&[u8]> = art.split(|&byte| byte == b'\n').collect();
+    let mut out = Vec::with_capacity(art.len() + lines.len() * 2);
+    for (index, raw) in lines.iter().enumerate() {
+        if index > 0 {
+            out.push(b'\n');
+        }
+        out.push(b'$');
+        out.push(b'1' + (index % 9) as u8);
+        let mut i = 0;
+        while i < raw.len() {
+            if raw[i] == b'$' && i + 1 < raw.len() {
+                match raw[i + 1] {
+                    // `$$` is a literal dollar in parse_art; keep the pair
+                    // so rewriting never changes what it renders.
+                    b'$' => {
+                        out.extend_from_slice(b"$$");
+                        i += 2;
+                        continue;
+                    },
+                    // `$0`-`$9` is the marker whose color we are replacing.
+                    b'0'..=b'9' => {
+                        i += 2;
+                        continue;
+                    },
+                    _ => {},
+                }
+            }
+            out.push(raw[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// `parse_art` with the optional HyFetch rewrite. Only palette-driven logos
+/// (builtin, data, file) are rewritten; raw logos pass `None` deliberately —
+/// their bytes carry their own escapes, so they ignore the gradient exactly
+/// as they ignore `$N` replacement. Pipe mode drops all logo escapes, so the
+/// rewrite is skipped there too. When the flag is off this is a plain
+/// `parse_art`, byte-for-byte identical to fastfetch.
+fn parse_logo_art(
+    art: &[u8],
+    palette: Option<&'static [&'static str]>,
+    pipe: bool,
+    hyfetch: bool,
+) -> (Vec<Vec<Segment>>, usize) {
+    if hyfetch && !pipe && palette.is_some() {
+        let rewritten = hyfetch_gradient_art(art);
+        parse_art(&rewritten, palette, pipe)
+    } else {
+        parse_art(art, palette, pipe)
+    }
 }
 
 /// ffLogoGetBuiltin: only entries whose first name shares the requested
@@ -495,7 +564,7 @@ fn palette_with_overrides(
 /// Builds a renderable logo from its entry's art.
 fn build(entry: &'static LogoEntry, pipe: bool, configured: PositionOpt, opts: &LogoOptions, instance: &Instance) -> Logo {
     let palette = palette_with_overrides(entry.colors, instance);
-    let (lines, art_width) = parse_art(builtin_art(entry).as_bytes(), palette, pipe);
+    let (lines, art_width) = parse_logo_art(builtin_art(entry).as_bytes(), palette, pipe, opts.hyfetch);
     build_chars(lines, art_width, configured, opts)
 }
 
@@ -538,7 +607,7 @@ fn print_data(
     instance: &Instance,
 ) -> (Option<Logo>, LogoColors) {
     let palette = palette.and_then(|base| palette_with_overrides(base, instance));
-    let (lines, art_width) = parse_art(content.as_bytes(), palette, pipe);
+    let (lines, art_width) = parse_logo_art(content.as_bytes(), palette, pipe, opts.hyfetch);
     (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected))
 }
 
@@ -746,7 +815,7 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
                 return fallback();
             };
             let palette = palette_with_overrides(detected.colors, instance);
-            let (lines, art_width) = parse_art(&content, palette, pipe);
+            let (lines, art_width) = parse_logo_art(&content, palette, pipe, opts.hyfetch);
             return (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected));
         },
         Some(LogoTypeOpt::FileRaw) => {
@@ -893,7 +962,7 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
         if position == Position::Right && opts.width == 0 {
             maybe_image_attempt(source, pipe);
             let palette = palette_with_overrides(detected.colors, instance);
-            let (lines, art_width) = parse_art(&content, palette, pipe);
+            let (lines, art_width) = parse_logo_art(&content, palette, pipe, opts.hyfetch);
             return (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected));
         }
         return (
@@ -916,7 +985,7 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
     // (logoPrintCustom's ffLogoApplyColors(logoGetBuiltinDetected(NORMAL)));
     // non-UTF-8 bytes ride through the segment parser untouched.
     let palette = palette_with_overrides(detected.colors, instance);
-    let (lines, art_width) = parse_art(&content, palette, pipe);
+    let (lines, art_width) = parse_logo_art(&content, palette, pipe, opts.hyfetch);
     (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected))
 }
 
@@ -1145,6 +1214,69 @@ mod tests {
         assert_eq!(width, 4);
         // no carry seed in pipe mode: the line has no code segments
         assert!(lines[0].iter().all(|seg| seg.color == SegmentColor::Pass));
+    }
+
+    #[test]
+    fn hyfetch_gradient_art_strips_markers_and_keeps_escaped_dollars() {
+        let art = b"  $1ab$2\tcd$$x\n$9\r\n$3";
+        let rewritten = hyfetch_gradient_art(art);
+        assert_eq!(rewritten, b"$1  ab\tcd$$x\n$2\r\n$3");
+    }
+
+    #[test]
+    fn hyfetch_gradient_art_cycles_nine_slots() {
+        let art = b"a\nb\nc\nd\ne\nf\ng\nh\ni\nj";
+        let rewritten = hyfetch_gradient_art(art);
+        assert_eq!(rewritten, b"$1a\n$2b\n$3c\n$4d\n$5e\n$6f\n$7g\n$8h\n$9i\n$1j");
+    }
+
+    #[test]
+    fn hyfetch_gradient_art_preserves_width_and_line_count() {
+        let art = b"ab$1cd\n\t$2ef \r\n";
+        let colors: &'static [&'static str] = &["31", "34", "36"];
+        let (plain, plain_width) = parse_art(art, Some(colors), false);
+        let (gradient, gradient_width) = parse_logo_art(art, Some(colors), false, true);
+        assert_eq!(gradient.len(), plain.len());
+        assert_eq!(gradient_width, plain_width);
+        // The trailing newline is still a trailing empty line, now with a
+        // marker of its own (width 0), so it stays empty.
+        let last = gradient.len() - 1;
+        assert!(seg_text(&gradient[last]).is_empty());
+    }
+
+    #[test]
+    fn parse_logo_art_gradient_colors_every_line() {
+        let colors: &'static [&'static str] = &["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+        let art = b"a\nb\nc\nd\ne\nf\ng\nh\ni\nj";
+        let (lines, _) = parse_logo_art(art, Some(colors), false, true);
+        assert_eq!(lines.len(), 10);
+        for (index, line) in lines.iter().enumerate() {
+            // The leading marker flushes an empty carry segment first; the
+            // last segment is the line's own palette color.
+            assert_eq!(seg_codes(line).last().copied(), Some(colors[index % 9]));
+            assert_eq!(seg_text(line), if index == 9 { "j" } else { &"abcdefghi"[index..index + 1] });
+        }
+    }
+
+    #[test]
+    fn parse_logo_art_flag_off_raw_and_pipe_are_inert() {
+        let colors: &'static [&'static str] = &["31", "34"];
+        let art = b"$1a$2b\n$1c";
+        let (plain, plain_width) = parse_art(art, Some(colors), false);
+        let (off, off_width) = parse_logo_art(art, Some(colors), false, false);
+        assert_eq!(seg_text(&off[0]), seg_text(&plain[0]));
+        assert_eq!(seg_codes(&off[0]), seg_codes(&plain[0]));
+        assert_eq!(off_width, plain_width);
+
+        // Pipe mode and raw logos keep their bytes untouched even when the
+        // HyFetch flag is set.
+        let (pipe_on, _) = parse_logo_art(art, Some(colors), true, true);
+        let (pipe_off, _) = parse_art(art, Some(colors), true);
+        assert_eq!(seg_text(&pipe_on[0]), seg_text(&pipe_off[0]));
+        let (raw_on, raw_width) = parse_logo_art(art, None, false, true);
+        let (raw_off, raw_off_width) = parse_art(art, None, false);
+        assert_eq!(seg_text(&raw_on[0]), seg_text(&raw_off[0]));
+        assert_eq!(raw_width, raw_off_width);
     }
 
     #[test]

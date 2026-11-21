@@ -167,6 +167,7 @@ fn main() {
         spin_speed_per_round: 0.0,
         spin_tilt: 0.0,
         spin_angle: 0.0,
+        hyfetch: false,
     };
 
     let mut logo_color_overrides: Vec<(usize, &'static str)> = config
@@ -193,6 +194,10 @@ fn main() {
                         logo_color_overrides.push((slot, sgr.leak()));
                     }
                 }
+                // A resolved HyFetch palette enables the per-line gradient
+                // in the logo parser; without one this stays false and the
+                // fastfetch coloring path is unchanged.
+                logo_options.hyfetch = true;
             },
             Err(message) => {
                 eprintln!("Error: {message}");
