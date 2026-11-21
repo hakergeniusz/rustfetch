@@ -132,6 +132,7 @@ mod tests {
                 logo_print_remaining: None,
                 logo_type: None,
                 logo_animation_frame: None,
+                logo_colors: Vec::new(),
                 pipe: None,
                 watch_interval: 0,
                 format_json: false,
@@ -140,6 +141,7 @@ mod tests {
             },
             false,
             crate::logo::LogoOptions::default(),
+            &[],
         )
     }
 

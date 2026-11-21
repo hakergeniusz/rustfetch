@@ -427,9 +427,30 @@ fn build_chars(
     }
 }
 
+/// ffLogoApplyColors's palette merge: an explicit slot (config or
+/// --logo-color-N) wins, the base entry fills the rest, and slots beyond
+/// the base stay empty so their `$N` markers read as bare `\e[m`.
+fn palette_with_overrides(
+    base: &'static [&'static str],
+    instance: &Instance,
+) -> Option<&'static [&'static str]> {
+    let overrides = instance.logo_color_overrides;
+    if overrides.is_empty() {
+        return Some(base);
+    }
+    let mut slots: Vec<&'static str> = (0..9)
+        .map(|index| base.get(index).copied().unwrap_or(""))
+        .collect();
+    for (slot, color) in overrides {
+        slots[*slot] = color;
+    }
+    Some(slots.leak())
+}
+
 /// Builds a renderable logo from its entry's art.
-fn build(entry: &'static LogoEntry, pipe: bool, configured: PositionOpt, opts: &LogoOptions) -> Logo {
-    let (lines, art_width) = parse_art(builtin_art(entry), Some(entry.colors), pipe);
+fn build(entry: &'static LogoEntry, pipe: bool, configured: PositionOpt, opts: &LogoOptions, instance: &Instance) -> Logo {
+    let palette = palette_with_overrides(entry.colors, instance);
+    let (lines, art_width) = parse_art(builtin_art(entry), palette, pipe);
     build_chars(lines, art_width, configured, opts)
 }
 
@@ -469,7 +490,9 @@ fn print_data(
     configured: PositionOpt,
     opts: &LogoOptions,
     detected: &LogoEntry,
+    instance: &Instance,
 ) -> (Option<Logo>, LogoColors) {
+    let palette = palette.and_then(|base| palette_with_overrides(base, instance));
     let (lines, art_width) = parse_art(content, palette, pipe);
     (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected))
 }
@@ -575,14 +598,14 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
             Size::Normal
         };
         let entry = get_builtin_detected(instance, size);
-        return (Some(build(entry, pipe, configured, opts)), entry_colors(entry));
+        return (Some(build(entry, pipe, configured, opts, instance)), entry_colors(entry));
     };
 
     // A miss on the builtin table falls back to the DETECTED logo with
     // no size filter, like ffLogoPrintDetected(FF_LOGO_SIZE_UNKNOWN).
     let fallback = || {
         let entry = get_builtin_detected(instance, Size::Unknown);
-        (Some(build(entry, pipe, configured, opts)), entry_colors(entry))
+        (Some(build(entry, pipe, configured, opts, instance)), entry_colors(entry))
     };
 
     // An explicit type routes through logoTryKnownType: builtin and small
@@ -592,13 +615,13 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
     match logo_type {
         Some(LogoTypeOpt::Builtin) => {
             return match get_builtin(source, Size::Unknown) {
-                Some(entry) => (Some(build(entry, pipe, configured, opts)), entry_colors(entry)),
+                Some(entry) => (Some(build(entry, pipe, configured, opts, instance)), entry_colors(entry)),
                 None => fallback(),
             };
         },
         Some(LogoTypeOpt::Small) => {
             return match get_builtin(source, Size::Small) {
-                Some(entry) => (Some(build(entry, pipe, configured, opts)), entry_colors(entry)),
+                Some(entry) => (Some(build(entry, pipe, configured, opts, instance)), entry_colors(entry)),
                 None => fallback(),
             };
         },
@@ -608,13 +631,13 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
             if source.is_empty() {
                 return fallback();
             }
-            return print_data(source, Some(detected.colors), pipe, configured, opts, detected);
+            return print_data(source, Some(detected.colors), pipe, configured, opts, detected, instance);
         },
         Some(LogoTypeOpt::DataRaw) => {
             if source.is_empty() {
                 return fallback();
             }
-            return print_data(source, None, pipe, configured, opts, detected);
+            return print_data(source, None, pipe, configured, opts, detected, instance);
         },
         Some(LogoTypeOpt::CommandRaw) => {
             // ffProcessAppendStdOut inherits stdin, captures stdout only,
@@ -636,7 +659,7 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
             if text.is_empty() {
                 return fallback();
             }
-            return print_data(&text, None, pipe, configured, opts, detected);
+            return print_data(&text, None, pipe, configured, opts, detected, instance);
         },
         Some(LogoTypeOpt::File) => {
             let Some(content) = update_logo_path(source, instance) else {
@@ -645,7 +668,8 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
             let Ok(art) = String::from_utf8(content) else {
                 return fallback();
             };
-            let (lines, art_width) = parse_art(&art, Some(detected.colors), pipe);
+            let palette = palette_with_overrides(detected.colors, instance);
+            let (lines, art_width) = parse_art(&art, palette, pipe);
             return (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected));
         },
         Some(LogoTypeOpt::FileRaw) => {
@@ -704,12 +728,12 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
     if logo_small {
         // A SMALL source matches a "_small"-suffixed entry name too.
         if let Some(entry) = get_builtin(source, Size::Small) {
-            return (Some(build(entry, pipe, configured, opts)), entry_colors(entry));
+            return (Some(build(entry, pipe, configured, opts, instance)), entry_colors(entry));
         }
         return fallback();
     }
     if let Some(entry) = get_builtin(source, Size::Unknown) {
-        return (Some(build(entry, pipe, configured, opts)), entry_colors(entry));
+        return (Some(build(entry, pipe, configured, opts, instance)), entry_colors(entry));
     }
     let Some(content) = update_logo_path(source, instance) else {
         return fallback();
@@ -768,7 +792,8 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
             let Ok(art) = String::from_utf8(content) else {
                 return fallback();
             };
-            let (lines, art_width) = parse_art(&art, Some(detected.colors), pipe);
+            let palette = palette_with_overrides(detected.colors, instance);
+    let (lines, art_width) = parse_art(&art, palette, pipe);
             return (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected));
         }
         return (
@@ -788,7 +813,8 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
     };
     // File logos apply the detected distro's palette to their `$N` markers
     // (logoPrintCustom's ffLogoApplyColors(logoGetBuiltinDetected(NORMAL))).
-    let (lines, art_width) = parse_art(&art, Some(detected.colors), pipe);
+    let palette = palette_with_overrides(detected.colors, instance);
+    let (lines, art_width) = parse_art(&art, palette, pipe);
     (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected))
 }
 

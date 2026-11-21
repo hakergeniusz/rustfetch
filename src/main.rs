@@ -119,10 +119,19 @@ fn main() {
         print_remaining: cli.logo_print_remaining.or(cfg.and_then(|config| config.logo_print_remaining)).unwrap_or(true),
     };
 
+    let mut logo_color_overrides: Vec<(usize, &'static str)> = config
+        .as_ref()
+        .map(|config| config.logo_colors.clone())
+        .unwrap_or_default();
+    for (slot, color) in &cli.logo_colors {
+        logo_color_overrides.retain(|(existing, _)| existing != slot);
+        logo_color_overrides.push((*slot, color));
+    }
     let instance = instance::Instance::new(
         &cli,
         config.as_ref().is_some_and(|config| config.pipe),
         logo_options,
+        logo_color_overrides.leak(),
     );
 
     if cli.format_json {

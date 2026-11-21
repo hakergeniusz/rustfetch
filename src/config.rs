@@ -50,6 +50,8 @@ pub struct Config {
     /// `logo.source` (base state; the command line's `--logo`/`--file`/...
     /// overwrite it).
     pub logo_source: Option<String>,
+    /// `logo.color` slot overrides: (slot 0-based, parsed SGR params).
+    pub logo_colors: Vec<(usize, &'static str)>,
     /// `display.pipe` (applies unless `--pipe` was given on the command
     /// line, which is parsed after the config).
     pub pipe: bool,
@@ -80,6 +82,7 @@ impl Config {
             logo_print_remaining: None,
             logo_type: None,
             logo_source: None,
+            logo_colors: Vec::new(),
             pipe: false,
             player_name: String::new(),
             entries: Vec::new(),
@@ -478,7 +481,28 @@ fn apply_logo(root: &jsonc::Value, config: &mut Config) {
                     _ => section_error("logo", Some(key), &format!("Logo {key} must be a positive integer")),
                 });
             },
-            "preserveAspectRatio" | "cache" | "recache" | "animationFrame" | "spin" | "color" => {
+            "color" => {
+                // Keys "1".."9" name palette slots (strtoul: a non-number
+                // reads as 0 and errors); values parse through
+                // ffOptionParseColor — a non-string value reads as NULL and
+                // clears the slot (a no-op here).
+                let Some(entries) = object_entries(value) else {
+                    section_error("logo", Some(key), "Property 'color' must be an object");
+                };
+                for (slot, color) in entries {
+                    let index: u64 = slot.parse().unwrap_or(0);
+                    if !(1..=9).contains(&index) {
+                        section_error("logo", Some(key), "Keys of property 'color' must be a number between 1 to 9");
+                    }
+                    if let jsonc::Value::Str(text) = color {
+                        let parsed = crate::cli::parse_color_public(text);
+                        if !parsed.is_empty() {
+                            config.logo_colors.push(((index - 1) as usize, parsed.leak()));
+                        }
+                    }
+                }
+            },
+            "preserveAspectRatio" | "cache" | "recache" | "animationFrame" | "spin" => {
                 // accepted; rendering support grows with the logo rounds
             },
             "padding" => {

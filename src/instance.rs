@@ -45,6 +45,10 @@ pub struct Instance {
     /// width/height floors and the printRemaining gate, assembled in
     /// main.rs from the config keys and the command line.
     pub logo_options: crate::logo::LogoOptions,
+    /// The `--logo-color-N` / config `logo.color` palette overrides,
+    /// config first and the command line last (upstream's one
+    /// FFOptionsLogo struct mutated in parse order).
+    pub logo_color_overrides: &'static [(usize, &'static str)],
     /// The current config entry's object (per-job: each module job gets a
     /// clone carrying its own entry), read by modules with config options.
     pub entry: Option<&'static crate::jsonc::Value>,
@@ -66,6 +70,7 @@ impl Clone for Instance {
             logo_small: self.logo_small,
             logo_source: self.logo_source.clone(),
             logo_options: self.logo_options,
+            logo_color_overrides: self.logo_color_overrides,
             entry: self.entry,
             gnome_settings: Mutex::new(self.gnome_settings.lock().unwrap_or_else(|e| e.into_inner()).clone()),
         }
@@ -73,7 +78,12 @@ impl Clone for Instance {
 }
 
 impl Instance {
-    pub fn new(cli: &Cli, config_pipe: bool, logo_options: crate::logo::LogoOptions) -> Self {
+    pub fn new(
+        cli: &Cli,
+        config_pipe: bool,
+        logo_options: crate::logo::LogoOptions,
+        logo_color_overrides: &'static [(usize, &'static str)],
+    ) -> Self {
         // display.c:957 — --pipe defaults to !isatty(stdout) || NO_COLOR
         // (getenv, so an empty value counts too); --pipe false overrides;
         // config display.pipe applies unless the command line said
@@ -112,6 +122,7 @@ impl Instance {
             logo_small: cli.logo_small,
             logo_source: cli.logo_source.clone(),
             logo_options,
+            logo_color_overrides,
             entry: None,
             gnome_settings: Mutex::new(HashMap::new()),
             logo_colors: OnceLock::new(),
