@@ -203,8 +203,10 @@ pub fn parse_art(art: &str, colors: Option<&'static [&'static str]>, pipe: bool)
         let mut i = 0;
         while i < chars.len() {
             if plain_next {
+                // The char after a plain `$` still measures by wcwidth,
+                // like the utf8 decode it falls into upstream.
                 text.push(chars[i]);
-                width += 1;
+                width += crate::wcwidth::wcwidth(chars[i] as u32) as u32;
                 tail_is_event = false;
                 plain_next = false;
                 i += 1;
@@ -239,7 +241,7 @@ pub fn parse_art(art: &str, colors: Option<&'static [&'static str]>, pipe: bool)
                     } else {
                         // A non-ascii terminator: `\e[` plus the scanned
                         // digits drop from the output but keep their width.
-                        width += j - i - 1;
+                        width += (j - i - 1) as u32;
                         i = j;
                         tail_is_event = false;
                     }
@@ -276,8 +278,10 @@ pub fn parse_art(art: &str, colors: Option<&'static [&'static str]>, pipe: bool)
                     },
                 },
                 c => {
+                    // ffUtf8CharLenWidth's wcwidth: wide chars count 2,
+                    // combining/nonprintable count 0.
                     text.push(c);
-                    width += 1;
+                    width += crate::wcwidth::wcwidth(c as u32) as u32;
                     tail_is_event = false;
                     i += 1;
                 },
@@ -287,7 +291,7 @@ pub fn parse_art(art: &str, colors: Option<&'static [&'static str]>, pipe: bool)
             segments.push(Segment { text, color: current });
         }
 
-        max_width = max_width.max(width);
+        max_width = max_width.max(width as usize);
         lines.push(segments);
     }
 

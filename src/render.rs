@@ -45,7 +45,12 @@ pub(crate) fn colorize_cache(
         .enumerate()
         .map(|(index, line)| {
             let bare_entry = index < bare.0 || index >= lines.len() - bare.1;
-            let content_width = line.iter().map(|seg| seg.text.chars().count()).sum::<usize>();
+            // The display width: wcwidth per char, not the char count
+            // (wide logo glyphs count 2, combining ones 0).
+            let content_width = line
+                .iter()
+                .map(|seg| seg.text.chars().map(|c| crate::wcwidth::wcwidth(c as u32) as usize).sum::<usize>())
+                .sum::<usize>();
             let width = if bare_entry { 0 } else { pad_left + content_width };
             if width == 0 {
                 return (String::new(), 0);

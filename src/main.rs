@@ -19,6 +19,7 @@ mod render;
 mod settings;
 mod smbios;
 mod spin;
+mod wcwidth;
 mod tty;
 mod util;
 

@@ -1,5 +1,6 @@
 //! Runtime context shared by all modules: color capability and distro identity.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::sync::{Mutex, OnceLock};
@@ -62,6 +63,9 @@ pub struct Instance {
     /// The current config entry's object (per-job: each module job gets a
     /// clone carrying its own entry), read by modules with config options.
     pub entry: Option<&'static crate::jsonc::Value>,
+    /// instance.state.titleFqdn: set when the title module parses the
+    /// `fqdn` option; the separator's default length reads it.
+    pub title_fqdn: Cell<bool>,
     /// Memoized GSettings/dconf reads per (schema, key), filled lazily by the
     /// GTK modules. A Mutex because modules run in parallel threads.
     pub gnome_settings: Mutex<HashMap<String, Option<String>>>,
@@ -87,6 +91,7 @@ impl Clone for Instance {
             // none.
             spin: std::cell::RefCell::new(None),
             entry: self.entry,
+            title_fqdn: Cell::new(self.title_fqdn.get()),
             gnome_settings: Mutex::new(self.gnome_settings.lock().unwrap_or_else(|e| e.into_inner()).clone()),
         }
     }
@@ -144,6 +149,7 @@ impl Instance {
             stat,
             spin: std::cell::RefCell::new(None),
             entry: None,
+            title_fqdn: Cell::new(false),
             gnome_settings: Mutex::new(HashMap::new()),
             logo_colors: OnceLock::new(),
         }
