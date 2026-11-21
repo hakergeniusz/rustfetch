@@ -54,6 +54,9 @@ pub struct Config {
     pub logo_source: Option<String>,
     /// `logo.color` slot overrides: (slot 0-based, parsed SGR params).
     pub logo_colors: Vec<(usize, &'static str)>,
+    /// rustfetch-only `logo.hyfetch`: pride-flag logo palette; off when the
+    /// object is absent or has no `preset`.
+    pub hyfetch: Option<crate::hyfetch::Config>,
     /// `logo.spin.speed.perFrame` / `.perRound` / `logo.spin.tilt` /
     /// `logo.spin.angle` (yyjson numbers cast to float).
     pub spin_speed_per_frame: Option<f32>,
@@ -127,6 +130,7 @@ impl Config {
             logo_type: None,
             logo_source: None,
             logo_colors: Vec::new(),
+            hyfetch: None,
             spin_speed_per_frame: None,
             spin_speed_per_round: None,
             spin_tilt: None,
@@ -567,6 +571,130 @@ fn apply_logo(root: &jsonc::Value, config: &mut Config) {
                         }
                     }
                 }
+            },
+            "hyfetch" => {
+                // rustfetch-only: unlike fastfetch's logo.color slots, this
+                // object builds a whole nine-slot palette from a vendored
+                // hyfetch preset. Unknown subkeys error like other logo keys.
+                let Some(entries) = object_entries(value) else {
+                    section_error("logo", Some(key), "Property 'logo.hyfetch' must be an object");
+                };
+                let mut hyfetch = crate::hyfetch::Config::default();
+                for (hy_key, hy_val) in entries {
+                    // section_error takes Option<&str>; the owned name must
+                    // outlive the whole match arm.
+                    let sub = format!("hyfetch.{hy_key}");
+                    match hy_key.as_str() {
+                        "preset" => {
+                            hyfetch.presets = match hy_val {
+                                jsonc::Value::Str(text) => crate::hyfetch::split_preset_names(text),
+                                jsonc::Value::Array(items) => {
+                                    let mut names = Vec::new();
+                                    for item in items {
+                                        match item {
+                                            jsonc::Value::Str(text) => {
+                                                names.extend(crate::hyfetch::split_preset_names(text));
+                                            },
+                                            _ => section_error(
+                                                "logo",
+                                                Some(sub.as_str()),
+                                                "Property 'logo.hyfetch.preset' must be a string or an array of strings",
+                                            ),
+                                        }
+                                    }
+                                    names
+                                },
+                                _ => section_error(
+                                    "logo",
+                                    Some(sub.as_str()),
+                                    "Property 'logo.hyfetch.preset' must be a string or an array of strings",
+                                ),
+                            };
+                        },
+                        "mode" => {
+                            hyfetch.mode = match hy_val {
+                                jsonc::Value::Str(text) => {
+                                    match crate::hyfetch::parse_mode(text) {
+                                        Some(mode) => mode,
+                                        None => section_error(
+                                            "logo",
+                                            Some(sub.as_str()),
+                                            "Property 'logo.hyfetch.mode' must be 24bit, rgb, truecolor, 8bit, ansi256 or 256color",
+                                        ),
+                                    }
+                                },
+                                _ => section_error(
+                                    "logo",
+                                    Some(sub.as_str()),
+                                    "Property 'logo.hyfetch.mode' must be a string",
+                                ),
+                            };
+                        },
+                        "lightness" => {
+                            hyfetch.lightness = match hy_val {
+                                jsonc::Value::Null => None,
+                                _ => {
+                                    let Some(number) = json_num(hy_val) else {
+                                        section_error(
+                                            "logo",
+                                            Some(sub.as_str()),
+                                            "Property 'logo.hyfetch.lightness' must be a number between 0 and 1 or null",
+                                        );
+                                    };
+                                    if !number.is_finite() || !(0.0..=1.0).contains(&number) {
+                                        section_error(
+                                            "logo",
+                                            Some(sub.as_str()),
+                                            "Property 'logo.hyfetch.lightness' must be a number between 0 and 1 or null",
+                                        );
+                                    }
+                                    Some(number)
+                                },
+                            };
+                        },
+                        "customPresets" => {
+                            let Some(custom_entries) = object_entries(hy_val) else {
+                                section_error(
+                                    "logo",
+                                    Some(sub.as_str()),
+                                    "Property 'logo.hyfetch.customPresets' must be an object",
+                                );
+                            };
+                            for (name, colors) in custom_entries {
+                                if let Err(message) = crate::hyfetch::validate_custom_name(name) {
+                                    section_error("logo", Some(sub.as_str()), &message);
+                                }
+                                let Some(items) = (match colors {
+                                    jsonc::Value::Array(items) => Some(items),
+                                    _ => None,
+                                }) else {
+                                    section_error(
+                                        "logo",
+                                        Some(sub.as_str()),
+                                        "Custom preset colors must be an array of hex strings",
+                                    );
+                                };
+                                let mut hexes = Vec::new();
+                                for item in items {
+                                    let Some(text) = item.as_str() else {
+                                        section_error(
+                                            "logo",
+                                            Some(sub.as_str()),
+                                            "Custom preset colors must be an array of hex strings",
+                                        );
+                                    };
+                                    hexes.push(text.to_owned());
+                                }
+                                match crate::hyfetch::parse_custom(&hexes) {
+                                    Ok(parsed) => hyfetch.custom.push((name.clone(), parsed)),
+                                    Err(message) => section_error("logo", Some(sub.as_str()), &message),
+                                }
+                            }
+                        },
+                        _ => section_error("logo", Some(sub.as_str()), "Unknown logo.hyfetch key"),
+                    }
+                }
+                config.hyfetch = Some(hyfetch);
             },
             "spin" => {
                 // ffOptionsParseLogoJsonConfig's spin block: per-key checks

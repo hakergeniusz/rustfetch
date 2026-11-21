@@ -122,6 +122,12 @@ pub struct Cli {
     /// `--logo-color-<1-9>` overrides: (slot 0-based, parsed SGR params).
     /// The strings are leaked so the palette can be `&'static`.
     pub logo_colors: Vec<(usize, &'static str)>,
+    /// rustfetch-only HyFetch flags; `logo.hyfetch` is the config half.
+    /// `--hyfetch-preset` is a comma-separated candidate list, the other
+    /// two override their config fields per-field (CLI last).
+    pub hyfetch_preset: Option<String>,
+    pub hyfetch_mode: Option<crate::hyfetch::AnsiMode>,
+    pub hyfetch_lightness: Option<f64>,
     /// `--logo-spin-speed-per-frame <float>`: degrees per watch refresh.
     pub logo_spin_speed_per_frame: Option<f32>,
     /// `--logo-spin-speed-per-round <float>`: seconds per revolution.
@@ -271,6 +277,9 @@ impl Cli {
             logo_type: None,
             logo_animation_frame: None,
             logo_colors: Vec::new(),
+            hyfetch_preset: None,
+            hyfetch_mode: None,
+            hyfetch_lightness: None,
             logo_spin_speed_per_frame: None,
             logo_spin_speed_per_round: None,
             logo_spin_tilt: None,
@@ -603,6 +612,9 @@ impl Cli {
                         cli.logo_colors.push((index as usize, parsed.leak()));
                     }
                 },
+                "--hyfetch-preset" => cli.hyfetch_preset = Some(parse_string(key, value)),
+                "--hyfetch-mode" => cli.hyfetch_mode = Some(hyfetch_mode_enum(key, value)),
+                "--hyfetch-lightness" => cli.hyfetch_lightness = Some(hyfetch_lightness(key, value)),
                 "--logo-type" => cli.logo_type = Some(logo_type_enum(key, value)),
                 "--file" => {
                     cli.logo_source = Some(parse_string(key, value));
@@ -1657,6 +1669,35 @@ fn format_enum(key: &str, value: Option<&str>) -> bool {
     std::process::exit(478)
 }
 
+/// rustfetch-only `--hyfetch-mode`: the same case-insensitive ffOptionParseEnum
+/// path as the other enum flags, with three aliases per ANSI family.
+fn hyfetch_mode_enum(key: &str, value: Option<&str>) -> crate::hyfetch::AnsiMode {
+    const PAIRS: &[(&str, i32)] = &[
+        ("24bit", 0),
+        ("rgb", 0),
+        ("truecolor", 0),
+        ("8bit", 1),
+        ("ansi256", 1),
+        ("256color", 1),
+    ];
+    match parse_enum(key, value, PAIRS) {
+        1 => crate::hyfetch::AnsiMode::Ansi256,
+        _ => crate::hyfetch::AnsiMode::Rgb,
+    }
+}
+
+/// rustfetch-only `--hyfetch-lightness`: a finite number in 0..=1,
+/// rejected with the rustfetch config exit code rather than a silent clamp.
+fn hyfetch_lightness(key: &str, value: Option<&str>) -> f64 {
+    let Some(value) = value else {
+        usage_exit(key, "<0.0..1.0>", 477);
+    };
+    match value.parse::<f64>() {
+        Ok(number) if number.is_finite() && (0.0..=1.0).contains(&number) => number,
+        _ => usage_exit(key, "<0.0..1.0>", 477),
+    }
+}
+
 /// --logo-position's ffOptionParseEnum pairs (options/logo.c:196).
 fn position_enum(key: &str, value: Option<&str>) -> crate::logo::PositionOpt {
     use crate::logo::PositionOpt;
@@ -1787,6 +1828,28 @@ mod tests {
         assert_eq!(next_value(&["rf", "-l", "-.5"], 1), Some("-.5"));
         // But `-x` is the next option.
         assert_eq!(next_value(&["rf", "-l", "-x"], 1), None);
+    }
+
+    #[test]
+    fn parse_from_reads_the_hyfetch_flags() {
+        // These flags are rustfetch-only, absent from the verbatim help.
+        let cli = Cli::parse_from(&[
+            "rf",
+            "--hyfetch-preset",
+            "transgender,nonbinary",
+            "--hyfetch-mode",
+            "8BIT",
+            "--hyfetch-lightness",
+            "0.5",
+        ]);
+        assert_eq!(cli.hyfetch_preset.as_deref(), Some("transgender,nonbinary"));
+        assert_eq!(cli.hyfetch_mode, Some(crate::hyfetch::AnsiMode::Ansi256));
+        assert_eq!(cli.hyfetch_lightness, Some(0.5));
+
+        let cli = Cli::parse_from(&["rf", "--hyfetch-mode", "truecolor"]);
+        assert_eq!(cli.hyfetch_mode, Some(crate::hyfetch::AnsiMode::Rgb));
+        assert!(cli.hyfetch_preset.is_none());
+        assert!(cli.hyfetch_lightness.is_none());
     }
 
     #[test]

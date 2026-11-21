@@ -12,6 +12,8 @@ mod genconfig;
 mod instance;
 mod json;
 mod jsonc;
+mod hyfetch;
+mod hyfetch_presets;
 mod logo;
 mod logo_entries;
 mod module_display_names;
@@ -174,6 +176,29 @@ fn main() {
     for (slot, color) in &cli.logo_colors {
         logo_color_overrides.retain(|(existing, _)| existing != slot);
         logo_color_overrides.push((*slot, color));
+    }
+    // rustfetch-only HyFetch palette. The config/CLI merge is per-field;
+    // explicit logo.color.N / --logo-color-N slots win, then hyfetch fills
+    // the remaining nine, then the builtin palette supplies the rest.
+    if let Some(hyfetch) = crate::hyfetch::merge(
+        cfg.and_then(|config| config.hyfetch.clone()),
+        cli.hyfetch_preset.as_deref(),
+        cli.hyfetch_mode,
+        cli.hyfetch_lightness,
+    ) {
+        match hyfetch.resolve() {
+            Ok(palette) => {
+                for (slot, sgr) in palette.into_iter().enumerate() {
+                    if !logo_color_overrides.iter().any(|(existing, _)| *existing == slot) {
+                        logo_color_overrides.push((slot, sgr.leak()));
+                    }
+                }
+            },
+            Err(message) => {
+                eprintln!("Error: {message}");
+                std::process::exit(477);
+            },
+        }
     }
     // The spin options are one upstream struct mutated by the config pass
     // and then the command line; 0.0 means unset for the speeds.
