@@ -1,5 +1,5 @@
 Name:           rustfetch
-Version:        0.2.1
+Version:        0.2.2
 Release:        1%{?dist}
 Summary:        A fastfetch- and hyfetch-inspired system information tool written in Rust
 
