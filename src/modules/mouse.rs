@@ -53,7 +53,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             } else {
                 format!("Mouse {index}")
             };
-            Row::new(&key, device.name.clone())
+            Row::new(&key, device.name.clone()).with_index(index as u32)
         })
         .collect()
 }

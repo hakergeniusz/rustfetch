@@ -175,7 +175,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             if !device.connected {
                 value.push_str(" [disconnected]");
             }
-            Row::new(&key, value)
+            Row::new(&key, value).with_index(index as u32)
         })
         .collect()
 }

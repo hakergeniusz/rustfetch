@@ -156,7 +156,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             if width > 0 && height > 0 {
                 value.push_str(&format!(" ({width}x{height} px)"));
             }
-            Row::new(&key, value)
+            Row::new(&key, value).with_index(index as u32)
         })
         .collect()
 }

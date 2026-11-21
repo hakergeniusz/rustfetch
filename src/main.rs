@@ -11,6 +11,7 @@ mod json;
 mod jsonc;
 mod logo;
 mod logo_entries;
+mod module_display_names;
 mod module_formats;
 mod module_icons;
 mod modules;

@@ -98,7 +98,7 @@ fn parse_size(text: &[u8], marker: &[u8]) -> Option<(u16, u16)> {
 /// The module detects at print time like ffPrintTerminalSize, so the CSI
 /// query escapes reach /dev/tty at the row's position.
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    vec![Row::late(print)]
+    vec![Row::late(print, "terminalsize")]
 }
 
 /// The deferred ffPrintTerminalSize: detection, then the row or the

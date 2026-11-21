@@ -226,6 +226,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             } else {
                 format!("Top Processes {}", index + 1)
             };
+            let key_index = if total == 1 { 0 } else { index as u32 + 1 };
             let name = if process.name.is_empty() {
                 "<unknown>".to_string()
             } else {
@@ -241,7 +242,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             value.push_str("/s / ");
             value.push_str(&util::fmt_bytes(top.bytes_written));
             value.push_str("/s");
-            Row::new(&key, value)
+            Row::new(&key, value).with_index(key_index)
         })
         .collect()
 }

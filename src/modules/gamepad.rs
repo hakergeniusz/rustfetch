@@ -100,7 +100,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                     value.push_str(&format!(" ({pct})"));
                 }
             }
-            Row::new(&key, value)
+            Row::new(&key, value).with_index(index as u32)
         })
         .collect()
 }

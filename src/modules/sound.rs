@@ -1521,7 +1521,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             } else {
                 format!("Sound {}", index + 1)
             };
-            Row::new(&key, value)
+            Row::new(&key, value).with_index(if single { 0 } else { index as u32 + 1 })
         })
         .collect()
 }

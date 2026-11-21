@@ -98,8 +98,9 @@ pub enum Kind {
     /// A placeholder whose detection (and its /dev/tty queries, like
     /// upstream's print-time ffDetect calls) runs when the renderer
     /// reaches the row's position, expanding into the real rows — or
-    /// none, when the error row is hidden.
-    Late(fn(&Instance) -> Vec<Row>),
+    /// none, when the error row is hidden. The module name rides along
+    /// because the entry's common args stamp onto the expanded rows.
+    Late(fn(&Instance) -> Vec<Row>, &'static str),
 }
 
 pub struct Row {
@@ -110,6 +111,17 @@ pub struct Row {
     /// collect(); empty when the module has none. Printed when
     /// display.keyType carries the ICON bit.
     pub key_icon: &'static str,
+    /// ffPrintLogoAndKey's {index} format argument: the module's own row
+    /// counter (0 when it doesn't number rows, 1-based where it does).
+    pub key_index: u32,
+    /// The common module args the entry set (ffJsonConfigParseModuleArgs),
+    /// stamped by collect(); None when the entry set none or the module
+    /// lacks the generic parse (logo, separator, break).
+    pub common: Option<CommonArgs>,
+    /// The custom key expanded for this row (the {index}/{icon}/
+    /// {module-name} form); set only on rows that take a custom key.
+    /// Rows without one keep their built-in key text.
+    pub key_override: Option<String>,
 }
 
 impl Row {
@@ -120,6 +132,9 @@ impl Row {
             value: value.into(),
             kind: Kind::Value,
             key_icon: "",
+            key_index: 0,
+            common: None,
+            key_override: None,
         }
     }
 
@@ -131,6 +146,9 @@ impl Row {
             value: value.into(),
             kind: Kind::Error,
             key_icon: "",
+            key_index: 0,
+            common: None,
+            key_override: None,
         }
     }
 
@@ -141,6 +159,9 @@ impl Row {
             value: value.into(),
             kind: Kind::Value,
             key_icon: "",
+            key_index: 0,
+            common: None,
+            key_override: None,
         }
     }
 
@@ -151,17 +172,23 @@ impl Row {
             value: value.into(),
             kind: Kind::Raw,
             key_icon: "",
+            key_index: 0,
+            common: None,
+            key_override: None,
         }
     }
 
     /// A detection deferred to print time, like fastfetch's printModule
     /// entry points that detect as they print.
-    pub fn late(late: fn(&Instance) -> Vec<Row>) -> Self {
+    pub fn late(late: fn(&Instance) -> Vec<Row>, module: &'static str) -> Self {
         Self {
             key: None,
             value: String::new(),
-            kind: Kind::Late(late),
+            kind: Kind::Late(late, module),
             key_icon: "",
+            key_index: 0,
+            common: None,
+            key_override: None,
         }
     }
 
@@ -175,6 +202,29 @@ impl Row {
         }
         self
     }
+
+    /// The module's row counter for the {index} format argument of a
+    /// custom key; 0-based where upstream passes a 0 moduleIndex, 1-based
+    /// where it pre-increments.
+    pub fn with_index(mut self, index: u32) -> Self {
+        self.key_index = index;
+        self
+    }
+}
+
+/// The common module args of one entry (ffJsonConfigParseModuleArgs's
+/// FFModuleArgs subset the renderer consumes; the `format` outputFormat is
+/// the separate format-engine work). Colors hold ffOptionParseColor's SGR
+/// parameters.
+#[derive(Clone, Default)]
+pub(crate) struct CommonArgs {
+    /// The raw `key` string: the magic `" "` hides the whole key block,
+    /// the empty string falls back to the module name.
+    pub key: Option<String>,
+    pub key_color: Option<String>,
+    pub key_width: u32,
+    pub key_icon: Option<String>,
+    pub output_color: Option<String>,
 }
 
 /// A module's JSON generator: modules/display/genJsonResult, returning
@@ -624,12 +674,16 @@ pub enum PresetJob {
     /// under the verbatim token; JSON mode emits
     /// {"type": <token as written>, "error": "Unknown module type"}.
     Unknown(String),
-    Custom(String),
+    Custom {
+        format: String,
+        opts: Option<&'static crate::jsonc::Value>,
+    },
     Command {
         text: String,
         shell: String,
         param: Option<String>,
         split_lines: bool,
+        opts: Option<&'static crate::jsonc::Value>,
     },
 }
 
@@ -653,43 +707,48 @@ fn entry_job(entry: &crate::config::Entry) -> PresetJob {
             module_job(name).unwrap_or(PresetJob::Unknown(name.clone()))
         },
         crate::config::Entry::Object { type_, opts } => {
-            let opts = (*opts).unwrap_or(&EMPTY_OBJECT);
+            let opts_value = (*opts).unwrap_or(&EMPTY_OBJECT);
             match type_.to_ascii_lowercase().as_str() {
                 "custom" => {
                     // A custom without a format still prints its empty row.
-                    let format = opts
+                    let format = opts_value
                         .get("format")
                         .and_then(crate::jsonc::Value::as_str)
                         .unwrap_or_default();
-                    PresetJob::Custom(format.to_string())
+                    PresetJob::Custom {
+                        format: format.to_string(),
+                        opts: *opts,
+                    }
                 },
                 "command" => {
                     // fastfetch's defaults: /bin/sh -c, splitLines off.
                     PresetJob::Command {
-                        text: opts
+                        text: opts_value
                             .get("text")
                             .and_then(crate::jsonc::Value::as_str)
                             .unwrap_or_default()
                             .to_string(),
-                        shell: opts
+                        shell: opts_value
                             .get("shell")
                             .and_then(crate::jsonc::Value::as_str)
                             .unwrap_or("/bin/sh")
                             .to_string(),
                         param: Some(
-                            opts.get("param")
+                            opts_value
+                                .get("param")
                                 .and_then(crate::jsonc::Value::as_str)
                                 .unwrap_or("-c")
                                 .to_string(),
                         ),
-                        split_lines: opts
+                        split_lines: opts_value
                             .get("splitLines")
                             .and_then(crate::jsonc::Value::as_bool)
                             .unwrap_or(false),
+                        opts: *opts,
                     }
                 },
                 _ => match module_job(type_) {
-                    Some(PresetJob::Module(def)) => PresetJob::ModuleOpts { def, opts },
+                    Some(PresetJob::Module(def)) => PresetJob::ModuleOpts { def, opts: opts_value },
                     Some(other) => other,
                     None => PresetJob::Unknown(type_.clone()),
                 },
@@ -1040,6 +1099,410 @@ fn stamp_icons(rows: &mut [Row], name: &str) {
     }
 }
 
+/// ffJsonConfigParseModuleArgs: the common args one module entry carries.
+/// `key`/`keyIcon` are ffStrbufSetJsonVal (strings set, anything else
+/// clears), `keyColor`/`outputColor` run ffOptionParseColor on the string
+/// value (non-strings clear; invalid colors exit 479 at the module's
+/// parse, before its rows print), `keyWidth` is the u32 reinterpretation
+/// of yyjson_get_uint. Pairs are visited in document order, so a
+/// duplicate key wins last, and `type`/`condition` are consumed skips.
+/// The `format` outputFormat is the separate format-engine work and is
+/// left in the entry for the modules' own parses to ignore.
+pub(crate) fn parse_common_args(opts: Option<&crate::jsonc::Value>, instance: &Instance) -> CommonArgs {
+    let colors = crate::cli::ColorState::from_instance(instance);
+    let crate::jsonc::Value::Object(entries) = opts.unwrap_or(&crate::jsonc::Value::Null) else {
+        return CommonArgs::default();
+    };
+    let mut args = CommonArgs::default();
+    for (name, value) in entries {
+        match name.as_str() {
+            "type" | "condition" => {},
+            "key" => {
+                args.key = value.as_str().map(str::to_owned);
+            },
+            "keyIcon" => {
+                args.key_icon = value.as_str().map(str::to_owned);
+            },
+            "keyColor" => {
+                args.key_color = Some(
+                    value
+                        .as_str()
+                        .map_or_else(String::new, |code| colors.parse_color_deferred(code, &instance.pending_exit)),
+                );
+            },
+            "outputColor" => {
+                args.output_color = Some(
+                    value
+                        .as_str()
+                        .map_or_else(String::new, |code| colors.parse_color_deferred(code, &instance.pending_exit)),
+                );
+            },
+            "keyWidth" => {
+                args.key_width = match value {
+                    crate::jsonc::Value::Int(int) => *int as u32,
+                    crate::jsonc::Value::UInt(uint) => *uint as u32,
+                    _ => 0,
+                };
+            },
+            _ => {},
+        }
+    }
+    args
+}
+
+/// The key-path arg lists: ffPrintLogoAndKey's DEFAULT sites expand the
+/// custom key against {index, icon, module-name}; the self-expanding
+/// modules prebuild theirs against a module-specific list in which only
+/// the trailing {icon}/{module-name} entries are known here — every
+/// module-specific name and position (and thus any positional) is the
+/// format-engine work and stays verbatim.
+enum KeyArgs<'a> {
+    Common { index: u32, icon: &'a str, module_name: &'a str },
+    Prebuilt { icon: &'a str, module_name: &'a str },
+}
+
+/// Modules whose print prebuilds their key (their ffPrintLogoAndKey call
+/// passes the built text with FF_PRINT_TYPE_NO_CUSTOM_KEY): the common
+/// slots (keyColor/keyWidth/keyIcon/outputColor) still apply, but the
+/// key template expands against the module's own arg list, so {index}
+/// has no meaning and {} does not count into it.
+const TYPE_K_KEY_MODULES: &[&str] = &[
+    "battery",
+    "bios",
+    "bluetoothradio",
+    "brightness",
+    "btrfs",
+    "codec",
+    "cpucache",
+    "disk",
+    "diskio",
+    "display",
+    "loadavg",
+    "localip",
+    "monitor",
+    "netio",
+    "os",
+    "physicaldisk",
+    "swap",
+    "zpool",
+];
+
+/// ffParseFormatString (format.c) over a custom key: the spec grammar the
+/// key paths exercise — `{}`/`{0}` sequential positionals, numeric and
+/// named args (case-insensitive), `{#color}` through ffOptionParseColor
+/// and `{#}` as a reset (pipe drops both), `{{` escapes, an unmatched
+/// trailing brace expanding like any spec, `{-}` stopping the expansion,
+/// and the truncation specs `:` (trim-right-space), `<`/`>`/`|`
+/// (pad/align) with negative lengths taking an ellipsis. Conditionals
+/// {?}/{/}, {$env}/{$constants} and `~` ranges are the format-engine
+/// work and stay verbatim; Type K module-specific args likewise;
+/// invalid placeholders mirror upstream's appendInvalidPlaceholder
+/// bytes. The TTY expansion closes with a reset. An invalid `{#color}`
+/// defers its exit(479) into `pending` like the common-arg colors.
+fn expand_key(
+    template: &str,
+    args: &KeyArgs<'_>,
+    instance: &Instance,
+) -> String {
+    let colors = crate::cli::ColorState::from_instance(instance);
+    let pipe = instance.pipe;
+    let num_args = match args {
+        KeyArgs::Common { .. } => 3,
+        KeyArgs::Prebuilt { .. } => 0,
+    };
+    let named = |name: &str| -> Option<String> {
+        let icon_module = |icon: &str, module_name: &str| -> Option<String> {
+            if name.eq_ignore_ascii_case("icon") {
+                Some(icon.to_string())
+            } else if name.eq_ignore_ascii_case("module-name") {
+                Some(module_name.to_string())
+            } else {
+                None
+            }
+        };
+        match args {
+            KeyArgs::Common { index, icon, module_name } => {
+                if name.eq_ignore_ascii_case("index") {
+                    Some(index.to_string())
+                } else {
+                    icon_module(icon, module_name)
+                }
+            },
+            KeyArgs::Prebuilt { icon, module_name } => icon_module(icon, module_name),
+        }
+    };
+    let positional = |i: u32| -> Option<String> {
+        match args {
+            KeyArgs::Common { index, icon, module_name } => match i {
+                1 => Some(index.to_string()),
+                2 => Some(icon.to_string()),
+                3 => Some(module_name.to_string()),
+                _ => None,
+            },
+            KeyArgs::Prebuilt { .. } => None,
+        }
+    };
+    // strToInt32: strtoll base 10 clamped to i32. No digits convert only
+    // when the whole value is empty (valid 0); otherwise leftover
+    // characters make the placeholder invalid, like upstream's *pEnd.
+    let str_to_i32 = |value: &str| -> Option<i32> {
+        let bytes = value.as_bytes();
+        let mut offset = 0;
+        while offset < bytes.len() && matches!(bytes[offset], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r') {
+            offset += 1;
+        }
+        let negative = offset < bytes.len() && bytes[offset] == b'-';
+        if offset < bytes.len() && (bytes[offset] == b'+' || bytes[offset] == b'-') {
+            offset += 1;
+        }
+        let start = offset;
+        while offset < bytes.len() && bytes[offset].is_ascii_digit() {
+            offset += 1;
+        }
+        if offset == start {
+            return value.is_empty().then_some(0);
+        }
+        if offset != bytes.len() {
+            return None;
+        }
+        let magnitude = value[start..offset].parse::<i128>().unwrap_or(i128::from(i64::MAX));
+        let signed = if negative { -magnitude } else { magnitude };
+        Some(signed.clamp(i32::MIN as i128, i32::MAX as i128) as i32)
+    };
+    // ffStrbufSubstrBefore is byte-based; the port cuts at the nearest
+    // char boundary below the length so its Strings stay valid UTF-8.
+    let byte_floor = |value: &str, mut end: usize| -> usize {
+        while end > 0 && !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        end
+    };
+    let mut out = String::new();
+    let mut arg_counter = 0u32;
+    let mut rest = template;
+    while !rest.is_empty() {
+        let Some(open) = rest.find('{') else {
+            out.push_str(rest);
+            break;
+        };
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        if after.starts_with('{') {
+            out.push('{');
+            rest = &after[1..];
+            continue;
+        }
+        // An unmatched trailing brace turns the remainder into the spec;
+        // the closing brace only prints when it was actually found.
+        let (spec, terminated) = match after.find('}') {
+            Some(close) => (&after[..close], true),
+            None => (after, false),
+        };
+        rest = after.find('}').map_or("", |close| &after[close + 1..]);
+        if spec.len() == 1 {
+            match spec.as_bytes()[0] {
+                // {-} stops the whole expansion; the TTY reset still closes.
+                b'-' => break,
+                b'#' => {
+                    if !pipe {
+                        out.push_str("\x1b[m");
+                    }
+                    continue;
+                },
+                // Conditionals defer to the format engine: an unmatched
+                // end token prints verbatim, a matched one skips.
+                b'?' | b'/' => {
+                    out.push('{');
+                    out.push_str(spec);
+                    if terminated {
+                        out.push('}');
+                    }
+                    continue;
+                },
+                // Everything else, including single digits, is a
+                // positional arg lookup.
+                _ => {},
+            }
+        }
+        if let Some(color) = spec.strip_prefix('#') {
+            if !pipe {
+                out.push_str("\x1b[");
+                out.push_str(&colors.parse_color_deferred(color, &instance.pending_exit));
+                out.push('m');
+            }
+            continue;
+        }
+        if spec.starts_with('$') || spec.starts_with('?') || spec.starts_with('/') {
+            // Constants/env vars and conditionals defer to the format
+            // engine; upstream would resolve or skip them.
+            out.push('{');
+            out.push_str(spec);
+            if terminated {
+                out.push('}');
+            }
+            continue;
+        }
+        let invalid = |out: &mut String| {
+            out.push('{');
+            out.push_str(spec);
+            if terminated {
+                out.push('}');
+            }
+        };
+        let sep_at = spec.find([':', '<', '>', '|', '~']);
+        let (head, sep, tail) = match sep_at {
+            Some(at) => (&spec[..at], spec.as_bytes()[at], Some(&spec[at + 1..])),
+            None => (spec, 0, None),
+        };
+        let resolved = if head.is_empty() {
+            arg_counter += 1;
+            positional(arg_counter)
+        } else if head.as_bytes()[0].is_ascii_digit() {
+            // strtoul's whole-string parse and tail check; "0" falls back
+            // to the sequential counter.
+            match head.parse::<u32>() {
+                Ok(0) => {
+                    arg_counter += 1;
+                    positional(arg_counter)
+                },
+                Ok(n) if n <= num_args => positional(n),
+                _ => None,
+            }
+        } else if head.as_bytes()[0].is_ascii_alphabetic() {
+            named(head)
+        } else {
+            None
+        };
+        let Some(value) = resolved else {
+            invalid(&mut out);
+            continue;
+        };
+        let Some(sep) = (sep != 0).then_some(sep) else {
+            out.push_str(&value);
+            continue;
+        };
+        let Some(tail) = tail else {
+            out.push_str(&value);
+            continue;
+        };
+        if sep == b'~' {
+            // Substring ranges are the format engine's skipAnsiEscape
+            // work; they stay verbatim here.
+            invalid(&mut out);
+            continue;
+        }
+        let Some(mut trunc) = str_to_i32(tail) else {
+            invalid(&mut out);
+            continue;
+        };
+        let mut ellipsis = false;
+        if trunc < 0 {
+            ellipsis = true;
+            trunc = if trunc == i32::MIN { i32::MAX } else { -trunc };
+        }
+        let trunc = trunc as u32;
+        let value_len = value.len() as u32;
+        if value_len == trunc {
+            out.push_str(&value);
+        } else if value_len > trunc {
+            let end = if sep == b':' {
+                let end = byte_floor(&value, trunc as usize);
+                value[..end].trim_end_matches(|c: char| c.is_ascii_whitespace()).len()
+            } else {
+                byte_floor(&value, if ellipsis { trunc.saturating_sub(1) } else { trunc } as usize)
+            };
+            out.push_str(&value[..end]);
+            if ellipsis {
+                out.push('…');
+            }
+        } else if sep == b':' {
+            out.push_str(&value);
+        } else {
+            let padding = trunc - value_len;
+            if sep == b'<' {
+                out.push_str(&value);
+                out.push_str(&" ".repeat(padding as usize));
+            } else if sep == b'>' {
+                out.push_str(&" ".repeat(padding as usize));
+                out.push_str(&value);
+            } else {
+                let half = padding / 2;
+                out.push_str(&" ".repeat(half as usize));
+                out.push_str(&value);
+                out.push_str(&" ".repeat((padding - half) as usize));
+            }
+        }
+    }
+    if !pipe {
+        out.push_str("\x1b[m");
+    }
+    out
+}
+
+/// Upstream error sites that pass FF_PRINT_TYPE_NO_CUSTOM_KEY: their
+/// error rows keep the built-in key text under a custom key, while the
+/// colors/width/icon slots still apply (only the text is skipped).
+const ERROR_FIXED_KEY: &[&str] = &["break", "codec", "colors", "diskio", "dns", "logo", "separator", "title"];
+
+/// Stamps one job's common args onto the rows it produced: every row
+/// carries the colors/width/icon slots, and rows that print a key get the
+/// custom key expanded with ffPrintLogoAndKey's {index}/{icon}/
+/// {module-name} args. Keyless rows never take a key override; error rows
+/// of the NO_CUSTOM_KEY sites keep their text.
+pub(crate) fn stamp_common(rows: &mut [Row], args: &CommonArgs, module: &str, instance: &Instance) {
+    // Keyed rows carry the slots even when empty — an empty-string
+    // keyColor explicitly clears back to the display default, which the
+    // renderer resolves through the same Some-iff-set rule upstream uses.
+    // Keyless rows (the title) never pass through ffPrintLogoAndKey
+    // upstream and so carry no module args at all; the custom module's
+    // bare rows get theirs from stamp_custom instead.
+    let has_custom = args.key.as_deref().is_some_and(|key| !key.is_empty() && key != " ");
+    let error_fixed = ERROR_FIXED_KEY.contains(&module);
+    let module_name = crate::module_display_names::display_name_for(module);
+    let default_icon = crate::module_icons::icon_for(module);
+    for row in rows.iter_mut() {
+        // The late placeholder carries the entry so the renderer can
+        // stamp the rows its detection expands into.
+        if row.key.is_none() && !matches!(row.kind, Kind::Late(..)) {
+            continue;
+        }
+        row.common = Some(args.clone());
+        if has_custom && !(error_fixed && matches!(row.kind, Kind::Error)) {
+            let icon = args.key_icon.as_deref().unwrap_or(default_icon);
+            let key_args = if TYPE_K_KEY_MODULES.contains(&module) {
+                KeyArgs::Prebuilt { icon, module_name }
+            } else {
+                KeyArgs::Common { index: row.key_index, icon, module_name }
+            };
+            row.key_override = Some(expand_key(args.key.as_deref().unwrap_or_default(), &key_args, instance));
+        }
+    }
+}
+
+/// The custom module's rows: its default key is the magic `" "`, so a
+/// custom key turns the bare row into a keyed one.
+fn stamp_custom(rows: &mut [Row], args: &CommonArgs, instance: &Instance) {
+    let module_name = crate::module_display_names::display_name_for("custom");
+    let icon = args
+        .key_icon
+        .as_deref()
+        .unwrap_or_else(|| crate::module_icons::icon_for("custom"));
+    for row in rows.iter_mut() {
+        row.common = Some(args.clone());
+        // The default and the magic key print bare; the empty string
+        // falls back to the module name like every other module.
+        let key = match args.key.as_deref() {
+            None | Some(" ") => continue,
+            Some("") => module_name.to_string(),
+            Some(custom) => {
+                let key_args = KeyArgs::Common { index: row.key_index, icon, module_name };
+                expand_key(custom, &key_args, instance)
+            },
+        };
+        row.key = Some(key);
+    }
+}
+
 pub fn collect(
     selected: &[String],
     structure_given: bool,
@@ -1068,32 +1531,71 @@ pub fn collect(
                 rows.extend(produced);
             },
             PresetJob::ModuleOpts { def, opts } => {
+                // logo/separator/break have no ffJsonConfigParseModuleArgs
+                // arm upstream; their entries carry only their own keys.
+                let args = if matches!(def.name, "logo" | "separator" | "break") {
+                    CommonArgs::default()
+                } else {
+                    parse_common_args(Some(opts), instance)
+                };
+                // A deferred color exit stops the structure loop right
+                // here, before the failing module prints anything.
+                if instance.pending_exit.borrow().is_some() {
+                    break;
+                }
                 // Each object entry runs with its own options: the job
                 // gets a private instance carrying the entry.
-                let mut instance = instance.clone();
-                instance.entry = Some(opts);
-                let mut produced = (def.run)(&instance);
+                let mut job_instance = instance.clone();
+                job_instance.entry = Some(opts);
+                let mut produced = (def.run)(&job_instance);
                 stamp_icons(&mut produced, def.name);
+                stamp_common(&mut produced, &args, def.name, &job_instance);
+                // A {#color} failure inside the key template fires after
+                // run(): upstream's print dies in ffPrintLogoAndKey, so
+                // this module's rows never print either.
+                if job_instance.pending_exit.borrow().is_some() {
+                    // The state was set on the per-entry clone; lift it to
+                    // the outer instance for the renderer's exit point.
+                    *instance.pending_exit.borrow_mut() = job_instance.pending_exit.borrow().clone();
+                    break;
+                }
                 rows.extend(produced);
             },
             // ffPrintError(line, 0, nullptr, FF_PRINT_TYPE_NO_CUSTOM_KEY,
             // "<no implementation provided>"): visible only with
             // display.showErrors. The moduleArgs are null here, so the
-            // row carries no key icon.
+            // row carries no key icon and no common args.
             PresetJob::Unknown(token) => {
                 if instance.show_errors {
                     rows.push(Row::error(token, "<no implementation provided>"));
                 }
             },
             // The custom module's default key is the magic " ", so its
-            // rows are keyless and never carry an icon.
-            PresetJob::Custom(text) => rows.extend(custom::render_rows(text, instance)),
+            // rows are keyless unless the entry sets a key.
+            PresetJob::Custom { format, opts } => {
+                let args = parse_common_args(*opts, instance);
+                if instance.pending_exit.borrow().is_some() {
+                    break;
+                }
+                let mut produced = custom::render_rows(format, instance);
+                stamp_icons(&mut produced, "custom");
+                stamp_custom(&mut produced, &args, instance);
+                if instance.pending_exit.borrow().is_some() {
+                    break;
+                }
+                rows.extend(produced);
+            },
             PresetJob::Command {
                 text,
                 shell,
                 param,
                 split_lines,
+                opts,
             } => {
+                let args = parse_common_args(*opts, instance);
+                if instance.pending_exit.borrow().is_some() {
+                    break;
+                }
                 let mut produced = command::run_text(
                     text,
                     shell,
@@ -1102,12 +1604,22 @@ pub fn collect(
                     instance,
                 );
                 stamp_icons(&mut produced, "command");
+                stamp_common(&mut produced, &args, "command", instance);
+                if instance.pending_exit.borrow().is_some() {
+                    break;
+                }
                 rows.extend(produced);
             },
         }
         if stat_on {
             stats.push((rows.len(), crate::spin::time_get_tick() - started));
         }
+    }
+    // ffPrintError's gate: module parse/runtime error rows stay hidden
+    // unless display.showErrors. JSON mode is unaffected — its errors
+    // ride the result objects.
+    if !instance.show_errors {
+        rows.retain(|row| !matches!(row.kind, Kind::Error));
     }
     rows
 }
@@ -1138,6 +1650,16 @@ pub fn collect_json(
             PresetJob::ModuleOpts { def, opts } => {
                 let mut instance = instance.clone();
                 instance.entry = Some(opts);
+                // The parse pass runs before generateJsonResult in JSON
+                // mode too, so common-arg color errors abort before any
+                // of the document is written (nothing precedes the dump).
+                if !matches!(def.name, "logo" | "separator" | "break") {
+                    parse_common_args(Some(opts), &instance);
+                    if let Some((code, message)) = instance.pending_exit.borrow_mut().take() {
+                        eprintln!("{message}");
+                        std::process::exit(code);
+                    }
+                }
                 JsonItem {
                     type_name: canonical_type(def.name).to_string(),
                     outcome: def.json.map_or(JsonOutcome::Unsupported, |json| (json)(&instance)),
@@ -1149,20 +1671,35 @@ pub fn collect_json(
                 outcome: JsonOutcome::Error("Unknown module type".to_string()),
                 stat: None,
             },
-            PresetJob::Custom(text) => JsonItem {
-                type_name: "Custom".to_string(),
-                outcome: custom::json(text, instance),
-                stat: None,
+            PresetJob::Custom { format, opts } => {
+                parse_common_args(*opts, instance);
+                if let Some((code, message)) = instance.pending_exit.borrow_mut().take() {
+                    eprintln!("{message}");
+                    std::process::exit(code);
+                }
+                JsonItem {
+                    type_name: "Custom".to_string(),
+                    outcome: custom::json(format, instance),
+                    stat: None,
+                }
             },
             PresetJob::Command {
                 text,
                 shell,
                 param,
                 split_lines,
-            } => JsonItem {
-                type_name: "Command".to_string(),
-                outcome: command::json(text, shell, param.as_deref(), *split_lines, instance),
-                stat: None,
+                opts,
+            } => {
+                parse_common_args(*opts, instance);
+                if let Some((code, message)) = instance.pending_exit.borrow_mut().take() {
+                    eprintln!("{message}");
+                    std::process::exit(code);
+                }
+                JsonItem {
+                    type_name: "Command".to_string(),
+                    outcome: command::json(text, shell, param.as_deref(), *split_lines, instance),
+                    stat: None,
+                }
             },
         };
         if stat_on {
@@ -1183,7 +1720,7 @@ mod preset_tests {
                 PresetJob::Module(module) => module.name.to_string(),
                 PresetJob::ModuleOpts { def, .. } => format!("opts:{}", def.name),
                 PresetJob::Unknown(token) => format!("unknown:{token}"),
-                PresetJob::Custom(text) => format!("custom:{text}"),
+                PresetJob::Custom { format, .. } => format!("custom:{format}"),
                 PresetJob::Command { text, .. } => format!("command:{text}"),
             })
             .collect()
@@ -1270,6 +1807,7 @@ mod preset_tests {
                 shell,
                 param,
                 split_lines,
+                ..
             } => {
                 assert_eq!(text, "echo hi");
                 assert_eq!(shell, "/bin/sh");

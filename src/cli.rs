@@ -1009,6 +1009,44 @@ impl ColorState {
     /// display-property words read the state's current slot, prefixed
     /// `1;` when the bright bolt applies.
     pub(crate) fn parse_color(&self, value: &str) -> String {
+        self.parse_color_impl(value, None)
+    }
+
+    /// The common-args parse variant: an invalid code does not abort on
+    /// the spot — it records the exit(479) and its stderr message in
+    /// `pending`, so collect() can stop there and the renderer lets the
+    /// rows before the failing module print before the message lands
+    /// (upstream parses lazily at each module's print).
+    pub(crate) fn parse_color_deferred(
+        &self,
+        value: &str,
+        pending: &std::cell::RefCell<Option<(i32, String)>>,
+    ) -> String {
+        self.parse_color_impl(value, Some(pending))
+    }
+
+    fn parse_color_impl(
+        &self,
+        value: &str,
+        pending: Option<&std::cell::RefCell<Option<(i32, String)>>>,
+    ) -> String {
+        let fail = |message: String| -> String {
+            match pending {
+                Some(cell) => {
+                    // First failure wins: upstream exits at the first
+                    // invalid code, so only its message can ever print.
+                    let mut slot = cell.borrow_mut();
+                    if slot.is_none() {
+                        *slot = Some((479, message.clone()));
+                    }
+                },
+                None => {
+                    eprintln!("{message}");
+                    std::process::exit(479);
+                },
+            }
+            String::new()
+        };
         if value.is_empty() {
             return String::new();
         }
@@ -1084,8 +1122,7 @@ impl ColorState {
                     }
                 }
                 if !matched {
-                    eprintln!("Error: invalid color code found: {rest}");
-                    std::process::exit(479);
+                    return fail(format!("Error: invalid color code found: {rest}"));
                 }
                 continue;
             }
@@ -1108,8 +1145,7 @@ impl ColorState {
                     offset += 1;
                 }
                 if offset == digit_start {
-                    eprintln!("Error: invalid 256 color code found: {after}");
-                    std::process::exit(479);
+                    return fail(format!("Error: invalid 256 color code found: {after}"));
                 }
                 // glibc returns ULONG_MAX on ERANGE before the sign negates.
                 let color = match after[digit_start..offset].parse::<u64>() {
@@ -1117,8 +1153,7 @@ impl ColorState {
                     Err(_) => u32::MAX,
                 };
                 if color > 255 {
-                    eprintln!("Error: invalid 256 color code found: {after}");
-                    std::process::exit(479);
+                    return fail(format!("Error: invalid 256 color code found: {after}"));
                 }
                 out.push_str("38;5;");
                 out.push_str(&color.to_string());
@@ -1153,8 +1188,7 @@ impl ColorState {
                     offset += 1;
                 }
                 if offset == digit_start {
-                    eprintln!("Error: invalid RGB color code found: {after}");
-                    std::process::exit(479);
+                    return fail(format!("Error: invalid RGB color code found: {after}"));
                 }
                 // glibc returns ULONG_MAX on ERANGE before the sign negates;
                 // a 6-hex-digit span can never overflow, so the clamp branch
@@ -1164,16 +1198,14 @@ impl ColorState {
                     Err(_) => u32::MAX,
                 };
                 if offset > 6 {
-                    eprintln!("Error: RGB color code too long: {after}");
-                    std::process::exit(479);
+                    return fail(format!("Error: RGB color code too long: {after}"));
                 } else if offset == 3 {
                     let rgb = ((value & 0xF00) >> 8) * 0x110000
                         + ((value & 0x0F0) >> 4) * 0x001100
                         + (value & 0x00F) * 0x000011;
                     out.push_str(&format!("38;2;{};{};{}", rgb >> 16, (rgb >> 8) & 0xFF, rgb & 0xFF));
                 } else if offset != 6 {
-                    eprintln!("Error: invalid RGB color code length: {after}");
-                    std::process::exit(479);
+                    return fail(format!("Error: invalid RGB color code length: {after}"));
                 } else {
                     out.push_str(&format!("38;2;{};{};{}", value >> 16, (value >> 8) & 0xFF, value & 0xFF));
                 }

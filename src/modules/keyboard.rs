@@ -90,7 +90,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             } else {
                 format!("Keyboard {index}")
             };
-            Row::new(&key, name.clone())
+            Row::new(&key, name.clone()).with_index(index as u32)
         })
         .collect()
 }

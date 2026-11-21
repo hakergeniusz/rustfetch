@@ -1436,6 +1436,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 format!("Wi-Fi {}", index + 1)
             };
             Row::new(&key, item_value(&item, instance.color))
+                .with_index(if single { 0 } else { index as u32 + 1 })
         })
         .collect()
 }

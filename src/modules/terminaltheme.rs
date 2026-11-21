@@ -157,7 +157,7 @@ pub(crate) fn terminal_is_light_by_env() -> bool {
 /// The module detects at print time like ffPrintTerminalTheme, so the OSC
 /// queries reach /dev/tty at the row's position.
 pub fn run(_instance: &Instance) -> Vec<Row> {
-    vec![Row::late(print)]
+    vec![Row::late(print, "terminaltheme")]
 }
 
 /// The deferred ffPrintTerminalTheme: detection, then the row or the

@@ -76,7 +76,7 @@ pub fn run_text(
         .enumerate()
         .map(|(index, line)| {
             // splitLines numbers from 1, so even a single line is "Command 1".
-            Row::new(&format!("Command {}", index + 1), *line)
+            Row::new(&format!("Command {}", index + 1), *line).with_index(index as u32 + 1)
         })
         .collect()
 }

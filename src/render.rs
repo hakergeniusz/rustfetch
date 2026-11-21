@@ -137,10 +137,29 @@ struct KeyStyle<'a> {
 /// modules hide it with the `" "` magic key) and the unconditional
 /// reset+outputColor tail. `logo_width` is instance.state.logoWidth at
 /// the call site; the `\e[{n}G` jump and the padding spaces run in pipe
-/// mode too.
-fn key_prefix(row_key: Option<&str>, key_icon: &str, style: &KeyStyle<'_>, logo_width: usize) -> String {
+/// mode too. The row's common module args override the display slots
+/// per ffPrintLogoAndKey: keyColor over colorKeys, keyWidth over
+/// display.keyWidth, keyIcon over the module default, outputColor over
+/// colorOutput, and a custom `key` replaces the built-in key text (the
+/// magic `" "` hides the whole block).
+fn key_prefix(row: &Row, style: &KeyStyle<'_>, logo_width: usize) -> String {
+    let common = row.common.as_ref();
+    let raw_key = common.and_then(|args| args.key.as_deref());
+    // The magic `" "` key hides the whole key block, tail included.
+    let hidden = raw_key == Some(" ");
+    // A set custom key replaces the text on rows that took the expansion
+    // (collect stamps key_override; the NO_CUSTOM_KEY error sites didn't
+    // and fall back to their built-in key).
+    let custom = raw_key.is_some_and(|key| !key.is_empty() && key != " ");
+    let key_text = if hidden {
+        None
+    } else if custom {
+        row.key_override.as_deref().or(row.key.as_deref())
+    } else {
+        row.key.as_deref()
+    };
     let mut out = String::new();
-    if let Some(key) = row_key {
+    if let Some(key) = key_text {
         if style.key_type != crate::instance::KEY_TYPE_NONE {
             for _ in 0..style.key_padding_left {
                 out.push(' ');
@@ -150,12 +169,21 @@ fn key_prefix(row_key: Option<&str>, key_icon: &str, style: &KeyStyle<'_>, logo_
                 if style.bright_color {
                     out.push_str("\x1b[1m");
                 }
-                if !style.color_keys.is_empty() {
-                    out.push_str(&format!("\x1b[{}m", style.color_keys));
+                let color_keys = common
+                    .and_then(|args| args.key_color.as_deref())
+                    .filter(|code| !code.is_empty())
+                    .unwrap_or(style.color_keys);
+                if !color_keys.is_empty() {
+                    out.push_str(&format!("\x1b[{color_keys}m"));
                 }
             }
-            // The key-icon bits print moduleArgs->keyIcon, only when
-            // non-empty.
+            // The key-icon bits print moduleArgs->keyIcon: the entry's
+            // keyIcon replaces the module default (an empty string clears
+            // it, like upstream's ffStrbufSetJsonVal clearing the buffer).
+            let key_icon = match common.and_then(|args| args.key_icon.as_deref()) {
+                Some(icon) => icon,
+                None => row.key_icon,
+            };
             if style.key_type & crate::instance::KEY_TYPE_ICON != 0 && !key_icon.is_empty() {
                 out.push_str(key_icon);
             }
@@ -175,32 +203,54 @@ fn key_prefix(row_key: Option<&str>, key_icon: &str, style: &KeyStyle<'_>, logo_
             if style.color && !style.color_separator.is_empty() {
                 out.push_str("\x1b[m");
             }
-            if style.key_width > 0 {
-                out.push_str(&format!("\x1b[{}G", style.key_width as usize + logo_width));
+            let key_width = common
+                .map(|args| args.key_width)
+                .filter(|width| *width > 0)
+                .unwrap_or(style.key_width as u32);
+            if key_width > 0 {
+                // u32 arithmetic like upstream's printf("%u", keyWidth + logoWidth).
+                out.push_str(&format!("\x1b[{}G", key_width.wrapping_add(logo_width as u32)));
             }
         }
     }
     if style.color {
         out.push_str("\x1b[m");
-        if !style.color_output.is_empty() {
-            out.push_str(&format!("\x1b[{}m", style.color_output));
+        let color_output = common
+            .and_then(|args| args.output_color.as_deref())
+            .filter(|code| !code.is_empty())
+            .unwrap_or(style.color_output);
+        if !color_output.is_empty() {
+            out.push_str(&format!("\x1b[{color_output}m"));
         }
     }
     out
 }
 
+/// A late row's detection, run at print time; the placeholder carries the
+/// entry's common args, which stamp onto the rows it expands into.
+fn late_rows(row: &Row, instance: &Instance) -> Vec<Row> {
+    let Kind::Late(late, module) = row.kind else {
+        return Vec::new();
+    };
+    let mut produced = late(instance);
+    if let Some(args) = row.common.as_ref() {
+        crate::modules::stamp_common(&mut produced, args, module, instance);
+    }
+    produced
+}
+
 /// Renders a single info row; `Kind::Raw` values are printed verbatim because
 /// modules embed their own escapes there.
 fn row_line(row: &Row, style: &KeyStyle<'_>, logo_width: usize) -> String {
-    match (&row.key, row.kind) {
-        (Some(key), Kind::Value) => {
-            let mut out = key_prefix(Some(key), row.key_icon, style, logo_width);
+    match (row.key.as_deref(), row.kind) {
+        (Some(_), Kind::Value) => {
+            let mut out = key_prefix(row, style, logo_width);
             out.push_str(&row.value);
             out
         },
         // ffPrintError's message: bold red outside pipe mode, plain in it.
         (_, Kind::Error) => {
-            let mut out = key_prefix(row.key.as_deref(), row.key_icon, style, logo_width);
+            let mut out = key_prefix(row, style, logo_width);
             if style.color {
                 out.push_str("\x1b[1;31m");
             }
@@ -214,13 +264,13 @@ fn row_line(row: &Row, style: &KeyStyle<'_>, logo_width: usize) -> String {
         // escapes; the renderer adds the tail reset (and outputColor) of
         // the key writer.
         (None, Kind::Value) => {
-            let mut out = key_prefix(None, row.key_icon, style, logo_width);
+            let mut out = key_prefix(row, style, logo_width);
             out.push_str(&row.value);
             out
         },
         (_, Kind::Raw) => row.value.clone(),
         // Late rows expand into regular ones before reaching here.
-        (_, Kind::Late(_)) => String::new(),
+        (_, Kind::Late(..)) => String::new(),
     }
 }
 
@@ -515,9 +565,9 @@ pub fn print(
                 let mut printed = 0usize;
                 cursor.flush(&mut out, printed);
                 for row in &rows {
-                    if let Kind::Late(late) = row.kind {
+                    if let Kind::Late(..) = row.kind {
                         let _ = out.flush();
-                        for produced in late(instance) {
+                        for produced in late_rows(row, instance) {
                             keys_height += 1;
                             if logo_width > 0 {
                                 let _ = write!(out, "\x1b[{}C", logo_width);
@@ -545,6 +595,13 @@ pub fn print(
                     cursor.flush(&mut out, printed);
                 }
                 cursor.flush(&mut out, printed);
+                // A deferred color exit aborts here: upstream's structure
+                // loop dies mid-print, before ffLogoPrintRemaining.
+                if let Some((code, message)) = instance.pending_exit.borrow_mut().take() {
+                    let _ = out.flush();
+                    eprintln!("{message}");
+                    std::process::exit(code);
+                }
                 // ffLogoPrintRemaining's empty-cache tail: one newline per
                 // remaining logo height, re-run every watch round against
                 // the reset keysHeight.
@@ -633,9 +690,9 @@ pub fn print(
                     let mut printed = 0usize;
                     cursor.flush(&mut out, printed);
                     for row in &rows {
-                        if let Kind::Late(late) = row.kind {
+                        if let Kind::Late(..) = row.kind {
                             let _ = out.flush();
-                            for produced in late(instance) {
+                            for produced in late_rows(row, instance) {
                                 keys_height += 1;
                                 let _ = writeln!(out, "{}", row_line(&produced, &style, 0));
                             }
@@ -649,6 +706,12 @@ pub fn print(
                         cursor.flush(&mut out, printed);
                     }
                     cursor.flush(&mut out, printed);
+                    // The deferred color exit aborts before the tail.
+                    if let Some((code, message)) = instance.pending_exit.borrow_mut().take() {
+                        let _ = out.flush();
+                        eprintln!("{message}");
+                        std::process::exit(code);
+                    }
                     // ffLogoPrintRemaining's cleared-cache tail: keysHeight <=
                     // logoHeight (0) closes with one newline when the round
                     // printed nothing.
@@ -710,13 +773,13 @@ pub fn print(
                 let mut printed = 0usize;
                 cursor.flush(&mut out, printed);
                 for row in &rows {
-                    if let Kind::Late(late) = row.kind {
+                    if let Kind::Late(..) = row.kind {
                         // Deferred detection runs at the row's position: flush
                         // the rows already rendered so the detection's /dev/tty
                         // queries land in the stream like upstream's print-time
                         // ffDetect calls.
                         let _ = out.flush();
-                        for produced in late(instance) {
+                        for produced in late_rows(row, instance) {
                             keys_height += 1;
                             emit_chars_row(&mut out, &logo_lines, &mut logo_index, &layout, &produced, watch.is_some());
                         }
@@ -730,6 +793,13 @@ pub fn print(
                     cursor.flush(&mut out, printed);
                 }
                 cursor.flush(&mut out, printed);
+                // The deferred color exit aborts before the remaining
+                // logo lines: upstream exits inside the structure loop.
+                if let Some((code, message)) = instance.pending_exit.borrow_mut().take() {
+                    let _ = out.flush();
+                    eprintln!("{message}");
+                    std::process::exit(code);
+                }
                 // ffLogoPrintRemaining: lines past the last info row print
                 // bare (LEFT: plain; RIGHT: from the right edge) and the
                 // cache clears, so later watch rounds move the cursor past

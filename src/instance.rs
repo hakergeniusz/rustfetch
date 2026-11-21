@@ -1,6 +1,6 @@
 //! Runtime context shared by all modules: color capability and distro identity.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::sync::{Mutex, OnceLock};
@@ -137,6 +137,13 @@ pub struct Instance {
     /// Memoized GSettings/dconf reads per (schema, key), filled lazily by the
     /// GTK modules. A Mutex because modules run in parallel threads.
     pub gnome_settings: Mutex<HashMap<String, Option<String>>>,
+    /// A color-parse exit(479) deferred out of the common-args parse:
+    /// upstream parses lazily at each module's print, so earlier modules
+    /// keep printing before the abort. collect() stops collecting and the
+    /// renderer exits with this code after the rows so far print, stderr
+    /// message last. JSON mode reads and exits on it directly (nothing
+    /// precedes the doc).
+    pub pending_exit: RefCell<Option<(i32, String)>>,
 }
 
 impl Clone for Instance {
@@ -166,6 +173,7 @@ impl Clone for Instance {
             player_name: self.player_name.clone(),
             title_fqdn: Cell::new(self.title_fqdn.get()),
             gnome_settings: Mutex::new(self.gnome_settings.lock().unwrap_or_else(|e| e.into_inner()).clone()),
+            pending_exit: self.pending_exit.clone(),
         }
     }
 }
@@ -239,6 +247,7 @@ impl Instance {
             ff_started: Cell::new(false),
             gnome_settings: Mutex::new(HashMap::new()),
             logo_colors: OnceLock::new(),
+            pending_exit: std::cell::RefCell::new(None),
         }
     }
 

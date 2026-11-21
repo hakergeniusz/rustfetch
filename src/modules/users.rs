@@ -234,7 +234,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             if user.login_time_ms > 0 {
                 value.push_str(&format!(" - login time {}", login_time_str(user.login_time_ms)));
             }
-            Row::new(&key, value)
+            Row::new(&key, value).with_index(index as u32)
         })
         .collect()
 }

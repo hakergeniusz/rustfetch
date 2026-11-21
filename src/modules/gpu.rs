@@ -652,7 +652,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             } else {
                 format!("GPU {index}")
             };
-            Row::new(&key, item_value(gpu, options.temp_range, instance.color))
+            Row::new(&key, item_value(gpu, options.temp_range, instance.color)).with_index(index as u32)
         })
         .collect()
 }
