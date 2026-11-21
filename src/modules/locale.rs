@@ -11,7 +11,18 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         .or_else(|_| std::env::var("LANG"))
         .unwrap_or_else(|_| "unknown".to_string());
 
-    vec![Row::new(instance.display_name("locale"), locale)]
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        return vec![Row::new(instance.display_name("locale"), locale)];
+    };
+
+    // Upstream FF_PRINT_FORMAT_CHECKED passes the single detected locale
+    // strbuf as an FF_ARG_TYPE_STRBUF (`result`). Wire against the value
+    // this function actually prints so the default and custom paths agree.
+    let args = [
+        crate::format_args::FormatArg { name: "result", value: crate::format_args::ArgValue::Str(&locale) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("locale"), rendered)]
 }
 
 /// ffDetectLocale: LC_ALL, then LANG, then the current LC_TIME locale.

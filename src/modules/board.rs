@@ -60,14 +60,27 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    let mut value = board.name;
-    if !board.version.is_empty()
-        && !board.version.eq_ignore_ascii_case("none")
-    {
-        value.push_str(&format!(" ({})", board.version));
-    }
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        let mut value = board.name;
+        if !board.version.is_empty()
+            && !board.version.eq_ignore_ascii_case("none")
+        {
+            value.push_str(&format!(" ({})", board.version));
+        }
+        return vec![Row::new(instance.display_name("board"), value)];
+    };
 
-    vec![Row::new(instance.display_name("board"), value)]
+    // Upstream FF_PRINT_FORMAT_CHECKED passes the four board strbufs as
+    // FF_ARG_TYPE_STRBUF values. Borrow them here, before the default path
+    // would move `name`/`version` into the composed `value`.
+    let args = [
+        crate::format_args::FormatArg { name: "name", value: crate::format_args::ArgValue::Str(&board.name) },
+        crate::format_args::FormatArg { name: "vendor", value: crate::format_args::ArgValue::Str(&board.vendor) },
+        crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(&board.version) },
+        crate::format_args::FormatArg { name: "serial", value: crate::format_args::ArgValue::Str(&board.serial) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("board"), rendered)]
 }
 
 /// ffGenerateBoardJsonResult.
