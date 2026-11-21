@@ -242,6 +242,11 @@ fn skip_ansi_escape(temp: &mut String, out: &mut String, trailing: &mut String) 
     if prefix > 0 {
         out.push_str(&temp[..prefix]);
         temp.drain(..prefix);
+    } else {
+        // Upstream early-returns before the trailing-reset block when the
+        // value has no leading CSI (format.c:323-325): a bare trailing
+        // `\e[m` is ordinary content and must count toward length/trunc.
+        return;
     }
 
     let end = {
@@ -572,8 +577,9 @@ pub fn parse_format_string(template: &str, args: &[FormatArg], positional_len: u
         }
 
         // Truncation and padding: `:N` cuts and trims trailing spaces,
-        // `<N`/`>N`/`|N` pad left/right/both, a negative N takes an
-        // ellipsis. Embedded escapes leave the padding math alone.
+        // `<N`/`>N`/`|N` pad left/right/both, `:` truncates; a negative N
+        // takes an ellipsis for every separator. Embedded escapes leave
+        // the padding math alone.
         let (trunc_raw, consumed) = str_to_int32(tail);
         if consumed != tail.len() {
             closed(&mut out, "{", value);
@@ -609,9 +615,11 @@ pub fn parse_format_string(template: &str, args: &[FormatArg], positional_len: u
             } else {
                 let cut = byte_floor(&temp, if ellipsis { trunc - 1 } else { trunc } as usize);
                 out.push_str(&temp[..cut]);
-                if ellipsis {
-                    out.push('…');
-                }
+            }
+            // Upstream appends the ellipsis after the `:`/align split, so a
+            // negative `:` length takes it too (format.c:664-666).
+            if ellipsis {
+                out.push('…');
             }
         } else if sep == b':' {
             out.push_str(&temp);
@@ -853,9 +861,11 @@ mod tests {
         // `:` trims the trailing spaces of the cut.
         assert_eq!(render("{b:2}!", ABC), "!\x1b[m");
         assert_eq!(render("{s:3}!", &[named("s", "a  b")]), "a!\x1b[m");
-        // A negative `:` length cuts without an ellipsis; only the align
-        // specs (< > |) take one.
-        assert_eq!(render("{a:-3}", ABC), "abc\x1b[m");
+        // A negative length takes an ellipsis for EVERY separator, `:` too
+        // (upstream tests/format.c:49 `output({:-6})` -> `output(12345…)`).
+        assert_eq!(render("{a:-3}", ABC), "abc…\x1b[m");
+        let long = [named("a", "12345 67890")];
+        assert_eq!(render("{a:-6}", &long), "12345…\x1b[m");
         assert_eq!(render("{a<-3}", ABC), "ab…\x1b[m");
         assert_eq!(render("{a<-1}", ABC), "…\x1b[m");
         // Padding fills with spaces; `|` splits the run, extra right.
@@ -888,5 +898,10 @@ mod tests {
         // the byte cut lands inside it and the bytes print verbatim.
         let osc = [named("a", "x\x1b]8;;link\x1b\\y")];
         assert_eq!(render("{a:2}", &osc), "x\x1b\x1b[m");
+        // A trailing CSI with NO leading escape is ordinary content: it
+        // counts toward length and can be cut mid-sequence (format.c:323).
+        let bare_tail = [named("a", "abc\x1b[m")];
+        assert_eq!(render("{a:4}", &bare_tail), "abc\x1b\x1b[m");
+        assert_eq!(render("[{a<6}]", &bare_tail), "[abc\x1b[m]\x1b[m");
     }
 }

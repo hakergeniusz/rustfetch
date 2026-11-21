@@ -233,7 +233,10 @@ pub fn append_double(out: &mut String, value: f64, precision: i8, trailing_zeros
                     text.push('0');
                 }
             }
-        } else if precision == 0 || text.ends_with('0') {
+        } else if precision == 0 || (precision < 0 && text.ends_with('0')) {
+            // Upstream FFstrbuf.c:597 only strips the trailing zero for
+            // precision 0 or a negative precision. Precision 1 keeps the
+            // `.0` yyjson wrote (--fraction-ndigits 1 -> "1.0").
             strip_dot_zero(&mut text);
         }
     } else if text.ends_with('0') {
@@ -767,6 +770,10 @@ mod tests {
         // Exactly 2^-30 (1 byte in GiB units): the fixed path must not
         // round it up at 9 digits.
         assert_eq!(double(9.313225746154785e-10, 9, true), "0.000000001");
+        // precision 1 keeps yyjson's ".0": the C padding walk only strips
+        // it for precision 0 or a negative precision (FFstrbuf.c:597).
+        assert_eq!(double(1.0, 1, true), "1.0");
+        assert_eq!(double(1.5, 1, true), "1.5");
         // precision 0 rounds to an integer and strips the ".0".
         assert_eq!(double(2.5, 0, true), "3");
         assert_eq!(double(2.4, 0, true), "2");
