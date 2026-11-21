@@ -52,6 +52,14 @@ pub struct Config {
     pub logo_source: Option<String>,
     /// `logo.color` slot overrides: (slot 0-based, parsed SGR params).
     pub logo_colors: Vec<(usize, &'static str)>,
+    /// `logo.spin.speed.perFrame` / `.perRound` / `logo.spin.tilt` /
+    /// `logo.spin.angle` (yyjson numbers cast to float).
+    pub spin_speed_per_frame: Option<f32>,
+    pub spin_speed_per_round: Option<f32>,
+    pub spin_tilt: Option<f32>,
+    pub spin_angle: Option<f32>,
+    /// `display.showErrors`, implied by a truthy `display.stat`.
+    pub show_errors: bool,
     /// `display.pipe` (applies unless `--pipe` was given on the command
     /// line, which is parsed after the config).
     pub pipe: bool,
@@ -83,6 +91,11 @@ impl Config {
             logo_type: None,
             logo_source: None,
             logo_colors: Vec::new(),
+            spin_speed_per_frame: None,
+            spin_speed_per_round: None,
+            spin_tilt: None,
+            spin_angle: None,
+            show_errors: false,
             pipe: false,
             player_name: String::new(),
             entries: Vec::new(),
@@ -502,7 +515,66 @@ fn apply_logo(root: &jsonc::Value, config: &mut Config) {
                     }
                 }
             },
-            "preserveAspectRatio" | "cache" | "recache" | "animationFrame" | "spin" => {
+            "spin" => {
+                // ffOptionsParseLogoJsonConfig's spin block: per-key checks
+                // in walk order, with the range checks shaped like C's
+                // (`< min || > max`) so a NaN number passes.
+                let Some(spin_entries) = object_entries(value) else {
+                    section_error("logo", Some(key), "Property 'logo.spin' must be an object");
+                };
+                for (spin_key, spin_val) in spin_entries {
+                    match spin_key.as_str() {
+                        "speed" => {
+                            let Some(speed_entries) = object_entries(spin_val) else {
+                                section_error("logo", Some(key), "Property 'logo.spin.speed' must be an object");
+                            };
+                            for (speed_key, speed_val) in speed_entries {
+                                match speed_key.as_str() {
+                                    "perFrame" => {
+                                        config.spin_speed_per_frame = Some(spin_number(
+                                            speed_val,
+                                            -360.0,
+                                            360.0,
+                                            "Property 'logo.spin.speed.perFrame' must be a number between -360 and 360",
+                                            key,
+                                        ));
+                                    },
+                                    "perRound" => {
+                                        config.spin_speed_per_round = Some(spin_number(
+                                            speed_val,
+                                            -3600.0,
+                                            3600.0,
+                                            "Property 'logo.spin.speed.perRound' must be a number between -3600 and 3600",
+                                            key,
+                                        ));
+                                    },
+                                    _ => section_error("logo", Some(key), "Unknown logo.spin.speed key"),
+                                }
+                            }
+                        },
+                        "tilt" => {
+                            config.spin_tilt = Some(spin_number(
+                                spin_val,
+                                -80.0,
+                                80.0,
+                                "Property 'logo.spin.tilt' must be a number between -80 and 80",
+                                key,
+                            ));
+                        },
+                        "angle" => {
+                            config.spin_angle = Some(spin_number(
+                                spin_val,
+                                0.0,
+                                360.0,
+                                "Property 'logo.spin.angle' must be a number between 0 and 360",
+                                key,
+                            ));
+                        },
+                        _ => section_error("logo", Some(key), "Unknown logo.spin key"),
+                    }
+                }
+            },
+            "preserveAspectRatio" | "cache" | "recache" | "animationFrame" => {
                 // accepted; rendering support grows with the logo rounds
             },
             "padding" => {
@@ -570,10 +642,13 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
     for (key, value) in entries {
         match key.as_str() {
             "stat" => match value {
-                jsonc::Value::Bool(true) => {}, // implies showErrors; rendering deferred
-                jsonc::Value::Bool(false) | jsonc::Value::Null => {},
-                jsonc::Value::UInt(_) => {},
-                jsonc::Value::Int(i) if *i >= 0 => {},
+                // The stat display itself is not ported yet; its showErrors
+                // implication is (a null errors like upstream's is_bool/
+                // is_uint chain).
+                jsonc::Value::Bool(true) => config.show_errors = true,
+                jsonc::Value::Bool(false) => {},
+                jsonc::Value::UInt(_) => config.show_errors = true,
+                jsonc::Value::Int(i) if *i >= 0 => config.show_errors = true,
                 _ => section_error(
                     "display",
                     Some(key),
@@ -582,7 +657,8 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
             },
             // yyjson_get_bool accepts any value type; non-bools read as false.
             "pipe" => config.pipe = value.as_bool().unwrap_or(false),
-            "showErrors" | "disableLinewrap" | "hideCursor" | "brightColor" | "noBuffer" => {},
+            "showErrors" => config.show_errors = value.as_bool().unwrap_or(false),
+            "disableLinewrap" | "hideCursor" | "brightColor" | "noBuffer" => {},
             "separator" | "color" | "key" | "constants" => {},
             "duration" | "size" | "temp" | "percent" | "bar" | "fraction" | "freq" | "common" => {
                 if !value.is_object() {
@@ -613,6 +689,30 @@ fn object_entries(value: &jsonc::Value) -> Option<&Vec<(String, jsonc::Value)>> 
         jsonc::Value::Object(entries) => Some(entries),
         _ => None,
     }
+}
+
+/// yyjson_is_num + yyjson_get_num: integers and reals, NaN and infinity
+/// included for the range checks that follow.
+fn json_num(value: &jsonc::Value) -> Option<f64> {
+    match value {
+        jsonc::Value::Int(i) => Some(*i as f64),
+        jsonc::Value::UInt(u) => Some(*u as f64),
+        jsonc::Value::Float(f) => Some(*f),
+        _ => None,
+    }
+}
+
+/// One logo.spin numeric key: the value must read as a number and pass the
+/// C-shaped range check (`< min || > max`, so a NaN passes) before it is
+/// stored as a float.
+fn spin_number(value: &jsonc::Value, min: f64, max: f64, message: &str, spin_key: &str) -> f32 {
+    let Some(num) = json_num(value) else {
+        section_error("logo", Some(spin_key), message);
+    };
+    if num < min || num > max {
+        section_error("logo", Some(spin_key), message);
+    }
+    num as f32
 }
 
 /// matchesJsonArray: a string or an array of strings, case-insensitive.

@@ -209,8 +209,8 @@ fn emit_chars_row(
 /// One watch round's close: clear from the cursor down, flush, sleep the
 /// interval, home the cursor, and drop the netif default-route cache —
 /// ffCacheInvalidateAll's only registrants — so the next round re-detects
-/// it. The spin logo's per-round reprint is not ported (still logos cost
-/// ffSpinTick's single `false`).
+/// it. The spin logo's per-round reprint runs right after this in the
+/// callers (`if (ffSpinTick()) ffLogoPrint()`).
 fn watch_pause(out: &mut BufWriter<std::io::StdoutLock<'_>>, interval_ms: u32) {
     let _ = write!(out, "\x1b[J");
     let _ = out.flush();
@@ -393,6 +393,13 @@ pub fn print(
                 // the raw-logo dump — then logoWidth/logoHeight zero out, the
                 // cache clears, and every round's rows print at column 0.
                 if has_logo {
+                    // ffSpinLogoPrint flushes stdout before handing its frame
+                    // to ffLogoPrintChars, so the pending ffStart reset lands
+                    // ahead of the dump; the other logo types keep it
+                    // buffered behind the dump.
+                    if instance.spin.borrow().is_some() {
+                        let _ = out.flush();
+                    }
                     let mut dump = Vec::new();
                     for (text, _) in &logo_lines {
                         dump.extend_from_slice(text.as_bytes());
@@ -407,7 +414,31 @@ pub fn print(
                 }
                 logo_lines.clear();
                 let mut keys_height;
+                let mut first_round = true;
                 loop {
+                    if first_round {
+                        first_round = false;
+                    } else if let Some((clear, logo)) = crate::spin::watch_redraw(instance) {
+                        // fastfetch.c's watch loop: `if (ffSpinTick())
+                        // ffLogoPrint()` — one rotation step per refresh, and
+                        // the turned frame dumps over the previous one.
+                        if clear {
+                            let _ = write!(out, "\x1b[2J\x1b[H");
+                        }
+                        let _ = out.flush();
+                        let Logo::Chars { lines: new_lines, pad_left, bare, .. } = logo else {
+                            unreachable!()
+                        };
+                        let mut dump = Vec::new();
+                        for (text, _) in colorize_cache(&new_lines, color, pad_left, bare) {
+                            dump.extend_from_slice(text.as_bytes());
+                            dump.push(b'\n');
+                        }
+                        dump.extend(std::iter::repeat_n(b'\n', opts.padding_bottom as usize));
+                        unsafe {
+                            libc::write(libc::STDOUT_FILENO, dump.as_ptr().cast(), dump.len());
+                        }
+                    }
                     let rows = next_round();
                     keys_height = 0;
                     for row in &rows {
@@ -441,8 +472,8 @@ pub fn print(
             };
             // instance.state.logoHeight for the tail: the cache's entry
             // count is exactly logoHeight + 1.
-            let logo_height = if has_logo { logo_lines.len().saturating_sub(1) } else { 0 };
-            let layout = CharsLayout {
+            let mut logo_height = if has_logo { logo_lines.len().saturating_sub(1) } else { 0 };
+            let mut layout = CharsLayout {
                 key_column,
                 key_color,
                 color,
@@ -452,7 +483,28 @@ pub fn print(
 
             let mut logo_index = 0usize;
             let mut keys_height;
+            let mut first_round = true;
             loop {
+                if first_round {
+                    first_round = false;
+                } else if let Some((clear, logo)) = crate::spin::watch_redraw(instance) {
+                    // fastfetch.c's watch loop: `if (ffSpinTick())
+                    // ffLogoPrint()` — logoLineCacheBuild rebuilt the cache
+                    // from the turned frame, and the next round's rows print
+                    // against it.
+                    if clear {
+                        let _ = write!(out, "\x1b[2J\x1b[H");
+                    }
+                    let Logo::Chars { lines: new_lines, width: new_width, pad_left, bare, .. } = logo
+                    else {
+                        unreachable!()
+                    };
+                    logo_lines = colorize_cache(&new_lines, color, pad_left, bare);
+                    layout.key_column = new_width + opts.padding_right as usize;
+                    layout.right_offset = new_width + opts.padding_right as usize - 1;
+                    logo_height = logo_lines.len().saturating_sub(1);
+                    logo_index = 0;
+                }
                 let rows = next_round();
                 keys_height = 0;
                 for row in &rows {

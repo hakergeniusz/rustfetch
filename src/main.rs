@@ -18,6 +18,7 @@ mod platform;
 mod render;
 mod settings;
 mod smbios;
+mod spin;
 mod tty;
 mod util;
 
@@ -109,7 +110,7 @@ fn main() {
     // and then the command line, so the CLI wins per-field. Defaults:
     // padding right 4, printRemaining true (ffOptionsInitLogo).
     let cfg = config.as_ref();
-    let logo_options = crate::logo::LogoOptions {
+    let mut logo_options = crate::logo::LogoOptions {
         padding_top: cli.logo_padding_top.or(cfg.and_then(|config| config.padding_top)).unwrap_or(0),
         padding_bottom: cli.logo_padding_bottom.or(cfg.and_then(|config| config.padding_bottom)).unwrap_or(0),
         padding_left: cli.logo_padding_left.or(cfg.and_then(|config| config.padding_left)).unwrap_or(0),
@@ -117,6 +118,10 @@ fn main() {
         width: cli.logo_width.or(cfg.and_then(|config| config.logo_width)).unwrap_or(0),
         height: cli.logo_height.or(cfg.and_then(|config| config.logo_height)).unwrap_or(0),
         print_remaining: cli.logo_print_remaining.or(cfg.and_then(|config| config.logo_print_remaining)).unwrap_or(true),
+        spin_speed_per_frame: 0.0,
+        spin_speed_per_round: 0.0,
+        spin_tilt: 0.0,
+        spin_angle: 0.0,
     };
 
     let mut logo_color_overrides: Vec<(usize, &'static str)> = config
@@ -127,9 +132,26 @@ fn main() {
         logo_color_overrides.retain(|(existing, _)| existing != slot);
         logo_color_overrides.push((*slot, color));
     }
+    // The spin options are one upstream struct mutated by the config pass
+    // and then the command line; 0.0 means unset for the speeds.
+    logo_options.spin_speed_per_frame = cli
+        .logo_spin_speed_per_frame
+        .or(cfg.and_then(|config| config.spin_speed_per_frame))
+        .unwrap_or(0.0);
+    logo_options.spin_speed_per_round = cli
+        .logo_spin_speed_per_round
+        .or(cfg.and_then(|config| config.spin_speed_per_round))
+        .unwrap_or(0.0);
+    logo_options.spin_tilt = cli.logo_spin_tilt.or(cfg.and_then(|config| config.spin_tilt)).unwrap_or(0.0);
+    logo_options.spin_angle = cli.logo_spin_angle.or(cfg.and_then(|config| config.spin_angle)).unwrap_or(0.0);
+    // CLI --show-errors overrides the config's showErrors/stat implications.
+    let show_errors = cli
+        .show_errors
+        .unwrap_or(cfg.is_some_and(|config| config.show_errors));
     let instance = instance::Instance::new(
         &cli,
         config.as_ref().is_some_and(|config| config.pipe),
+        show_errors,
         logo_options,
         logo_color_overrides.leak(),
     );

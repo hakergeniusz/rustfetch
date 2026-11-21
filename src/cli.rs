@@ -93,6 +93,17 @@ pub struct Cli {
     /// `--logo-color-<1-9>` overrides: (slot 0-based, parsed SGR params).
     /// The strings are leaked so the palette can be `&'static`.
     pub logo_colors: Vec<(usize, &'static str)>,
+    /// `--logo-spin-speed-per-frame <float>`: degrees per watch refresh.
+    pub logo_spin_speed_per_frame: Option<f32>,
+    /// `--logo-spin-speed-per-round <float>`: seconds per revolution.
+    pub logo_spin_speed_per_round: Option<f32>,
+    /// `--logo-spin-tilt <float>`: the slab's fixed lean in degrees.
+    pub logo_spin_tilt: Option<f32>,
+    /// `--logo-spin-angle <float>`: the first frame's yaw in degrees.
+    pub logo_spin_angle: Option<f32>,
+    /// `--show-errors <?bool>`: unhides the load errors that are silent
+    /// by default. `--stat true|<number>` implies it.
+    pub show_errors: Option<bool>,
     /// `--pipe <?bool>`: Some when the flag was given, with upstream's
     /// boolean parsing (empty/true/yes/on/1 → true, anything else false).
     pub pipe: Option<bool>,
@@ -141,6 +152,11 @@ impl Cli {
             logo_type: None,
             logo_animation_frame: None,
             logo_colors: Vec::new(),
+            logo_spin_speed_per_frame: None,
+            logo_spin_speed_per_round: None,
+            logo_spin_tilt: None,
+            logo_spin_angle: None,
+            show_errors: None,
             pipe: None,
             watch_interval: 0,
             format_json: false,
@@ -235,6 +251,7 @@ impl Cli {
                             width: cli.logo_width.or(cfg.and_then(|config| config.logo_width)).unwrap_or(0),
                             height: cli.logo_height.or(cfg.and_then(|config| config.logo_height)).unwrap_or(0),
                             print_remaining: true,
+                            ..Default::default()
                         };
                         crate::logo::print_logos(&opts);
                     } else {
@@ -460,16 +477,31 @@ impl Cli {
                 },
                 "--logo-animation-frame" => cli.logo_animation_frame = Some(parse_int32(key, value)),
                 "--logo-spin-speed-per-frame" => {
-                    parse_float(key, value, -360.0, 360.0);
+                    cli.logo_spin_speed_per_frame = Some(parse_float(key, value, -360.0, 360.0));
                 },
                 "--logo-spin-speed-per-round" => {
-                    parse_float(key, value, -3600.0, 3600.0);
+                    cli.logo_spin_speed_per_round = Some(parse_float(key, value, -3600.0, 3600.0));
                 },
                 "--logo-spin-tilt" => {
-                    parse_float(key, value, -80.0, 80.0);
+                    cli.logo_spin_tilt = Some(parse_float(key, value, -80.0, 80.0));
                 },
                 "--logo-spin-angle" => {
-                    parse_float(key, value, 0.0, 360.0);
+                    cli.logo_spin_angle = Some(parse_float(key, value, 0.0, 360.0));
+                },
+                "--show-errors" => {
+                    cli.show_errors = Some(parse_boolean(value));
+                },
+                "--stat" => {
+                    // The stat timing itself is not ported yet; the boolean
+                    // and numeric forms imply showErrors, anything else does
+                    // not (options/display.c's strtoul path).
+                    if parse_boolean(value) {
+                        cli.show_errors = Some(true);
+                    } else if let Some(v) = value
+                        && strtoul_full(v).is_some()
+                    {
+                        cli.show_errors = Some(true);
+                    }
                 },
                 _ => {
                     if !parse_module_options(key, value) {
@@ -712,7 +744,10 @@ fn parse_int32(key: &str, value: Option<&str>) -> i32 {
 
 /// logoParseFloat: strtod with the strict tail check and an inclusive
 /// range; a missing value prints the usage form, a bad value the bounds.
-fn parse_float(key: &str, value: Option<&str>, min: f64, max: f64) {
+/// logoParseFloat (options/logo.c:28): strtod with a range. NaN passes the
+/// `<`/`>` checks like upstream; the value returns for the spin options to
+/// store. (glibc's hex-float literals are not emulated.)
+fn parse_float(key: &str, value: Option<&str>, min: f64, max: f64) -> f32 {
     let Some(value) = value else {
         usage_exit(key, "<number>", 477);
     };
@@ -723,10 +758,29 @@ fn parse_float(key: &str, value: Option<&str>, min: f64, max: f64) {
             std::process::exit(477)
         },
     };
-    if !(min..=max).contains(&parsed) {
+    if parsed < min || parsed > max {
         eprintln!("Error: {key} must be a number between {min} and {max}");
         std::process::exit(477)
     }
+    parsed as f32
+}
+
+/// strtoul base 10 with full consumption (upstream's `*end == '\0'`):
+/// optional C whitespace and sign, then digits; ERANGE saturates. Returns
+/// the value truncated to u32 (the negative wrap included), like
+/// `(uint32_t) strtoul(...)`.
+fn strtoul_full(value: &str) -> Option<u32> {
+    let trimmed = value.trim_matches([' ', '\t', '\n', '\x0b', '\x0c', '\r']);
+    let (negative, digits) = match trimmed.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
+    };
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let magnitude: u64 = digits.parse().unwrap_or(u64::MAX); // ERANGE saturates
+    let raw = if negative { magnitude.wrapping_neg() } else { magnitude };
+    Some(raw as u32)
 }
 
 /// ffOptionParseColorNoClear: the SGR parameter string a palette slot

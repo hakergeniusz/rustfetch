@@ -98,8 +98,9 @@ pub enum Logo {
 }
 
 /// FFOptionsLogo's text-rendering inputs: the paddings, the width/height
-/// floors and whether the closing ffLogoPrintRemaining runs. Defaults
-/// match ffOptionsInitLogo (paddingRight 4, printRemaining true).
+/// floors, whether the closing ffLogoPrintRemaining runs, and the spin
+/// logo's turn inputs. Defaults match ffOptionsInitLogo (paddingRight 4,
+/// printRemaining true, spin speeds 0 = unset).
 #[derive(Clone, Copy)]
 pub struct LogoOptions {
     pub padding_top: u32,
@@ -109,6 +110,10 @@ pub struct LogoOptions {
     pub width: u32,
     pub height: u32,
     pub print_remaining: bool,
+    pub spin_speed_per_frame: f32,
+    pub spin_speed_per_round: f32,
+    pub spin_tilt: f32,
+    pub spin_angle: f32,
 }
 
 /// FFLogoType: the --logo-type enum and the source-type setters' values.
@@ -143,6 +148,10 @@ impl Default for LogoOptions {
             width: 0,
             height: 0,
             print_remaining: true,
+            spin_speed_per_frame: 0.0,
+            spin_speed_per_round: 0.0,
+            spin_tilt: 0.0,
+            spin_angle: 0.0,
         }
     }
 }
@@ -591,6 +600,11 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
         .logo_source
         .as_deref()
         .or(config.and_then(|config| config.logo_source.as_deref()));
+    // Spin runs before the empty-source shortcut: it resolves an empty or
+    // `auto` source to the detected logo itself (ffLogoPrint's order).
+    if logo_type == Some(LogoTypeOpt::Spin) {
+        return load_spin(source, configured, opts, instance, cli, detected);
+    }
     let Some(source) = source else {
         let size = if logo_small || logo_type == Some(LogoTypeOpt::Small) {
             Size::Small
@@ -718,9 +732,7 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
             return fallback();
         },
         Some(LogoTypeOpt::Spin) => {
-            // The 3D slab renderer is not ported; upstream would draw the
-            // spin logo and rotate it per watch round.
-            return fallback();
+            return load_spin(Some(source), configured, opts, instance, cli, detected);
         },
         Some(LogoTypeOpt::None) | Some(LogoTypeOpt::Auto) | None => {},
     }
@@ -816,6 +828,94 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
     let palette = palette_with_overrides(detected.colors, instance);
     let (lines, art_width) = parse_art(&art, palette, pipe);
     (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected))
+}
+
+/// spinLoadFile: resolve the source to readable file bytes through
+/// ffPathExpandEnv's wordexp expansion first, then the literal path — no
+/// stdin alias and no dataDirs search, unlike updateLogoPath. Empty reads
+/// fail like ffAppendFileBuffer's zero length.
+fn spin_load_file(source: &str) -> Option<Vec<u8>> {
+    if let Some(path) = wordexp_first(source)
+        && let Ok(bytes) = std::fs::read(&path)
+    {
+        return if bytes.is_empty() { None } else { Some(bytes) };
+    }
+    match std::fs::read(source) {
+        Ok(bytes) if !bytes.is_empty() => Some(bytes),
+        _ => None,
+    }
+}
+
+/// ffSpinLogoPrint through the chars pipeline: the source is the detected
+/// OS (`auto`), a builtin logo name, or a file in fastfetch's logo syntax;
+/// a file borrows the detected logo's palette. Total failure reports
+/// (showErrors-gated) and leaves the logo unset — there is no silent
+/// fallback to the detected logo here, unlike the other source types.
+/// The first frame draws immediately; the `--watch` loop redraws through
+/// instance.spin.
+fn load_spin(
+    source: Option<&str>,
+    configured: PositionOpt,
+    opts: &LogoOptions,
+    instance: &Instance,
+    cli: &Cli,
+    detected: &LogoEntry,
+) -> (Option<Logo>, LogoColors) {
+    let source = source.unwrap_or("");
+    let pipe = instance.pipe;
+    let is_auto = source.is_empty() || source.eq_ignore_ascii_case("auto");
+    let entry = if is_auto {
+        Some(get_builtin_detected(instance, Size::Normal))
+    } else {
+        get_builtin(source, Size::Normal).or_else(|| get_builtin(source, Size::Unknown))
+    };
+    let file_text = if entry.is_none() { spin_load_file(source) } else { None };
+    if entry.is_none() && file_text.is_none() && instance.show_errors {
+        eprintln!("Logo (spin): no builtin logo or readable file named {source}");
+    }
+
+    // `logo.color.N` on top of the logo's own colors; with no logo the
+    // detected logo's colors apply (ffLogoApplyColors's replacement pass).
+    let colors_entry = entry.unwrap_or(detected);
+    let colors = entry_colors(colors_entry);
+    let palette = palette_with_overrides(colors_entry.colors, instance);
+
+    let text: Vec<u8> = match (&entry, file_text) {
+        (Some(entry), _) => builtin_art(entry).as_bytes().to_vec(),
+        (None, Some(text)) => text,
+        (None, None) => Vec::new(), // the parse fails below, silently
+    };
+    let Some(art) = crate::spin::spin_art_parse(&text, palette.unwrap_or(&[])) else {
+        return (None, colors);
+    };
+
+    let animated = cli.watch_interval > 0;
+    let mut state = crate::spin::SpinState::new(art, configured, opts, animated, pipe);
+    let Some(draw) = state.draw() else {
+        return (None, colors);
+    };
+    *instance.spin.borrow_mut() = Some(state);
+
+    // Hand the frame to the chars pipeline: it pads, positions and
+    // measures the art, and its line cache is what puts the modules next
+    // to the logo. `None` palette: the frame already carries its own SGR
+    // sequences.
+    let (lines, art_width) = parse_art(&draw.ansi, None, pipe);
+    (Some(build_chars(lines, art_width, configured, opts)), colors)
+}
+
+/// Rebuilds the spin logo's chars cache from a fresh frame's ANSI text —
+/// logoLineCacheBuild runs on every ffSpinLogoPrint, so the watch loop's
+/// redraw reassembles the whole cache (paddings, width/height floors,
+/// position resolution included).
+pub(crate) fn rebuild_spin_chars(
+    ansi: &str,
+    configured: PositionOpt,
+    opts: &LogoOptions,
+    pipe: bool,
+) -> Logo {
+    let (lines, art_width) = parse_art(ansi, None, pipe);
+    build_chars(lines, art_width, configured, opts)
 }
 
 /// listModules-style listing of the builtin logo table: numbered quoted

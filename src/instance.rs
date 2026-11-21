@@ -49,6 +49,12 @@ pub struct Instance {
     /// config first and the command line last (upstream's one
     /// FFOptionsLogo struct mutated in parse order).
     pub logo_color_overrides: &'static [(usize, &'static str)],
+    /// display.showErrors: gates error messages that are hidden by
+    /// default (--show-errors, config display.showErrors, --stat).
+    pub show_errors: bool,
+    /// instance.state.logoSpin: the spin logo's per-process state, filled
+    /// by the logo load and turned by the watch loop's redraw.
+    pub spin: std::cell::RefCell<Option<crate::spin::SpinState>>,
     /// The current config entry's object (per-job: each module job gets a
     /// clone carrying its own entry), read by modules with config options.
     pub entry: Option<&'static crate::jsonc::Value>,
@@ -71,6 +77,10 @@ impl Clone for Instance {
             logo_source: self.logo_source.clone(),
             logo_options: self.logo_options,
             logo_color_overrides: self.logo_color_overrides,
+            show_errors: self.show_errors,
+            // The spin state belongs to the render loop; module jobs get
+            // none.
+            spin: std::cell::RefCell::new(None),
             entry: self.entry,
             gnome_settings: Mutex::new(self.gnome_settings.lock().unwrap_or_else(|e| e.into_inner()).clone()),
         }
@@ -81,6 +91,7 @@ impl Instance {
     pub fn new(
         cli: &Cli,
         config_pipe: bool,
+        show_errors: bool,
         logo_options: crate::logo::LogoOptions,
         logo_color_overrides: &'static [(usize, &'static str)],
     ) -> Self {
@@ -123,6 +134,8 @@ impl Instance {
             logo_source: cli.logo_source.clone(),
             logo_options,
             logo_color_overrides,
+            show_errors,
+            spin: std::cell::RefCell::new(None),
             entry: None,
             gnome_settings: Mutex::new(HashMap::new()),
             logo_colors: OnceLock::new(),
