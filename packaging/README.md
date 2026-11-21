@@ -6,6 +6,59 @@ and module code are compiled into the binary with `include_str!` — there is
 **no runtime dependency on fastfetch and no runtime dependency on any
 fastfetch package**. fastfetch is not detected, required, or invoked.
 
+## One-liner install (remote / self-installer)
+
+Paste either of these into a terminal — no repository checkout, no Rust
+toolchain and no fastfetch needed. The prebuilt release asset is downloaded
+and installed automatically:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/hakergeniusz/rustfetch/rewrite/install.sh | sh
+```
+
+```sh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/hakergeniusz/rustfetch/rewrite/install.sh)"
+```
+
+Both forms are equivalent: the installer detects that it came from stdin,
+queries the GitHub release API, downloads the latest `.tar.zst` asset, verifies
+its SHA256 when a sidecar is published, extracts it and installs the binary
+with mode `0755`. It installs to `/usr/local/bin` when run as root and to
+`~/.local/bin` otherwise, and ends with a success line showing the installed
+path and how to call it.
+
+Useful flags on the one-liner (pass them after `sh -s --`):
+
+```sh
+URL=https://raw.githubusercontent.com/hakergeniusz/rustfetch/rewrite/install.sh
+
+# Pin a release (otherwise the latest release is used)
+curl -fsSL "$URL" | sh -s -- --version v0.1.0
+
+# Custom install prefix -> <prefix>/bin/rustfetch
+curl -fsSL "$URL" | sh -s -- --prefix ~/.local
+
+# Skip checksum verification / replace an existing binary without prompting
+curl -fsSL "$URL" | sh -s -- --no-verify --force
+
+# Dry run: show detected mode, API URL and install path, no network/no changes
+curl -fsSL "$URL" | sh -s -- --print-plan
+```
+
+Release asset names follow
+`rustfetch-<version>-<target-triple>.tar.zst`, e.g.
+`rustfetch-0.1.0-x86_64-unknown-linux-gnu.tar.zst`. An optional companion
+`<asset>.sha256` sidecar is used for verification; if none is published the
+installer prints the SHA256 for transparency. If a release has no `.tar.zst`
+asset, the installer falls back to downloading the tagged source tarball and
+running `cargo build --release` (target directory in RAM when `/dev/shm` is
+writable). It **never installs build packages automatically**: if `cargo` or
+`rustc` are missing it prints the exact distro-specific install command and
+exits.
+
+`fastfetch` is **not** required at runtime for the one-liner or any other
+install method.
+
 All packaging defaults to building from the repository root (`/home/.../rustfetch`).
 To limit SSD writes, the helper scripts stage under `/dev/shm/rf-scratch-pkg/`
 and write only the final artifact into `dist/`. Set `CARGO_TARGET_DIR` to a
@@ -15,7 +68,7 @@ tmpfs path (e.g. `/dev/shm/rustfetch-target`) when building yourself.
 
 | Path | Purpose |
 |---|---|
-| `install.sh` (repo root) | Universal installer/uninstaller for all major distros. |
+| `install.sh` (repo root) | Universal installer/uninstaller, both local-repo and `curl \| sh` remote modes. |
 | `PKGBUILD` (repo root) | Arch source-build PKGBUILD (`cargo build --release`). |
 | `packaging/README.md` | This document. |
 | `packaging/debian/` | Debian/Ubuntu source-package metadata (`control`, `rules`, `changelog`, `compat`, `source/format`). |
@@ -36,11 +89,15 @@ tmpfs path (e.g. `/dev/shm/rustfetch-target`) when building yourself.
 | openSUSE | `sudo zypper install -y cargo rustc` | `sudo zypper install -y rpm-build` (for `.rpm`) |
 
 `install.sh` prints the matching hint if `cargo`/`rustc` are missing. It never
-installs packages and never runs `sudo` for you.
+installs packages and never runs `sudo` for you. The prebuilt-asset path of the
+one-liner needs no build tools at all.
 
 ## 1. Universal installer (`install.sh`)
 
-Run from any directory; the script resolves the repo root from its own path.
+### Offline / local usage (from a repository checkout)
+
+Run from any directory; the script resolves the repo root from its own path and
+builds with `cargo build --release`:
 
 ```bash
 # Build and install for the current user (default for non-root: ~/.local)
@@ -64,15 +121,38 @@ CARGO_TARGET_DIR=/dev/shm/rustfetch-target ./install.sh --prefix ~/.local
 # Non-interactive (no overwrite prompt)
 ./install.sh --yes
 
+# Always replace an existing binary, without prompting
+./install.sh --force
+
 # Uninstall
 ./install.sh --uninstall
 ./install.sh --prefix /opt/rustfetch --uninstall
 ```
 
+### Remote mode / one-liner
+
+When the script is read from stdin (pipe or `sh -c "$(curl ...)"`) it does not
+look for a local repository. It queries
+`https://api.github.com/repos/hakergeniusz/rustfetch/releases/latest` (or
+`/releases/tags/<tag>` with `--version <tag>`), downloads the `.tar.zst` asset,
+verifies/falls back as described above, and installs it. `--prefix`, `--user`,
+`--yes`, `--force` and `--uninstall` all work in remote mode too.
+
+Environment overrides (useful for mirrors and offline testing):
+
+| Variable | Meaning |
+|---|---|
+| `CARGO_TARGET_DIR` | Cargo target directory (local mode / source-build fallback). |
+| `RUSTFETCH_API_URL` | Replace the GitHub release API URL. `file://...` and plain absolute paths are accepted. |
+| `RUSTFETCH_ASSET_URL` | Download the release asset from this URL directly instead of using the API-provided one. |
+
 Options: `--prefix <dir>`, `--user`, `--uninstall`, `--yes`, `--no-build`,
-`-h/--help`. The binary is installed with mode `0755`. If a non-root user asks
-for a system prefix, the script prints the exact `sudo` command and exits
-without doing anything.
+`--version <tag>`, `--no-verify`, `--force`, `--print-plan`, `-h/--help`. The
+binary is installed with mode `0755`. If a non-root user asks for a system
+prefix, the script prints the exact `sudo` command and exits without doing
+anything. `--print-plan` is a documentation/dry-run flag: it prints the
+detected mode, API URL and install path and exits without network access or
+file changes.
 
 ## 2. Debian / Ubuntu
 
