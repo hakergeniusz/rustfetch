@@ -1,8 +1,8 @@
 # Maintainer: hakergeniusz
 # Prebuilt-binary PKGBUILD: installs the release .tar.zst asset.
-# sha256sums is the checksum of the v0.2.0 release asset; keep it in sync on bumps.
+# sha256sums is the checksum of the v0.2.1 release asset; keep it in sync on bumps.
 pkgname=rustfetch-bin
-pkgver=0.2.0
+pkgver=0.2.1
 pkgrel=1
 pkgdesc='Fastfetch, rewritten in Rust (prebuilt binary)'
 arch=('x86_64')
@@ -14,7 +14,7 @@ provides=('rustfetch')
 conflicts=('rustfetch')
 _TARBALL="rustfetch-${pkgver}-x86_64-unknown-linux-gnu.tar.zst"
 source=("$_TARBALL::https://github.com/hakergeniusz/rustfetch/releases/download/v${pkgver}/${_TARBALL}")
-sha256sums=('0374c8a9761d7aebc0348675fe048c6ff1cb8b64cc1a9db4ceac7685ba71a2f3')
+sha256sums=('0caa5386eb1924af0dcec9ed19e87b0a3618cd9281fff0cb15f91bffc9602e30')
 
 package() {
   tar --zstd -xf "$_TARBALL" -C "$srcdir"

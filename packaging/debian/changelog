@@ -1,3 +1,10 @@
+rustfetch (0.2.1-1) unstable; urgency=medium
+
+  * Patch release: HyFetch mode now colors every logo line with the full
+    flag gradient, and its 24bit/8bit colors match HyFetch 2.1.1 exactly.
+
+ -- hakergeniusz <hakergeniusz@users.noreply.github.com>  Sat, 21 Nov 2026 21:00:00 +0000
+
 rustfetch (0.2.0-1) unstable; urgency=medium
 
   * Feature release: format engine rollout, custom --key arguments,
