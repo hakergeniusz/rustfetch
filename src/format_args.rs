@@ -61,6 +61,22 @@ pub struct EngineEnv<'a> {
     pub pending: &'a RefCell<Option<(i32, String)>>,
 }
 
+impl<'a> EngineEnv<'a> {
+    /// The parser's view of the instance: ffParseFormatString reads the
+    /// display pipe gate and constants off instance.config.display, the
+    /// FLOAT/DOUBLE fraction knobs off the display format, and the color
+    /// parser rides along with its deferred exit.
+    pub fn new(instance: &'a crate::instance::Instance) -> Self {
+        Self {
+            pipe: instance.pipe,
+            constants: &instance.display.constants,
+            df: &instance.display_format,
+            colors: crate::cli::ColorState::from_instance(instance),
+            pending: &instance.pending_exit,
+        }
+    }
+}
+
 /// ffFormatAppendFormatArg: one argument's text. FLOAT/DOUBLE pass the
 /// display's fraction knobs with the format-args polarity
 /// (`!= NEVER` — unlike localip's `== ALWAYS`, NEVER keeps yyjson's

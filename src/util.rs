@@ -313,8 +313,6 @@ pub fn time_to_full_str(msec: u64) -> String {
 
 /// ffTimeToShortStr: "<date> <time>" in the local timezone, e.g.
 /// "2026-11-18 20:37:36".
-// Consumed by the uptime module's custom-format branch landing next.
-#[expect(dead_code)]
 pub fn time_to_short_str(msec: u64) -> String {
     if msec == 0 {
         return String::new();
@@ -336,8 +334,6 @@ pub fn time_to_short_str(msec: u64) -> String {
 /// FFTimeGetAgeResult: the calendar age between two timestamps — whole
 /// years, the days into the current year, and the years with their
 /// fraction.
-// Consumed by the uptime module's custom-format branch landing next.
-#[expect(dead_code)]
 pub struct TimeAge {
     pub years: u32,
     pub days_of_year: u32,
@@ -349,7 +345,6 @@ pub struct TimeAge {
 /// anniversary, and yearsFraction divides the elapsed seconds by the
 /// anniversary-to-next-anniversary span (mktime's normalization carries
 /// into the second call, matching leap years and DST like the C).
-#[expect(dead_code)]
 pub fn time_get_age(birth_ms: u64, now_ms: u64) -> TimeAge {
     if birth_ms == 0 || now_ms < birth_ms {
         return TimeAge { years: 0, days_of_year: 0, years_fraction: 0.0 };

@@ -1032,6 +1032,15 @@ fn stamp_icons(rows: &mut [Row], name: &str) {
     }
 }
 
+/// The entry's `format` outputFormat under ffStrbufSetJsonVal semantics:
+/// a string sets it, anything else clears it. An empty string (and every
+/// non-string) leaves the module's default print — upstream branches on
+/// outputFormat.length == 0. ffJsonConfigParseModuleArgs consumes the key
+/// for every module; the module's print reads it back here.
+pub(crate) fn entry_format(entry: Option<&crate::jsonc::Value>) -> Option<&str> {
+    entry.and_then(|opts| opts.get("format")).and_then(crate::jsonc::Value::as_str).filter(|format| !format.is_empty())
+}
+
 /// ffJsonConfigParseModuleArgs: the common args one module entry carries.
 /// `key`/`keyIcon` are ffStrbufSetJsonVal (strings set, anything else
 /// clears), `keyColor`/`outputColor` run ffOptionParseColor on the string
@@ -1039,8 +1048,8 @@ fn stamp_icons(rows: &mut [Row], name: &str) {
 /// parse, before its rows print), `keyWidth` is the u32 reinterpretation
 /// of yyjson_get_uint. Pairs are visited in document order, so a
 /// duplicate key wins last, and `type`/`condition` are consumed skips.
-/// The `format` outputFormat is the separate format-engine work and is
-/// left in the entry for the modules' own parses to ignore.
+/// The `format` outputFormat stays in the entry — the module's print
+/// reads it through entry_format.
 pub(crate) fn parse_common_args(opts: Option<&crate::jsonc::Value>, instance: &Instance) -> CommonArgs {
     let colors = crate::cli::ColorState::from_instance(instance);
     let crate::jsonc::Value::Object(entries) = opts.unwrap_or(&crate::jsonc::Value::Null) else {
@@ -1216,13 +1225,7 @@ fn expand_key(
             0,
         ),
     };
-    let env = crate::format_args::EngineEnv {
-        pipe: instance.pipe,
-        constants: &instance.display.constants,
-        df: &instance.display_format,
-        colors: crate::cli::ColorState::from_instance(instance),
-        pending: &instance.pending_exit,
-    };
+    let env = crate::format_args::EngineEnv::new(instance);
     crate::format_args::parse_format_string(template, &list, positional_len, &env)
 }
 
