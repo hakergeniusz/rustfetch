@@ -16,49 +16,248 @@ const LIST_FEATURES: &str = include_str!("list_features.txt");
 /// `--help-raw`: the reference's JSON help document.
 const HELP_RAW: &str = include_str!("help_raw.txt");
 
-/// `-h <command>` entries for the options this port parses, verbatim.
-/// The reference knows a hundred more commands; those answer the same
-/// "No specific help" error as an unknown name.
-const COMMAND_HELP: &[(&str, &str)] = &[
-    (
-        "help",
-        "Show this help message or help for a specific command\n     Usage: -h, --help <?command>\n",
-    ),
-    ("version", "Show the full Fastfetch version\n     Usage: -v, --version\n"),
-    (
-        "version-raw",
-        "Show the raw version string (major.minor.patch)\n     Usage: --version-raw\n",
-    ),
-    (
-        "config",
-        "Specify the config file or preset to load\n     Usage: -c, --config <config>\n    Remark: The file is searched in the order shown by \"fastfetch --list-config-paths\". Use \"-\" to read config from stdin, or \"none\" to disable further config loading. See also https://github.com/fastfetch-cli/fastfetch/wiki/Configuration for details\n",
-    ),
-    (
-        "gen-config",
-        "Interactively generate a config file at the specified path\n     Usage: --gen-config <?path>\n    Remark: Opens an interactive configuration UI when run in a terminal. Falls back to non-interactive generation when env-var `$NO_COLOR` is set or stdin/stdout is not a TTY. Defaults to \"~/.config/fastfetch/config.jsonc\". Prints the generated config if <path> is \"-\"\n",
-    ),
-    (
-        "structure",
-        "Set the structure of the fetch\n     Usage: -s, --structure <structure>\n   Default: Title:Separator:OS:Host:Kernel:Uptime:Packages:Shell:Display:DE:WM:WMTheme:Theme:Icons:Font:Cursor:Terminal:TerminalFont:CPU:GPU:Memory:Swap:Disk:LocalIp:Battery:PowerAdapter:Locale:Break:Colors\n    Remark: Must be a colon-separated list of module keys. Use \"fastfetch --list-modules\" to see available options\n",
-    ),
-    (
-        "json",
-        "Enable or disable JSON output\n     Usage: -j, --json <?bool>\n   Default: false\n    Remark: Shortcut for `--format json`\n",
-    ),
-    (
-        "format",
-        "Set the output format\n     Usage: --format <enum>\n   Default: default\n   Options:\n     default: Default format\n        json: JSON format\n",
-    ),
-    (
-        "pipe",
-        "Disable colors\n     Usage: --pipe <?bool>\n   Default: false\n    Remark: Auto-detected based on isatty(1) by default\n",
-    ),
-    (
-        "logo",
-        "Set the logo source. Use \"none\" to disable logo output\n     Usage: -l, --logo <logo>\n    Remark: Use either a built-in logo name or a path to an image file. See also https://github.com/fastfetch-cli/fastfetch/wiki/Logo-options\n",
-    ),
-    ("list-modules", "List available modules\n     Usage: --list-modules\n"),
-];
+/// A JSON value from HELP_RAW. Objects keep insertion order, which the
+/// `Options:` lines of a specific-help entry depend on. This is a small
+/// reader for the one fixed document fastfetch ships; it is not a general
+/// purpose JSON implementation and adds no dependency.
+enum HelpJson {
+    #[allow(dead_code)] // HELP_RAW has no `null`, but the reader accepts it
+    Null,
+    Bool(bool),
+    Num(String),
+    Str(String),
+    Arr(Vec<HelpJson>),
+    Obj(Vec<(String, HelpJson)>),
+}
+
+impl HelpJson {
+    fn get(&self, key: &str) -> Option<&HelpJson> {
+        match self {
+            Self::Obj(entries) => entries.iter().find(|(name, _)| name == key).map(|(_, value)| value),
+            _ => None,
+        }
+    }
+
+    fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Str(text) => Some(text),
+            _ => None,
+        }
+    }
+
+    fn as_bool(&self) -> Option<bool> {
+        match self {
+            Self::Bool(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    fn as_array(&self) -> Option<&[HelpJson]> {
+        match self {
+            Self::Arr(items) => Some(items),
+            _ => None,
+        }
+    }
+
+    fn as_object(&self) -> Option<&[(String, HelpJson)]> {
+        match self {
+            Self::Obj(entries) => Some(entries),
+            _ => None,
+        }
+    }
+}
+
+struct HelpJsonParser<'a> {
+    text: &'a str,
+    bytes: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> HelpJsonParser<'a> {
+    fn new(text: &'a str) -> Self {
+        Self { text, bytes: text.as_bytes(), pos: 0 }
+    }
+
+    fn skip_ws(&mut self) {
+        while self.pos < self.bytes.len()
+            && matches!(self.bytes[self.pos], b' ' | b'\t' | b'\n' | b'\r')
+        {
+            self.pos += 1;
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.bytes.get(self.pos).copied()
+    }
+
+    fn consume(&mut self, token: &str) -> bool {
+        if self.text.get(self.pos..self.pos + token.len()) == Some(token) {
+            self.pos += token.len();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn parse(&mut self) -> Option<HelpJson> {
+        let value = self.value()?;
+        self.skip_ws();
+        if self.pos == self.bytes.len() { Some(value) } else { None }
+    }
+
+    fn value(&mut self) -> Option<HelpJson> {
+        self.skip_ws();
+        match self.peek()? {
+            b'{' => self.object(),
+            b'[' => self.array(),
+            b'"' => self.string().map(HelpJson::Str),
+            b't' if self.consume("true") => Some(HelpJson::Bool(true)),
+            b'f' if self.consume("false") => Some(HelpJson::Bool(false)),
+            b'n' if self.consume("null") => Some(HelpJson::Null),
+            b'-' | b'0'..=b'9' => self.number().map(HelpJson::Num),
+            _ => None,
+        }
+    }
+
+    fn object(&mut self) -> Option<HelpJson> {
+        self.pos += 1; // `{`
+        let mut entries = Vec::new();
+        self.skip_ws();
+        if self.peek() == Some(b'}') {
+            self.pos += 1;
+            return Some(HelpJson::Obj(entries));
+        }
+        loop {
+            self.skip_ws();
+            let key = self.string()?;
+            self.skip_ws();
+            if self.peek() != Some(b':') {
+                return None;
+            }
+            self.pos += 1;
+            let value = self.value()?;
+            entries.push((key, value));
+            self.skip_ws();
+            match self.peek()? {
+                b',' => self.pos += 1,
+                b'}' => {
+                    self.pos += 1;
+                    return Some(HelpJson::Obj(entries));
+                },
+                _ => return None,
+            }
+        }
+    }
+
+    fn array(&mut self) -> Option<HelpJson> {
+        self.pos += 1; // `[`
+        let mut items = Vec::new();
+        self.skip_ws();
+        if self.peek() == Some(b']') {
+            self.pos += 1;
+            return Some(HelpJson::Arr(items));
+        }
+        loop {
+            items.push(self.value()?);
+            self.skip_ws();
+            match self.peek()? {
+                b',' => self.pos += 1,
+                b']' => {
+                    self.pos += 1;
+                    return Some(HelpJson::Arr(items));
+                },
+                _ => return None,
+            }
+        }
+    }
+
+    fn string(&mut self) -> Option<String> {
+        if self.peek() != Some(b'"') {
+            return None;
+        }
+        self.pos += 1;
+        let mut out = String::new();
+        let mut segment = self.pos;
+        loop {
+            match *self.bytes.get(self.pos)? {
+                b'"' => {
+                    out.push_str(self.text.get(segment..self.pos)?);
+                    self.pos += 1;
+                    return Some(out);
+                },
+                b'\\' => {
+                    out.push_str(self.text.get(segment..self.pos)?);
+                    self.pos += 1;
+                    let escape = *self.bytes.get(self.pos)?;
+                    self.pos += 1;
+                    match escape {
+                        b'"' => out.push('"'),
+                        b'\\' => out.push('\\'),
+                        b'/' => out.push('/'),
+                        b'b' => out.push('\u{8}'),
+                        b'f' => out.push('\u{c}'),
+                        b'n' => out.push('\n'),
+                        b'r' => out.push('\r'),
+                        b't' => out.push('\t'),
+                        b'u' => {
+                            let first = self.hex4()?;
+                            let code = if (0xD800..=0xDBFF).contains(&first) {
+                                if self.text.get(self.pos..self.pos + 2) != Some("\\u") {
+                                    return None;
+                                }
+                                self.pos += 2;
+                                let second = self.hex4()?;
+                                if !(0xDC00..=0xDFFF).contains(&second) {
+                                    return None;
+                                }
+                                0x10000 + ((first - 0xD800) << 10) + (second - 0xDC00)
+                            } else {
+                                first
+                            };
+                            out.push(char::from_u32(code)?);
+                        },
+                        _ => return None,
+                    }
+                    segment = self.pos;
+                },
+                _ => self.pos += 1,
+            }
+        }
+    }
+
+    fn hex4(&mut self) -> Option<u32> {
+        let digits = self.text.get(self.pos..self.pos + 4)?;
+        let value = u32::from_str_radix(digits, 16).ok()?;
+        self.pos += 4;
+        Some(value)
+    }
+
+    fn number(&mut self) -> Option<String> {
+        let start = self.pos;
+        if self.peek() == Some(b'-') {
+            self.pos += 1;
+        }
+        while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+            self.pos += 1;
+        }
+        if self.peek() == Some(b'.') {
+            self.pos += 1;
+            while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+                self.pos += 1;
+            }
+        }
+        if matches!(self.peek(), Some(b'e') | Some(b'E')) {
+            self.pos += 1;
+            if matches!(self.peek(), Some(b'+') | Some(b'-')) {
+                self.pos += 1;
+            }
+            while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+                self.pos += 1;
+            }
+        }
+        self.text.get(start..self.pos).map(str::to_string)
+    }
+}
 
 /// fastfetch.c's FFdata fields that belong to the command pass but have
 /// nowhere to live on `Cli`: a struct literal in another module's tests
@@ -579,6 +778,19 @@ impl Cli {
                     }
                 },
                 "--pipe" => cli.pipe = Some(parse_boolean(value)),
+                "--no-buffer" => {
+                    // Upstream calls setvbuf(stdout, NULL, _IONBF, 0). Rust's
+                    // stdout is a LineWriter, so it already flushes on every
+                    // newline and again at process exit; the rendered output
+                    // is byte-identical in --pipe mode. Fully unbuffered
+                    // behaviour would need a per-print flush hook on the
+                    // render path, which lives outside this file, so here we
+                    // only accept the flag with the shared optional-bool
+                    // parse and flush anything currently pending.
+                    let _disabled = parse_boolean(value);
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
+                },
                 "--logo-position" => cli.logo_position = Some(position_enum(key, value)),
                 "--logo-width" => cli.logo_width = Some(parse_uint32(key, value)),
                 "--logo-height" => cli.logo_height = Some(parse_uint32(key, value)),
@@ -1779,6 +1991,125 @@ fn print_module_format_help(command: &str) {
     }
 }
 
+/// Every non-pseudo option object in the embedded help document, in order.
+fn help_options(doc: &HelpJson) -> Vec<&HelpJson> {
+    let mut options = Vec::new();
+    if let Some(categories) = doc.as_object() {
+        for (_, value) in categories {
+            if let Some(items) = value.as_array() {
+                options.extend(items.iter());
+            }
+        }
+    }
+    options
+}
+
+/// `-x, --long <arg>` / `--long <?arg>`: the type words are already the
+/// upstream ones (`num`, `bool`, `enum`, `color`, `structure`, `str`,
+/// `string`, `path`, `data`, `logo`, `command`, `config`).
+fn arg_suffix(arg: &HelpJson) -> Option<String> {
+    let kind = arg.get("type")?.as_str()?;
+    let optional = arg.get("optional").and_then(HelpJson::as_bool).unwrap_or(false);
+    Some(if optional { format!("<?{kind}>") } else { format!("<{kind}>") })
+}
+
+fn default_text(arg: &HelpJson) -> Option<String> {
+    let default = arg.get("default")?;
+    // `structure`'s JSON default is a pointer to `--print-structure`; the
+    // reference expands it to the compiled-in module list.
+    if arg.get("type").and_then(HelpJson::as_str) == Some("structure") {
+        return Some(crate::modules::DEFAULT_STRUCTURE_TEXT.to_string());
+    }
+    match default {
+        HelpJson::Str(text) => Some(text.clone()),
+        HelpJson::Bool(value) => Some(value.to_string()),
+        HelpJson::Num(number) => Some(number.clone()),
+        _ => None,
+    }
+}
+
+/// Generate the exact `-h <flag>` entry for a long option name from HELP_RAW.
+/// Pseudo entries are skipped so they keep the "No specific help" answer.
+fn specific_help(command: &str) -> Option<String> {
+    let mut parser = HelpJsonParser::new(HELP_RAW);
+    let doc = parser.parse()?;
+    let options = help_options(&doc);
+    let entry = options.iter().copied().find(|option| {
+        let pseudo = option.get("pseudo").and_then(HelpJson::as_bool).unwrap_or(false);
+        !pseudo
+            && option.get("long").and_then(HelpJson::as_str)
+                .is_some_and(|name| name.eq_ignore_ascii_case(command))
+    })?;
+
+    // Upstream aligns every `Options:` key to the longest enum key in the
+    // whole option table (12 in this build), not to the current option's
+    // own longest key.
+    let key_width = options
+        .iter()
+        .filter_map(|option| option.get("arg").and_then(|arg| arg.get("enum")).and_then(HelpJson::as_object))
+        .flatten()
+        .map(|(key, _)| key.len())
+        .max()
+        .unwrap_or(0);
+
+    let mut out = String::new();
+    if let Some(desc) = entry.get("desc").and_then(HelpJson::as_str) {
+        out.push_str(desc);
+    }
+    out.push('\n');
+
+    out.push_str("     Usage: ");
+    if let Some(short) = entry.get("short").and_then(HelpJson::as_str) {
+        out.push('-');
+        out.push_str(short);
+        out.push_str(", ");
+    }
+    if let Some(long) = entry.get("long").and_then(HelpJson::as_str) {
+        out.push_str("--");
+        out.push_str(long);
+    }
+    if let Some(arg) = entry.get("arg")
+        && let Some(suffix) = arg_suffix(arg)
+    {
+        out.push(' ');
+        out.push_str(&suffix);
+    }
+    out.push('\n');
+
+    if let Some(default) = entry.get("arg").and_then(default_text) {
+        out.push_str("   Default: ");
+        out.push_str(&default);
+        out.push('\n');
+    }
+
+    if let Some(pairs) = entry.get("arg").and_then(|arg| arg.get("enum")).and_then(HelpJson::as_object) {
+        out.push_str("   Options:\n");
+        for (key, value) in pairs {
+            let desc = value.as_str().unwrap_or("");
+            out.push_str(&format!("{key:>key_width$}: {desc}\n"));
+        }
+    }
+
+    if let Some(remark) = entry.get("remark") {
+        let lines: Vec<&str> = match remark {
+            HelpJson::Str(text) => vec![text],
+            HelpJson::Arr(items) => items.iter().filter_map(HelpJson::as_str).collect(),
+            _ => Vec::new(),
+        };
+        for (index, line) in lines.iter().enumerate() {
+            if index == 0 {
+                out.push_str("    Remark: ");
+            } else {
+                out.push_str("            ");
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+
+    Some(out)
+}
+
 /// `-h` without a command prints the full help; `-h <command>` prints the
 /// option's entry, or the reference's no-help error (which still exits 0).
 fn print_help(command: Option<&str>) -> ! {
@@ -1800,11 +2131,8 @@ fn print_help(command: Option<&str>) -> ! {
                 print_module_format_help(command);
                 std::process::exit(0);
             }
-            let entry = COMMAND_HELP
-                .iter()
-                .find(|(name, _)| name.eq_ignore_ascii_case(command));
-            match entry {
-                Some((_, text)) => print!("{text}"),
+            match specific_help(command) {
+                Some(text) => print!("{text}"),
                 None => eprintln!("Error: No specific help for command '{command}' provided"),
             }
             std::process::exit(0);
@@ -1902,5 +2230,24 @@ mod tests {
         let cli = Cli::parse_from(&["rf", "-s", "os", "--pipe", "true"]);
         assert_eq!(cli.structure.as_deref(), Some("os"));
         assert_eq!(cli.pipe, Some(true));
+    }
+
+    #[test]
+    fn specific_help_generates_upstream_entries() {
+        assert_eq!(
+            specific_help("wmi-timeout").as_deref(),
+            Some("Set the timeout (ms) for WMI queries\n     Usage: --wmi-timeout <num>\n   Default: 5000\n    Remark: Windows only\n")
+        );
+        assert_eq!(
+            specific_help("no-buffer").as_deref(),
+            Some("Specify whether stdout buffering should be disabled\n     Usage: --no-buffer <?bool>\n   Default: false\n")
+        );
+        assert_eq!(
+            specific_help("structure").as_deref(),
+            Some("Set the structure of the fetch\n     Usage: -s, --structure <structure>\n   Default: Title:Separator:OS:Host:Kernel:Uptime:Packages:Shell:Display:DE:WM:WMTheme:Theme:Icons:Font:Cursor:Terminal:TerminalFont:CPU:GPU:Memory:Swap:Disk:LocalIp:Battery:PowerAdapter:Locale:Break:Colors\n    Remark: Must be a colon-separated list of module keys. Use \"fastfetch --list-modules\" to see available options\n")
+        );
+        // Pseudo entries still answer the no-help error.
+        assert!(specific_help("logo-color-1").is_none());
+        assert!(specific_help("logo-color-[1-9]").is_none());
     }
 }
