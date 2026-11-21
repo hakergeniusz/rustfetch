@@ -1337,12 +1337,31 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         // "Couldn't detect terminal" is an error row, hidden by default.
         return Vec::new();
     }
-    let value = if result.version.is_empty() {
-        result.pretty_name.clone()
-    } else {
-        format!("{} {}", result.pretty_name, result.version)
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        let value = if result.version.is_empty() {
+            result.pretty_name.clone()
+        } else {
+            format!("{} {}", result.pretty_name, result.version)
+        };
+        return vec![Row::new(instance.display_name("terminal"), value)];
     };
-    vec![Row::new(instance.display_name("terminal"), value)]
+
+    // FF_PRINT_FORMAT_CHECKED's arg list. Unlike shell, upstream's
+    // FFTerminalResult.tty is an FFstrbuf (the tty name), so it is a
+    // string here too. pid is uint32_t; exe-name is a nullable
+    // const char* upstream (empty in the port when unset).
+    let args = [
+        crate::format_args::FormatArg { name: "process-name", value: crate::format_args::ArgValue::Str(&result.process_name) },
+        crate::format_args::FormatArg { name: "exe", value: crate::format_args::ArgValue::Str(&result.exe) },
+        crate::format_args::FormatArg { name: "exe-name", value: crate::format_args::ArgValue::Str(&result.exe_name) },
+        crate::format_args::FormatArg { name: "pid", value: crate::format_args::ArgValue::UInt(result.pid) },
+        crate::format_args::FormatArg { name: "pretty-name", value: crate::format_args::ArgValue::Str(&result.pretty_name) },
+        crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(&result.version) },
+        crate::format_args::FormatArg { name: "exe-path", value: crate::format_args::ArgValue::Str(&result.exe_path) },
+        crate::format_args::FormatArg { name: "tty", value: crate::format_args::ArgValue::Str(&result.tty) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("terminal"), rendered)]
 }
 
 /// ffGenerateTerminalJsonResult: the nine fields in upstream order.

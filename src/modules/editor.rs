@@ -69,7 +69,8 @@ fn version_spawn(path: &str, exe: &str) -> Option<String> {
 }
 
 pub struct EditorResult {
-    /// Which env var supplied the command ("VISUAL" or "EDITOR").
+    /// Which env var supplied the command ("Visual" or "Editor",
+    /// matching upstream's result.type).
     pub editor_type: &'static str,
     pub name: String,
     pub path: String,
@@ -78,10 +79,10 @@ pub struct EditorResult {
 }
 
 fn detect() -> Result<EditorResult, &'static str> {
-    let mut editor_type = "VISUAL";
+    let mut editor_type = "Visual";
     let mut name = std::env::var("VISUAL").unwrap_or_default();
     if name.is_empty() {
-        editor_type = "EDITOR";
+        editor_type = "Editor";
         name = std::env::var("EDITOR").unwrap_or_default();
     }
     if name.is_empty() {
@@ -142,12 +143,26 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         // ffPrintError is gated behind --show-errors, off by default.
         return Vec::new();
     };
-    let value = if editor.version.is_empty() {
-        editor.exe.clone()
-    } else {
-        format!("{} {}", editor.exe, editor.version)
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        let value = if editor.version.is_empty() {
+            editor.exe.clone()
+        } else {
+            format!("{} {}", editor.exe, editor.version)
+        };
+        return vec![Row::new(instance.display_name("editor"), value)];
     };
-    vec![Row::new(instance.display_name("editor"), value)]
+
+    // FF_PRINT_FORMAT_CHECKED's arg list: type is a const char*, the
+    // rest are FFstrbufs (all rendered as strings).
+    let args = [
+        crate::format_args::FormatArg { name: "type", value: crate::format_args::ArgValue::Str(editor.editor_type) },
+        crate::format_args::FormatArg { name: "name", value: crate::format_args::ArgValue::Str(&editor.name) },
+        crate::format_args::FormatArg { name: "exe-name", value: crate::format_args::ArgValue::Str(&editor.exe) },
+        crate::format_args::FormatArg { name: "path", value: crate::format_args::ArgValue::Str(&editor.path) },
+        crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(&editor.version) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("editor"), rendered)]
 }
 
 /// ffGenerateEditorJsonResult.

@@ -154,15 +154,32 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    let mut value = if !host.name.is_empty() {
-        host.name
-    } else {
-        host.family
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        let mut value = if !host.name.is_empty() {
+            host.name
+        } else {
+            host.family
+        };
+        if !host.version.is_empty() {
+            value.push_str(&format!(" ({})", host.version));
+        }
+        return vec![Row::new(instance.display_name("host"), value)];
     };
-    if !host.version.is_empty() {
-        value.push_str(&format!(" ({})", host.version));
-    }
-    vec![Row::new(instance.display_name("host"), value)]
+
+    // FF_PRINT_FORMAT_CHECKED's arg list: the seven DMI identity fields,
+    // in upstream order. The port never reads product_uuid, so uuid is
+    // always empty (same as upstream when DMI leaves it unset).
+    let args = [
+        crate::format_args::FormatArg { name: "family", value: crate::format_args::ArgValue::Str(&host.family) },
+        crate::format_args::FormatArg { name: "name", value: crate::format_args::ArgValue::Str(&host.name) },
+        crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(&host.version) },
+        crate::format_args::FormatArg { name: "sku", value: crate::format_args::ArgValue::Str(&host.sku) },
+        crate::format_args::FormatArg { name: "vendor", value: crate::format_args::ArgValue::Str(&host.vendor) },
+        crate::format_args::FormatArg { name: "serial", value: crate::format_args::ArgValue::Str(&host.serial) },
+        crate::format_args::FormatArg { name: "uuid", value: crate::format_args::ArgValue::Str(&host.uuid) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("host"), rendered)]
 }
 
 /// ffGenerateHostJsonResult: the DMI identity, in its fixed order.

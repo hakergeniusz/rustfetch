@@ -154,12 +154,30 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    let value = if result.version.is_empty() {
-        result.pretty_name.clone()
-    } else {
-        format!("{} {}", result.pretty_name, result.version)
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        let value = if result.version.is_empty() {
+            result.pretty_name.clone()
+        } else {
+            format!("{} {}", result.pretty_name, result.version)
+        };
+        return vec![Row::new(instance.display_name("shell"), value)];
     };
-    vec![Row::new(instance.display_name("shell"), value)]
+
+    // FF_PRINT_FORMAT_CHECKED's arg list. exe-name is a nullable
+    // const char* upstream; the port keeps it as an empty string when
+    // unset. pid is uint32_t and tty is int32_t (-1 when the walk fails).
+    let args = [
+        crate::format_args::FormatArg { name: "process-name", value: crate::format_args::ArgValue::Str(&result.process_name) },
+        crate::format_args::FormatArg { name: "exe", value: crate::format_args::ArgValue::Str(&result.exe) },
+        crate::format_args::FormatArg { name: "exe-name", value: crate::format_args::ArgValue::Str(&result.exe_name) },
+        crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(&result.version) },
+        crate::format_args::FormatArg { name: "pid", value: crate::format_args::ArgValue::UInt(result.pid) },
+        crate::format_args::FormatArg { name: "pretty-name", value: crate::format_args::ArgValue::Str(&result.pretty_name) },
+        crate::format_args::FormatArg { name: "exe-path", value: crate::format_args::ArgValue::Str(&result.exe_path) },
+        crate::format_args::FormatArg { name: "tty", value: crate::format_args::ArgValue::Int(result.tty) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("shell"), rendered)]
 }
 
 /// ffGenerateShellJsonResult: exe first, tty null when the walk failed.

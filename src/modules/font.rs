@@ -58,10 +58,24 @@ pub fn detect(instance: &Instance) -> Result<FontResult, &'static str> {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
-    match detect(instance) {
-        Ok(font) => vec![Row::new(instance.display_name("font"), font.display)],
-        Err(_) => Vec::new(),
-    }
+    let Ok(font) = detect(instance) else {
+        return Vec::new();
+    };
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        return vec![Row::new(instance.display_name("font"), font.display)];
+    };
+
+    // FF_PRINT_FORMAT_CHECKED's arg list: the four per-source pretty
+    // fonts, then the composed display string as "combined".
+    let args = [
+        crate::format_args::FormatArg { name: "font1", value: crate::format_args::ArgValue::Str(&font.fonts[0]) },
+        crate::format_args::FormatArg { name: "font2", value: crate::format_args::ArgValue::Str(&font.fonts[1]) },
+        crate::format_args::FormatArg { name: "font3", value: crate::format_args::ArgValue::Str(&font.fonts[2]) },
+        crate::format_args::FormatArg { name: "font4", value: crate::format_args::ArgValue::Str(&font.fonts[3]) },
+        crate::format_args::FormatArg { name: "combined", value: crate::format_args::ArgValue::Str(&font.display) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("font"), rendered)]
 }
 
 /// ffGenerateFontJsonResult: {display, fonts[4]} or the detection error.

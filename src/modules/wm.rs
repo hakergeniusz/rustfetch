@@ -24,15 +24,30 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    let mut value = ds.wm_pretty_name.clone();
-    if let Some(version) = wm_version(&ds.wm_process_name) {
-        value.push(' ');
-        value.push_str(&version);
-    }
-    if !ds.wm_protocol_name.is_empty() {
-        value.push_str(&format!(" ({})", ds.wm_protocol_name));
-    }
-    vec![Row::new(instance.display_name("wm"), value)]
+    let version = wm_version(&ds.wm_process_name);
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        let mut value = ds.wm_pretty_name.clone();
+        if let Some(version) = version.as_deref() {
+            value.push(' ');
+            value.push_str(version);
+        }
+        if !ds.wm_protocol_name.is_empty() {
+            value.push_str(&format!(" ({})", ds.wm_protocol_name));
+        }
+        return vec![Row::new(instance.display_name("wm"), value)];
+    };
+
+    // FF_PRINT_FORMAT_CHECKED's arg list. detectPlugin is off by default
+    // in this port, so plugin-name is always empty, like upstream.
+    let args = [
+        crate::format_args::FormatArg { name: "process-name", value: crate::format_args::ArgValue::Str(&ds.wm_process_name) },
+        crate::format_args::FormatArg { name: "pretty-name", value: crate::format_args::ArgValue::Str(&ds.wm_pretty_name) },
+        crate::format_args::FormatArg { name: "protocol-name", value: crate::format_args::ArgValue::Str(&ds.wm_protocol_name) },
+        crate::format_args::FormatArg { name: "plugin-name", value: crate::format_args::ArgValue::Str("") },
+        crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(version.as_deref().unwrap_or("")) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("wm"), rendered)]
 }
 
 /// ffGenerateWMJsonResult: the five fields in upstream order; pluginName
