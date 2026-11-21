@@ -311,6 +311,78 @@ pub fn time_to_full_str(msec: u64) -> String {
     )
 }
 
+/// ffTimeToShortStr: "<date> <time>" in the local timezone, e.g.
+/// "2026-11-18 20:37:36".
+// Consumed by the uptime module's custom-format branch landing next.
+#[expect(dead_code)]
+pub fn time_to_short_str(msec: u64) -> String {
+    if msec == 0 {
+        return String::new();
+    }
+    let seconds_since_epoch = (msec / 1000) as i64;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe { libc::localtime_r(&seconds_since_epoch, &mut tm) };
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday,
+        tm.tm_hour,
+        tm.tm_min,
+        tm.tm_sec,
+    )
+}
+
+/// FFTimeGetAgeResult: the calendar age between two timestamps — whole
+/// years, the days into the current year, and the years with their
+/// fraction.
+// Consumed by the uptime module's custom-format branch landing next.
+#[expect(dead_code)]
+pub struct TimeAge {
+    pub years: u32,
+    pub days_of_year: u32,
+    pub years_fraction: f64,
+}
+
+/// ffTimeGetAge: years count from the local calendar (decremented when the
+/// anniversary hasn't passed yet), daysOfYear from the mktime-normalized
+/// anniversary, and yearsFraction divides the elapsed seconds by the
+/// anniversary-to-next-anniversary span (mktime's normalization carries
+/// into the second call, matching leap years and DST like the C).
+#[expect(dead_code)]
+pub fn time_get_age(birth_ms: u64, now_ms: u64) -> TimeAge {
+    if birth_ms == 0 || now_ms < birth_ms {
+        return TimeAge { years: 0, days_of_year: 0, years_fraction: 0.0 };
+    }
+    // SAFETY: localtime_r and mktime write only their own tm struct;
+    // birth_tm's mktime normalization carries into the second call like
+    // the C.
+    unsafe {
+        let mut birth_s = (birth_ms / 1000) as libc::time_t;
+        let mut birth_tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&birth_s, &mut birth_tm);
+        let now_s = (now_ms / 1000) as libc::time_t;
+        let mut now_tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&now_s, &mut now_tm);
+
+        let mut years = (now_tm.tm_year - birth_tm.tm_year) as u32;
+        if now_tm.tm_yday < birth_tm.tm_yday {
+            years -= 1;
+        }
+
+        birth_tm.tm_year += years as i32;
+        birth_s = libc::mktime(&mut birth_tm);
+        let diff_s = (now_s - birth_s) as u32;
+        let days_of_year = diff_s / (24 * 60 * 60);
+
+        birth_tm.tm_year += 1;
+        let next_s = libc::mktime(&mut birth_tm);
+        let years_fraction = diff_s as f64 / (next_s - birth_s) as f64 + years as f64;
+
+        TimeAge { years, days_of_year, years_fraction }
+    }
+}
+
 /// The kernel escapes spaces and control characters in /proc device names
 /// as \NNN octal triples; getmntent decodes them the same way.
 pub fn decode_octal_escapes(name: &str) -> String {
