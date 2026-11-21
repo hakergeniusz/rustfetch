@@ -21,8 +21,51 @@ mod smbios;
 mod tty;
 mod util;
 
+/// init.c's resetConsole through the exitSignalHandler: SIGINT/SIGTERM/
+/// SIGQUIT restore the console and exit(0). The alternate screen buffer
+/// is the only state the port leaves behind, and only watch mode enters
+/// it (the hide-cursor escape is not ported).
+static WATCH_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+extern "C" fn exit_signal_handler(_signal: libc::c_int) {
+    const LEAVE_ALT_BUFFER: &[u8] = b"\x1b[?1049l";
+    unsafe {
+        if WATCH_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
+            libc::write(
+                libc::STDOUT_FILENO,
+                LEAVE_ALT_BUFFER.as_ptr().cast(),
+                LEAVE_ALT_BUFFER.len(),
+            );
+        }
+        libc::exit(0);
+    }
+}
+
 fn main() {
     let mut cli = cli::Cli::parse();
+
+    // main()'s guard before the config files load: the watch loop cannot
+    // share stdout with the JSON document writer.
+    if cli.watch_interval > 0 && cli.format_json {
+        eprintln!("Error: --dynamic-interval cannot be used with --json");
+        std::process::exit(400);
+    }
+
+    // ffStart installs these for every run; without a watch interval the
+    // handler's reset is empty and the exit code stays exit(0).
+    let watch_interval = if cli.watch_interval > 0 {
+        WATCH_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
+        Some(cli.watch_interval)
+    } else {
+        None
+    };
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = exit_signal_handler as *const () as usize;
+        libc::sigaction(libc::SIGINT, &action, std::ptr::null_mut());
+        libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut());
+        libc::sigaction(libc::SIGQUIT, &action, std::ptr::null_mut());
+    }
 
     // The structure string is colon-separated. Tokens are kept
     // verbatim: known ones select modules, unknown tokens become
@@ -76,6 +119,10 @@ fn main() {
 
     let (logo, colors) = logo::load(&cli, config.as_ref(), &instance);
     let _ = instance.logo_colors.set(colors);
-    let rows = modules::collect(&structure_modules, structure_given, config.as_ref(), &instance);
-    render::print(&logo, &rows, &instance);
+    // run()'s per-round ffPrintCommandOption: each round re-collects the
+    // rows, which re-reads the print-time detections (uptime, load, usage,
+    // temperatures); the once-per-process results stay cached, like
+    // upstream's instance.state results surviving ffCacheInvalidateAll.
+    let mut next_round = || modules::collect(&structure_modules, structure_given, config.as_ref(), &instance);
+    render::print(&logo, &instance, watch_interval, &mut next_round);
 }

@@ -4,7 +4,7 @@
 //! netlink socket (lowest metric wins), and the rate is the byte delta over
 //! the 250ms sample window.
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use crate::{
@@ -34,11 +34,26 @@ struct NetIoSample {
     tx_dropped: u64,
 }
 
+/// The default-route cache, upstream's ffCacheGet entry — the only cache
+/// ffCacheInvalidateAll registers, so the watch loop's per-round
+/// re-detection reduces to dropping this.
+static ROUTE_CACHE: Mutex<Option<Option<String>>> = Mutex::new(None);
+
 /// ffNetifGetDefaultRouteImplV4: dump AF_INET routes over netlink and keep
 /// the lowest-metric default route's interface.
 fn default_route_ifname() -> Option<String> {
-    static ROUTE: OnceLock<Option<String>> = OnceLock::new();
-    ROUTE.get_or_init(|| unsafe { default_route_ifname_impl() }).clone()
+    let mut route = ROUTE_CACHE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if route.is_none() {
+        *route = Some(unsafe { default_route_ifname_impl() });
+    }
+    route.clone().flatten()
+}
+
+/// ffCacheInvalidateAll: the default-route entries are its only
+/// registrants, so the watch loop's per-round re-detection reduces to
+/// dropping this cache.
+pub(crate) fn invalidate_route_cache() {
+    *ROUTE_CACHE.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
 unsafe fn default_route_ifname_impl() -> Option<String> {

@@ -2,7 +2,9 @@
 //! Replicates fastfetch's exact escape sequence emission: one global reset
 //! (ffStart), logo lines built as bold + per-segment colors + reset, keys
 //! as reset + bold + key color + key + reset + ": " + reset, and a final
-//! reset after the logo's remaining lines (ffLogoPrintRemaining).
+//! reset after the logo's remaining lines (ffLogoPrintRemaining). Watch
+//! mode (`-w`) reruns the row collection in the alternate screen buffer
+//! like fastfetch.c's run() loop.
 
 use std::io::{BufWriter, Write};
 
@@ -105,40 +107,73 @@ fn emit_chars_row(
     logo_index: &mut usize,
     layout: &CharsLayout<'_>,
     row: &Row,
+    watch: bool,
 ) {
-    match layout.position {
-        Position::Right => {
-            // ffLogoPrintLine's RIGHT branch: jump to the right edge, step
-            // left onto the art, print it, and return to column 0 for the
-            // key. Rows past the logo print nothing for the logo part.
-            if let Some((text, _)) = logo_lines.get(*logo_index) {
-                let _ = write!(out, "\x1b[9999999C\x1b[{}D", layout.right_offset);
-                let _ = write!(out, "{text}");
-                let _ = write!(out, "\x1b[G");
-            }
-        },
-        _ => {
-            if let Some((text, width)) = logo_lines.get(*logo_index) {
-                let _ = write!(out, "{:width$}", "", width = layout.pad_left);
-                let _ = write!(out, "{text}");
-                let _ = write!(
-                    out,
-                    "{:width$}",
-                    "",
-                    width = layout
-                        .key_column
-                        .saturating_sub(layout.pad_left + width)
-                );
-            } else {
-                let _ = write!(out, "{:width$}", "", width = layout.key_column);
-            }
-        },
+    if !logo_lines.is_empty() {
+        match layout.position {
+            Position::Right => {
+                // ffLogoPrintLine's RIGHT branch: jump to the right edge, step
+                // left onto the art, print it, and return to column 0 for the
+                // key. Rows past the logo print nothing for the logo part.
+                if let Some((text, _)) = logo_lines.get(*logo_index) {
+                    let _ = write!(out, "\x1b[9999999C\x1b[{}D", layout.right_offset);
+                    let _ = write!(out, "{text}");
+                    let _ = write!(out, "\x1b[G");
+                }
+            },
+            _ => {
+                if let Some((text, width)) = logo_lines.get(*logo_index) {
+                    let _ = write!(out, "{:width$}", "", width = layout.pad_left);
+                    let _ = write!(out, "{text}");
+                    let _ = write!(
+                        out,
+                        "{:width$}",
+                        "",
+                        width = layout
+                            .key_column
+                            .saturating_sub(layout.pad_left + width)
+                    );
+                } else if layout.position == Position::Left {
+                    // Cache exhausted: the key column fills with spaces so
+                    // the two-column alignment holds.
+                    let _ = write!(out, "{:width$}", "", width = layout.key_column);
+                }
+            },
+        }
+    } else if layout.position == Position::Left && layout.key_column > 0 {
+        // Cache cleared (watch rounds after the first): the cursor moves
+        // right past the logo instead of reprinting spaces over it.
+        let _ = write!(out, "\x1b[{}C", layout.key_column);
+    }
+    if watch && layout.position == Position::Left {
+        // ffLogoPrintLine's dynamic-interval clear keeps short rows from
+        // leaving old content past their new end. RIGHT skips it, as
+        // clearing to end of line would erase the logo itself.
+        let _ = write!(out, "\x1b[K");
     }
     *logo_index += 1;
     let _ = writeln!(out, "{}", row_line(row, layout.key_color, layout.color));
 }
 
-pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
+/// One watch round's close: clear from the cursor down, flush, sleep the
+/// interval, home the cursor, and drop the netif default-route cache —
+/// ffCacheInvalidateAll's only registrants — so the next round re-detects
+/// it. The spin logo's per-round reprint is not ported (still logos cost
+/// ffSpinTick's single `false`).
+fn watch_pause(out: &mut BufWriter<std::io::StdoutLock<'_>>, interval_ms: u32) {
+    let _ = write!(out, "\x1b[J");
+    let _ = out.flush();
+    std::thread::sleep(std::time::Duration::from_millis(interval_ms as u64));
+    let _ = write!(out, "\x1b[H");
+    crate::modules::netio::invalidate_route_cache();
+}
+
+pub fn print(
+    logo: &Option<Logo>,
+    instance: &Instance,
+    watch: Option<u32>,
+    next_round: &mut dyn FnMut() -> Vec<Row>,
+) {
     // Pipe mode keeps the two-column layout; it only drops the colors,
     // which every writer below gates on instance.color.
     let stdout = std::io::stdout();
@@ -151,16 +186,19 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
     let (pad_left, pad_right) = (0usize, 4usize);
     let padding_top = instance.padding_top.unwrap_or(0) as usize;
 
+    // ffStart: the buffered reset; watch mode additionally enables the
+    // alternate screen buffer, homes the cursor and flushes before any
+    // logo output.
+    if color {
+        let _ = write!(out, "\x1b[m");
+    }
+    if watch.is_some() {
+        let _ = write!(out, "\x1b[?1049h\x1b[H");
+        let _ = out.flush();
+    }
+
     match logo.as_ref() {
         Some(Logo::Raw { content, position }) => {
-            // ffStart resets everything before printing starts. It goes
-            // through the buffered stdout and STAYS there: the dump below
-            // bypasses the buffer like ffWriteFDBuffer's raw write(2), so on
-            // the wire the reset lands after the dump and the cursor query,
-            // exactly like fastfetch's ffStart-before-ffLogoPrint does.
-            if color {
-                let _ = write!(out, "\x1b[m");
-            }
             if *position == Position::Top {
                 // ffLogoPrintCharsRaw's TOP branch: paddingTop newlines and
                 // paddingLeft spaces, then the bytes unprocessed; no
@@ -177,26 +215,42 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
                 for _ in 0..pad_right {
                     let _ = writeln!(out);
                 }
-                let mut visible = 0usize;
-                for row in rows {
-                    if let Kind::Late(late) = row.kind {
-                        let _ = out.flush();
-                        for produced in late(instance) {
-                            visible += 1;
-                            let _ = writeln!(out, "{}", row_line(&produced, key_color, color));
+                // ffLogoPrintRemaining: the cache is empty and logoHeight is
+                // zero, so every round (and the non-watch ending) closes with
+                // one newline iff the round printed no rows.
+                let mut keys_height;
+                loop {
+                    let rows = next_round();
+                    keys_height = 0;
+                    for row in &rows {
+                        if let Kind::Late(late) = row.kind {
+                            // Deferred detection runs at the row's position:
+                            // flush the rows already rendered so the
+                            // detection's /dev/tty queries land in the stream
+                            // like upstream's print-time ffDetect calls.
+                            let _ = out.flush();
+                            for produced in late(instance) {
+                                keys_height += 1;
+                                let _ = writeln!(out, "{}", row_line(&produced, key_color, color));
+                            }
+                            continue;
                         }
-                        continue;
+                        keys_height += 1;
+                        let _ = writeln!(out, "{}", row_line(row, key_color, color));
                     }
-                    visible += 1;
-                    let _ = writeln!(out, "{}", row_line(row, key_color, color));
-                }
-                if visible == 0 {
-                    let _ = writeln!(out);
+                    if keys_height == 0 {
+                        let _ = writeln!(out);
+                    }
+                    match watch {
+                        None => break,
+                        Some(interval_ms) => watch_pause(&mut out, interval_ms),
+                    }
                 }
             } else {
             // ffLogoPrintCharsRaw, LEFT position (logo.width/height unset):
             // clear the screen, home the cursor and dump the file bytes
             // unprocessed — regardless of the color mode, like upstream.
+            // Printed once; watch rounds only re-render the rows.
             let mut dump = format!("\x1b[2J\x1b[3J\x1b[{};{}H", padding_top + 1, pad_left + 1).into_bytes();
             dump.extend_from_slice(content);
             // One raw write to fd 1: the buffered ffStart reset must not be
@@ -220,35 +274,47 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
                 logo_height = y as usize;
                 let _ = write!(out, "\x1b[H");
             }
-            let mut visible = 0usize;
-            for row in rows {
-                if let Kind::Late(late) = row.kind {
-                    // Deferred detection runs at the row's position: flush
-                    // the rows already rendered so the detection's /dev/tty
-                    // queries land in the stream like upstream's print-time
-                    // ffDetect calls.
-                    let _ = out.flush();
-                    for produced in late(instance) {
-                        visible += 1;
-                        if logo_width > 0 {
-                            let _ = write!(out, "\x1b[{}C", logo_width);
+            let mut keys_height;
+            loop {
+                let rows = next_round();
+                keys_height = 0;
+                for row in &rows {
+                    if let Kind::Late(late) = row.kind {
+                        let _ = out.flush();
+                        for produced in late(instance) {
+                            keys_height += 1;
+                            if logo_width > 0 {
+                                let _ = write!(out, "\x1b[{}C", logo_width);
+                            }
+                            if watch.is_some() {
+                                let _ = write!(out, "\x1b[K");
+                            }
+                            let _ = writeln!(out, "{}", row_line(&produced, key_color, color));
                         }
-                        let _ = writeln!(out, "{}", row_line(&produced, key_color, color));
+                        continue;
                     }
-                    continue;
+                    keys_height += 1;
+                    // ffLogoPrintLine with an empty cache: the cursor moves
+                    // right by logoWidth instead of printing spaces.
+                    if logo_width > 0 {
+                        let _ = write!(out, "\x1b[{}C", logo_width);
+                    }
+                    if watch.is_some() {
+                        let _ = write!(out, "\x1b[K");
+                    }
+                    let _ = writeln!(out, "{}", row_line(row, key_color, color));
                 }
-                visible += 1;
-                // ffLogoPrintLine with an empty cache: the cursor moves
-                // right by logoWidth instead of printing spaces.
-                if logo_width > 0 {
-                    let _ = write!(out, "\x1b[{}C", logo_width);
+                // ffLogoPrintRemaining's empty-cache tail: one newline per
+                // remaining logo height, re-run every watch round against
+                // the reset keysHeight.
+                if keys_height <= logo_height {
+                    for _ in 0..logo_height - keys_height + 1 {
+                        let _ = writeln!(out);
+                    }
                 }
-                let _ = writeln!(out, "{}", row_line(row, key_color, color));
-            }
-            // ffLogoPrintRemaining's empty-cache tail.
-            if visible <= logo_height {
-                for _ in 0..logo_height - visible + 1 {
-                    let _ = writeln!(out);
+                match watch {
+                    None => break,
+                    Some(interval_ms) => watch_pause(&mut out, interval_ms),
                 }
             }
             }
@@ -269,6 +335,11 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
                 Some(lines) => {
                     let mut cached = colorize(lines, color);
                     cached.splice(0..0, std::iter::repeat_n((String::new(), 0), padding_top));
+                    // The totalLines = logoHeight + 1 fill loop only fires for
+                    // an empty art (parsedHeight zero): one extra empty line.
+                    if cached.len() == padding_top {
+                        cached.push((String::new(), 0));
+                    }
                     cached
                 },
                 None => Vec::new(),
@@ -278,7 +349,7 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
                 // ffLogoPrintChars' TOP path: the whole cache dumps through a
                 // raw write(2) — bypassing the buffered ffStart reset, like
                 // the raw-logo dump — then logoWidth/logoHeight zero out, the
-                // cache clears, and every row prints at column 0.
+                // cache clears, and every round's rows print at column 0.
                 if has_logo {
                     let mut dump = Vec::new();
                     for (text, _) in &logo_lines {
@@ -291,40 +362,43 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
                     }
                 }
                 logo_lines.clear();
-                if color {
-                    // ffStart's buffered reset, reaching the wire after the dump.
-                    let _ = write!(out, "\x1b[m");
-                }
-                let mut visible = 0usize;
-                for row in rows {
-                    if let Kind::Late(late) = row.kind {
-                        // Deferred detection runs at the row's position: flush
-                        // the rows already rendered so the detection's /dev/tty
-                        // queries land in the stream like upstream's print-time
-                        // ffDetect calls.
-                        let _ = out.flush();
-                        for produced in late(instance) {
-                            visible += 1;
-                            let _ = writeln!(out, "{}", row_line(&produced, key_color, color));
+                let mut keys_height;
+                loop {
+                    let rows = next_round();
+                    keys_height = 0;
+                    for row in &rows {
+                        if let Kind::Late(late) = row.kind {
+                            let _ = out.flush();
+                            for produced in late(instance) {
+                                keys_height += 1;
+                                let _ = writeln!(out, "{}", row_line(&produced, key_color, color));
+                            }
+                            continue;
                         }
-                        continue;
+                        keys_height += 1;
+                        let _ = writeln!(out, "{}", row_line(row, key_color, color));
                     }
-                    visible += 1;
-                    let _ = writeln!(out, "{}", row_line(row, key_color, color));
-                }
-                // ffLogoPrintRemaining's cleared-cache tail: keysHeight <=
-                // logoHeight (0) closes with one newline when nothing printed.
-                if visible == 0 {
-                    let _ = writeln!(out);
+                    // ffLogoPrintRemaining's cleared-cache tail: keysHeight <=
+                    // logoHeight (0) closes with one newline when the round
+                    // printed nothing.
+                    if keys_height == 0 {
+                        let _ = writeln!(out);
+                    }
+                    match watch {
+                        None => break,
+                        Some(interval_ms) => watch_pause(&mut out, interval_ms),
+                    }
                 }
             } else {
-            if color {
-                // ffStart resets everything before printing starts.
-                let _ = write!(out, "\x1b[m");
-            }
-
             let logo_width = chars_width;
             let key_column = if has_logo { logo_width + pad_right } else { 0 };
+            // instance.state.logoHeight: paddingTop + parsedHeight, i.e.
+            // exactly one less than the cache's entry count.
+            let logo_height = match lines {
+                Some(lines) if !lines.is_empty() => padding_top + lines.len() - 1,
+                Some(_) => padding_top,
+                None => 0,
+            };
             let layout = CharsLayout {
                 pad_left,
                 key_column,
@@ -335,45 +409,58 @@ pub fn print(logo: &Option<Logo>, rows: &[Row], instance: &Instance) {
             };
 
             let mut logo_index = 0usize;
-            let mut visible = 0usize;
-            for row in rows {
-                if let Kind::Late(late) = row.kind {
-                    // Deferred detection runs at the row's position: flush
-                    // the rows already rendered so the detection's /dev/tty
-                    // queries land in the stream like upstream's print-time
-                    // ffDetect calls.
-                    let _ = out.flush();
-                    for produced in late(instance) {
-                        visible += 1;
-                        emit_chars_row(&mut out, &logo_lines, &mut logo_index, &layout, &produced);
+            let mut keys_height;
+            loop {
+                let rows = next_round();
+                keys_height = 0;
+                for row in &rows {
+                    if let Kind::Late(late) = row.kind {
+                        // Deferred detection runs at the row's position: flush
+                        // the rows already rendered so the detection's /dev/tty
+                        // queries land in the stream like upstream's print-time
+                        // ffDetect calls.
+                        let _ = out.flush();
+                        for produced in late(instance) {
+                            keys_height += 1;
+                            emit_chars_row(&mut out, &logo_lines, &mut logo_index, &layout, &produced, watch.is_some());
+                        }
+                        continue;
                     }
-                    continue;
+                    keys_height += 1;
+                    emit_chars_row(&mut out, &logo_lines, &mut logo_index, &layout, row, watch.is_some());
                 }
-                visible += 1;
-                emit_chars_row(&mut out, &logo_lines, &mut logo_index, &layout, row);
-            }
-            // lines past the last info row are printed bare, like fastfetch's
-            // ffLogoPrintRemaining (LEFT: plain; RIGHT: from the right edge)
-            while logo_index < logo_lines.len() {
-                let (text, _width) = &logo_lines[logo_index];
-                if position == Position::Right {
-                    let _ = write!(out, "\x1b[9999999C\x1b[{}D", layout.right_offset);
+                // ffLogoPrintRemaining: lines past the last info row print
+                // bare (LEFT: plain; RIGHT: from the right edge) and the
+                // cache clears, so later watch rounds move the cursor past
+                // the printed logo instead of reprinting it. An empty cache
+                // closes with one newline per remaining logo height when
+                // the round printed nothing.
+                if !logo_lines.is_empty() {
+                    while logo_index < logo_lines.len() {
+                        let (text, _width) = &logo_lines[logo_index];
+                        if position == Position::Right {
+                            let _ = write!(out, "\x1b[9999999C\x1b[{}D", layout.right_offset);
+                        }
+                        let _ = write!(out, "{:width$}", "", width = pad_left);
+                        let _ = write!(out, "{text}");
+                        let _ = writeln!(out);
+                        logo_index += 1;
+                    }
+                    if color {
+                        // ffLogoPrintRemaining ends the logo block with a
+                        // reset even when every line was consumed by a row.
+                        let _ = write!(out, "\x1b[m");
+                    }
+                    logo_lines.clear();
+                } else if keys_height <= logo_height {
+                    for _ in 0..logo_height - keys_height + 1 {
+                        let _ = writeln!(out);
+                    }
                 }
-                let _ = write!(out, "{:width$}", "", width = pad_left);
-                let _ = write!(out, "{text}");
-                let _ = writeln!(out);
-                logo_index += 1;
-            }
-            if color && has_logo {
-                // ffLogoPrintRemaining ends the logo block with a reset even when
-                // every logo line was already consumed by a row.
-                let _ = write!(out, "\x1b[m");
-            }
-            // ffLogoPrintRemaining's tail: an empty logo cache (logo none) still
-            // closes with one newline when no rows were printed, from its
-            // keysHeight <= logoHeight branch.
-            if logo_lines.is_empty() && visible == 0 {
-                let _ = writeln!(out);
+                match watch {
+                    None => break,
+                    Some(interval_ms) => watch_pause(&mut out, interval_ms),
+                }
             }
             }
         },

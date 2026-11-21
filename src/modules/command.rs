@@ -124,6 +124,7 @@ mod tests {
                 logo_small: false,
                 logo_source: None,
                 pipe: None,
+                watch_interval: 0,
                 format_json: false,
                 config: None,
                 config_loaded: false,

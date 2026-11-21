@@ -72,6 +72,10 @@ pub struct Cli {
     /// `--pipe <?bool>`: Some when the flag was given, with upstream's
     /// boolean parsing (empty/true/yes/on/1 → true, anything else false).
     pub pipe: Option<bool>,
+    /// The refresh interval in ms (`instance.state.dynamicInterval`):
+    /// `--dynamic-interval <ms>` verbatim, `-w/--watch [seconds]` times
+    /// 1000 (no value → 1000). Zero disables the watch loop.
+    pub watch_interval: u32,
     /// JSON output enable state: `-j/--json` and `--format json` enable it
     /// monotonically (upstream's enableJsonOutput); nothing disables it,
     /// so `--format json -j false` still prints JSON.
@@ -104,6 +108,7 @@ impl Cli {
             logo_source: None,
             logo_position: None,
             pipe: None,
+            watch_interval: 0,
             format_json: false,
             config: None,
             config_loaded: false,
@@ -234,6 +239,25 @@ impl Cli {
                         handled[i + 1] = true;
                     }
                 },
+                // parseCommand's watch options; upstream blanks the key so
+                // parseOption never sees them again.
+                "--dynamic-interval" => {
+                    cli.watch_interval = parse_uint32(key, value);
+                    handled[i] = true;
+                    if value_was_consumed(argv, i) {
+                        handled[i + 1] = true;
+                    }
+                },
+                "-w" | "--watch" => {
+                    cli.watch_interval = match value {
+                        None => 1000,
+                        Some(seconds) => parse_uint32(key, Some(seconds)).wrapping_mul(1000),
+                    };
+                    handled[i] = true;
+                    if value_was_consumed(argv, i) {
+                        handled[i + 1] = true;
+                    }
+                },
                 key if key.to_ascii_lowercase().starts_with("--print-") => {
                     eprintln!("Error: unsupported print option: {key}");
                     std::process::exit(415);
@@ -341,6 +365,36 @@ fn parse_string(key: &str, value: Option<&str>) -> String {
     match value {
         Some(value) => value.to_string(),
         None => usage_exit(key, "<str>", 477),
+    }
+}
+
+/// ffOptionParseUInt32: strtoul base 10 with the strict tail check — a
+/// missing value exits 480, a leading `-`, trailing junk (end not at the
+/// terminator) or a value above u32::MAX exits 479. Leading whitespace
+/// and a lone sign parse to zero like strtoul's empty conversion.
+fn parse_uint32(key: &str, value: Option<&str>) -> u32 {
+    let Some(value) = value else {
+        usage_exit(key, "<num>", 480);
+    };
+    let invalid = || -> ! {
+        eprintln!("Error: usage: {key} <num>");
+        std::process::exit(479)
+    };
+    if value.starts_with('-') {
+        invalid();
+    }
+    let text = value.trim_start_matches([' ', '\t', '\n', '\x0b', '\x0c', '\r']);
+    let text = text.strip_prefix('+').unwrap_or(text);
+    if text.is_empty() {
+        return 0;
+    }
+    let digits = text.len() - text.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    if digits == 0 || digits != text.len() {
+        invalid();
+    }
+    match text.parse::<u64>() {
+        Ok(num) if num <= u32::MAX as u64 => num as u32,
+        _ => invalid(),
     }
 }
 
