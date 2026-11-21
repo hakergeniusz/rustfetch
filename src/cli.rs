@@ -472,8 +472,10 @@ impl Cli {
                     parse_float(key, value, 0.0, 360.0);
                 },
                 _ => {
-                    eprintln!("Error: unknown option: {key}");
-                    std::process::exit(400);
+                    if !parse_module_options(key, value) {
+                        eprintln!("Error: unknown option: {key}");
+                        std::process::exit(400);
+                    }
                 },
             }
             if value_was_consumed(argv, i) {
@@ -484,6 +486,101 @@ impl Cli {
 
         cli
     }
+}
+
+/// commandoption.c ffParseModuleOptions: the per-module CLI options were
+/// removed; a key whose prefix names a registered module is rejected with
+/// the JSON-config migration hint instead of "unknown option".
+fn parse_module_options(key: &str, value: Option<&str>) -> bool {
+    const MODULES: &[&str] = &[
+        // modules.c registry order, which the prefix scan follows
+        "Battery", "BIOS", "Bluetooth", "BluetoothRadio", "Board", "Bootmgr", "Break",
+        "Brightness", "Btrfs",
+        "Camera", "Chassis", "Codec", "Command", "Colors", "CPU", "CPUCache", "CPUUsage",
+        "Cursor", "Custom",
+        "DateTime", "DE", "Display", "Disk", "DiskIO", "DNS",
+        "Editor", "Font", "Gamepad", "GPU", "Host", "Icons", "InitSystem",
+        "Kernel", "Keyboard",
+        "LM", "Loadavg", "Locale", "LocalIp", "Logo",
+        "Media", "Memory", "Monitor", "Mouse",
+        "NetIO",
+        "OpenCL", "OpenGL", "OS",
+        "Packages", "PhysicalDisk", "PhysicalMemory", "Player", "PowerAdapter", "Processes",
+        "PublicIp",
+        "Separator", "Shell", "Sound", "Swap",
+        "Terminal", "TerminalFont", "TerminalSize", "TerminalTheme", "Title", "Top", "Theme",
+        "TPM",
+        "Uptime", "Users",
+        "Version", "Vulkan",
+        "Wallpaper", "Weather", "WM", "Wifi", "WMTheme",
+        "Zpool",
+    ];
+
+    let bytes = key.as_bytes();
+    if !(key.starts_with("--") && bytes.get(2).is_some_and(|b| b.is_ascii_alphabetic())) {
+        return false;
+    }
+    // An empty value token counts as absent in the example line.
+    let value = value.filter(|v| !v.is_empty());
+    let rest = &key[2..];
+    for name in MODULES.iter().filter(|name| {
+        name.as_bytes()[0] == bytes[2].to_ascii_uppercase()
+    }) {
+        // ffOptionTestPrefix: the module name must be a case-insensitive
+        // prefix, followed by nothing or one '-'.
+        if rest.len() < name.len() || !rest[..name.len()].eq_ignore_ascii_case(name) {
+            continue;
+        }
+        let after = &rest[name.len()..];
+        let sub_key = match after.as_bytes().first() {
+            None => "",
+            Some(b'-') => &after[1..],
+            Some(_) => continue,
+        };
+        if sub_key.is_empty() || sub_key.starts_with('-') {
+            eprintln!("Error: unknown module key {key}");
+            std::process::exit(477);
+        }
+        let mut json_key = String::new();
+        let mut flag = false;
+        for &b in sub_key.as_bytes() {
+            if b == b'-' {
+                if flag {
+                    eprintln!("Error: invalid double `-` in module key {key}");
+                    std::process::exit(477);
+                }
+                flag = true;
+            } else {
+                if !b.is_ascii_alphanumeric() {
+                    use std::io::Write;
+                    let mut err = std::io::stderr().lock();
+                    let _ = write!(err, "Error: invalid character `");
+                    let _ = err.write_all(&[b]);
+                    let _ = writeln!(err, "` in module key {key}");
+                    std::process::exit(477);
+                }
+                if flag {
+                    flag = false;
+                    json_key.push(b.to_ascii_uppercase() as char);
+                } else {
+                    json_key.push(b as char);
+                }
+            }
+        }
+        let module_name = name.to_ascii_lowercase();
+        let (open, close) = if value.is_some() { ("\"", "\"") } else { ("", "") };
+        eprintln!("Error: Unsupported module option: {key}");
+        eprintln!("       Support of module options has been removed. Please add the flag to the JSON config instead.");
+        eprintln!(
+            "       Example (demonstration only): `{{ \"modules\": [ {{ \"type\": \"{module_name}\", \"{json_key}\": {}{}{} }} ] }}`",
+            open,
+            value.unwrap_or("true"),
+            close,
+        );
+        eprintln!("       See <https://github.com/fastfetch-cli/fastfetch/wiki/Configuration> for more information.");
+        std::process::exit(477);
+    }
+    false
 }
 
 /// upstream parseArguments: the next token is a value unless it is
