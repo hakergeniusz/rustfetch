@@ -1,3 +1,10 @@
+rustfetch (0.2.0-1) unstable; urgency=medium
+
+  * Feature release: format engine rollout, custom --key arguments,
+    --gen-config, HyFetch-style coloring, and Arch/RPM packaging.
+
+ -- hakergeniusz <hakergeniusz@users.noreply.github.com>  Sat, 21 Nov 2026 12:00:00 +0000
+
 rustfetch (0.1.0-1) unstable; urgency=medium
 
   * Initial release of rustfetch: fastfetch, rewritten in Rust.

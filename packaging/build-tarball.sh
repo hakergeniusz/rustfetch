@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Produce a release tarball containing the binary, LICENSE and README:
-#   rustfetch-0.1.0-x86_64-unknown-linux-gnu.tar.zst
+#   rustfetch-0.2.0-x86_64-unknown-linux-gnu.tar.zst
+# VERSION defaults to the [package] version in Cargo.toml; override with VERSION=...
 # Requires `tar --zstd` or the `zstd` binary.
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-$(sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/Cargo.toml" | head -n 1)}"
 TARGET="${TARGET:-x86_64-unknown-linux-gnu}"
 OUT_DIR="${OUT_DIR:-$ROOT/dist}"
 BUILD_DIR="${BUILD_DIR:-/dev/shm/rf-scratch-pkg/tarball-build}"
@@ -21,6 +22,7 @@ info() { printf '[*] %s\n' "$*"; }
 ok()   { printf '[+] %s\n' "$*"; }
 die()  { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
 
+[[ -n "$VERSION" ]] || die "could not read version from Cargo.toml; set VERSION explicitly"
 [[ -f "$BIN" ]] || die "binary not found at $BIN (run 'cargo build --release' first, or set RUSTFETCH_BIN)"
 
 NAME="rustfetch-${VERSION}-${TARGET}"
