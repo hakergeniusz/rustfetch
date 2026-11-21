@@ -1543,6 +1543,48 @@ pub fn utf8_str_width(text: &str) -> u32 {
     text.chars().map(|c| wcwidth(c as u32) as u32).sum()
 }
 
+/// ffUtf8CharLenWidth: one sequence's byte count and display width over
+/// RAW bytes. Invalid leads, lone continuations, NUL-terminated and
+/// truncated sequences consume one byte at width 1, exactly like
+/// upstream's walk; valid ones take mk_wcwidth (negatives clamp to 0).
+pub fn decode_char(bytes: &[u8]) -> (usize, u32) {
+    let first = bytes[0];
+    if first < 0x80 {
+        return (1, 1);
+    }
+    let (count, mask) = match first {
+        0xC0..=0xDF => (2usize, 0x1Fu32),
+        0xE0..=0xEF => (3, 0x0F),
+        0xF0..=0xF7 => (4, 0x07),
+        _ => return (1, 1),
+    };
+    if bytes.len() < count {
+        return (1, 1);
+    }
+    let mut ucs = (first as u32) & mask;
+    for &continuation in &bytes[1..count] {
+        // A NUL or a non-continuation byte ends the sequence after the
+        // first byte, at width 1.
+        if continuation == 0 || continuation & 0xC0 != 0x80 {
+            return (1, 1);
+        }
+        ucs = (ucs << 6) | (continuation & 0x3F) as u32;
+    }
+    (count, u32::from(wcwidth(ucs)))
+}
+
+/// ffUtf8StrWidth over raw bytes, for cache lines that carry them.
+pub fn utf8_bytes_width(bytes: &[u8]) -> u32 {
+    let mut total = 0u32;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let (n, w) = decode_char(&bytes[i..]);
+        total += w;
+        i += n;
+    }
+    total
+}
+
 // The special widths, named like upstream's enum.
 const NONPRINT: i32 = -1;
 const COMBINING: i32 = -2;
@@ -1613,9 +1655,10 @@ mod probe {
 mod probe2 {
     #[test]
     fn probe_parse_art_width() {
-        let (_, width) = crate::logo::parse_art("世界 \u{1F30D}\n────\nA\u{301}B\n", Some(&["31"]), false);
+        let art = "世界 \u{1F30D}\n────\nA\u{301}B\n";
+        let (_, width) = crate::logo::parse_art(art.as_bytes(), Some(&["31"]), false);
         assert_eq!(width, 7, "got {width}");
-        let (_, width2) = crate::logo::parse_art("世界 \u{1F30D}", Some(&["31"]), false);
+        let (_, width2) = crate::logo::parse_art("世界 \u{1F30D}".as_bytes(), Some(&["31"]), false);
         assert_eq!(width2, 7, "got {width2}");
     }
 }

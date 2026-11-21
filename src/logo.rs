@@ -24,7 +24,7 @@ pub enum SegmentColor {
 /// One piece of ascii art carrying the ANSI escape to print before its
 /// text.
 pub struct Segment {
-    pub text: String,
+    pub text: Vec<u8>,
     pub color: SegmentColor,
 }
 
@@ -186,7 +186,13 @@ pub(crate) enum Size {
 /// reset. `colors: None` turns the `$` handling off for raw files. In pipe
 /// mode any `$X` (digit or not) is swallowed, the seed carry is skipped,
 /// and no bold/reset wrap is emitted.
-pub fn parse_art(art: &str, colors: Option<&'static [&'static str]>, pipe: bool) -> (Vec<Vec<Segment>>, usize) {
+pub fn parse_art(art: &[u8], colors: Option<&'static [&'static str]>, pipe: bool) -> (Vec<Vec<Segment>>, usize) {
+    // A NUL ends the parse entirely: upstream's walk stops there and the
+    // outer loop breaks, so nothing after it is ever parsed.
+    let art = match art.iter().position(|&byte| byte == 0) {
+        Some(nul) => &art[..nul],
+        None => art,
+    };
     let mut lines = Vec::new();
     // carryColor: seeded from colors[0] only for $-replacement logos outside
     // pipe mode; a raw `m`-terminated escape overwrites it in any mode.
@@ -194,16 +200,24 @@ pub fn parse_art(art: &str, colors: Option<&'static [&'static str]>, pipe: bool)
         (Some(palette), false) => SegmentColor::Code(palette.first().copied().unwrap_or("")),
         _ => SegmentColor::Pass,
     };
-    let mut max_width = 0;
+    let mut max_width = 0u32;
 
     // split('\n'), not lines(): a trailing newline parses one trailing
     // empty cache line, like upstream's logoLineCacheBuild (whose
     // parsedHeight only counts newline-terminated lines, so the cache
-    // always ends parsedHeight + 1 entries long).
-    for raw in art.split('\n').map(|line| line.strip_suffix('\r').unwrap_or(line)) {
-        let chars: Vec<char> = raw.chars().collect();
+    // always ends parsedHeight + 1 entries long). A `\r` is content
+    // unless the newline follows it.
+    let ends_with_newline = art.ends_with(b"\n");
+    let raw_lines: Vec<&[u8]> = art.split(|&byte| byte == b'\n').collect();
+    for (index, raw) in raw_lines.iter().enumerate() {
+        let strip_carriage = !(index + 1 == raw_lines.len() && !ends_with_newline);
+        let line: &[u8] = if strip_carriage && raw.ends_with(b"\r") {
+            &raw[..raw.len() - 1]
+        } else {
+            raw
+        };
         let mut segments: Vec<Segment> = Vec::new();
-        let mut text = String::new();
+        let mut text = Vec::new();
         let mut current = carried.clone();
         // A color event ($N marker or escape) with no text since; it still
         // flushes its escape at the line end.
@@ -211,41 +225,44 @@ pub fn parse_art(art: &str, colors: Option<&'static [&'static str]>, pipe: bool)
         // The char after a plain `$` bypasses the tab/escape/marker checks,
         // like the fall-through into the utf8 path.
         let mut plain_next = false;
-        let mut width = 0;
+        let mut width = 0u32;
 
-        let mut i = 0;
-        while i < chars.len() {
+        let mut i = 0usize;
+        while i < line.len() {
             if plain_next {
                 // The char after a plain `$` still measures by wcwidth,
                 // like the utf8 decode it falls into upstream.
-                text.push(chars[i]);
-                width += crate::wcwidth::wcwidth(chars[i] as u32) as u32;
+                let (taken, char_width) = crate::wcwidth::decode_char(&line[i..]);
+                text.extend_from_slice(&line[i..i + taken]);
+                width += char_width;
                 tail_is_event = false;
                 plain_next = false;
-                i += 1;
+                i += taken;
                 continue;
             }
-            match chars[i] {
-                '\t' => {
-                    text.push_str("    ");
+            match line[i] {
+                b'\t' => {
+                    text.extend_from_slice(b"    ");
                     width += 4;
                     tail_is_event = false;
                     i += 1;
                 },
-                '\u{1b}' if i + 1 < chars.len() && chars[i + 1] == '[' => {
+                0x1b if i + 1 < line.len() && line[i + 1] == b'[' => {
                     let mut j = i + 2;
-                    while j < chars.len() && (chars[j].is_ascii_digit() || chars[j] == ';') {
+                    while j < line.len() && (line[j].is_ascii_digit() || line[j] == b';') {
                         j += 1;
                     }
-                    if j < chars.len() && chars[j].is_ascii() {
-                        let esc: String = chars[i..=j].iter().collect();
+                    if j < line.len() && line[j].is_ascii() {
+                        // is_ascii includes the NUL, which the truncation
+                        // above already removed.
+                        let esc: &[u8] = &line[i..=j];
                         // The escape passes through verbatim, counts no
                         // width, and an `m`-terminated one becomes the
                         // carried color. Its bytes are emitted by the next
                         // flush, exactly once, like the marker escapes.
-                        let is_color = esc.ends_with('m');
+                        let is_color = esc.last() == Some(&b'm');
                         segments.push(Segment { text: std::mem::take(&mut text), color: current.clone() });
-                        current = SegmentColor::Esc(esc);
+                        current = SegmentColor::Esc(String::from_utf8(esc.to_vec()).unwrap_or_default());
                         if is_color {
                             carried = current.clone();
                         }
@@ -259,11 +276,11 @@ pub fn parse_art(art: &str, colors: Option<&'static [&'static str]>, pipe: bool)
                         tail_is_event = false;
                     }
                 },
-                '$' if colors.is_some() && i + 1 < chars.len() => match chars[i + 1] {
+                b'$' if colors.is_some() && i + 1 < line.len() => match line[i + 1] {
                     // `$$` is an escaped dollar; a `$` ending the line or the
                     // logo is a plain one.
-                    '$' => {
-                        text.push('$');
+                    b'$' => {
+                        text.push(b'$');
                         width += 1;
                         tail_is_event = false;
                         i += 2;
@@ -271,9 +288,9 @@ pub fn parse_art(art: &str, colors: Option<&'static [&'static str]>, pipe: bool)
                     _ if pipe => {
                         i += 2;
                     },
-                    digit @ '1'..='9' => {
+                    digit @ b'1'..=b'9' => {
                         segments.push(Segment { text: std::mem::take(&mut text), color: current.clone() });
-                        let n = digit as usize - b'0' as usize;
+                        let n = (digit - b'0') as usize;
                         // Unfilled palette slots stay empty strings: `\e[m`.
                         current = SegmentColor::Code(colors.and_then(|palette| palette.get(n - 1)).copied().unwrap_or(""));
                         carried = current.clone();
@@ -283,20 +300,22 @@ pub fn parse_art(art: &str, colors: Option<&'static [&'static str]>, pipe: bool)
                     // `$0` and `$X` are plain dollars; the next char is
                     // emitted without further interpretation.
                     _ => {
-                        text.push('$');
+                        text.push(b'$');
                         width += 1;
                         tail_is_event = false;
                         plain_next = true;
                         i += 1;
                     },
                 },
-                c => {
-                    // ffUtf8CharLenWidth's wcwidth: wide chars count 2,
-                    // combining/nonprintable count 0.
-                    text.push(c);
-                    width += crate::wcwidth::wcwidth(c as u32) as u32;
+                _ => {
+                    // ffUtf8CharLenWidth: wide chars count 2, combining and
+                    // nonprintable 0, and invalid bytes pass through at
+                    // width 1 — the raw bytes always reach the output.
+                    let (taken, char_width) = crate::wcwidth::decode_char(&line[i..]);
+                    text.extend_from_slice(&line[i..i + taken]);
+                    width += char_width;
                     tail_is_event = false;
-                    i += 1;
+                    i += taken;
                 },
             }
         }
@@ -304,11 +323,11 @@ pub fn parse_art(art: &str, colors: Option<&'static [&'static str]>, pipe: bool)
             segments.push(Segment { text, color: current });
         }
 
-        max_width = max_width.max(width as usize);
+        max_width = max_width.max(width);
         lines.push(segments);
     }
 
-    (lines, max_width)
+    (lines, max_width as usize)
 }
 
 /// ffLogoGetBuiltin: only entries whose first name shares the requested
@@ -476,7 +495,7 @@ fn palette_with_overrides(
 /// Builds a renderable logo from its entry's art.
 fn build(entry: &'static LogoEntry, pipe: bool, configured: PositionOpt, opts: &LogoOptions, instance: &Instance) -> Logo {
     let palette = palette_with_overrides(entry.colors, instance);
-    let (lines, art_width) = parse_art(builtin_art(entry), palette, pipe);
+    let (lines, art_width) = parse_art(builtin_art(entry).as_bytes(), palette, pipe);
     build_chars(lines, art_width, configured, opts)
 }
 
@@ -519,7 +538,7 @@ fn print_data(
     instance: &Instance,
 ) -> (Option<Logo>, LogoColors) {
     let palette = palette.and_then(|base| palette_with_overrides(base, instance));
-    let (lines, art_width) = parse_art(content, palette, pipe);
+    let (lines, art_width) = parse_art(content.as_bytes(), palette, pipe);
     (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected))
 }
 
@@ -726,11 +745,8 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
                 }
                 return fallback();
             };
-            let Ok(art) = String::from_utf8(content) else {
-                return fallback();
-            };
             let palette = palette_with_overrides(detected.colors, instance);
-            let (lines, art_width) = parse_art(&art, palette, pipe);
+            let (lines, art_width) = parse_art(&content, palette, pipe);
             return (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected));
         },
         Some(LogoTypeOpt::FileRaw) => {
@@ -743,10 +759,7 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
                 }
                 return fallback();
             };
-            let Ok(art) = String::from_utf8(content) else {
-                return fallback();
-            };
-            let (lines, art_width) = parse_art(&art, None, pipe);
+            let (lines, art_width) = parse_art(&content, None, pipe);
             return (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected));
         },
         Some(LogoTypeOpt::ImageRaw) => {
@@ -879,11 +892,8 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
         }
         if position == Position::Right && opts.width == 0 {
             maybe_image_attempt(source, pipe);
-            let Ok(art) = String::from_utf8(content) else {
-                return fallback();
-            };
             let palette = palette_with_overrides(detected.colors, instance);
-    let (lines, art_width) = parse_art(&art, palette, pipe);
+            let (lines, art_width) = parse_art(&content, palette, pipe);
             return (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected));
         }
         return (
@@ -902,15 +912,11 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
         );
     }
     maybe_image_attempt(source, pipe);
-    let Ok(art) = String::from_utf8(content) else {
-        // ff's cache build scans bytes; a text logo that is not UTF-8
-        // cannot round-trip through the segment parser.
-        return fallback();
-    };
     // File logos apply the detected distro's palette to their `$N` markers
-    // (logoPrintCustom's ffLogoApplyColors(logoGetBuiltinDetected(NORMAL))).
+    // (logoPrintCustom's ffLogoApplyColors(logoGetBuiltinDetected(NORMAL)));
+    // non-UTF-8 bytes ride through the segment parser untouched.
     let palette = palette_with_overrides(detected.colors, instance);
-    let (lines, art_width) = parse_art(&art, palette, pipe);
+    let (lines, art_width) = parse_art(&content, palette, pipe);
     (Some(build_chars(lines, art_width, configured, opts)), entry_colors(detected))
 }
 
@@ -984,7 +990,7 @@ fn load_spin(
     // measures the art, and its line cache is what puts the modules next
     // to the logo. `None` palette: the frame already carries its own SGR
     // sequences.
-    let (lines, art_width) = parse_art(&draw.ansi, None, pipe);
+    let (lines, art_width) = parse_art(draw.ansi.as_bytes(), None, pipe);
     (Some(build_chars(lines, art_width, configured, opts)), colors)
 }
 
@@ -998,7 +1004,7 @@ pub(crate) fn rebuild_spin_chars(
     opts: &LogoOptions,
     pipe: bool,
 ) -> Logo {
-    let (lines, art_width) = parse_art(ansi, None, pipe);
+    let (lines, art_width) = parse_art(ansi.as_bytes(), None, pipe);
     build_chars(lines, art_width, configured, opts)
 }
 
@@ -1041,14 +1047,18 @@ pub(crate) fn print_logos(opts: &LogoOptions) {
         } else {
             println!("\x1b[{}m{}:\x1b[0m", entry.colors[0], entry.names[0]);
         }
-        let (lines, art_width) = parse_art(builtin_art(entry), Some(entry.colors), pipe);
+        let (lines, art_width) = parse_art(builtin_art(entry).as_bytes(), Some(entry.colors), pipe);
         // ffLogoBuiltinPrint forces position top before each dump; the
         // parsed-so-far paddings and floors still apply to every cache.
         let logo = build_chars(lines, art_width, PositionOpt::Top, opts);
         let Logo::Chars { lines, pad_left, bare, .. } = &logo else { unreachable!() };
+        use std::io::Write;
+        let mut stdout = std::io::stdout().lock();
         for (line, _) in crate::render::colorize_cache(lines, !pipe, *pad_left, *bare) {
-            println!("{line}");
+            let _ = stdout.write_all(&line);
+            let _ = stdout.write_all(b"\n");
         }
+        let _ = stdout.flush();
     }
 }
 
@@ -1061,7 +1071,7 @@ mod tests {
     use super::*;
 
     fn seg_text(line: &[Segment]) -> String {
-        line.iter().map(|s| s.text.as_str()).collect()
+        String::from_utf8_lossy(&line.iter().flat_map(|s| s.text.iter().copied()).collect::<Vec<u8>>()).into_owned()
     }
 
     fn seg_codes(line: &[Segment]) -> Vec<&str> {
@@ -1074,7 +1084,7 @@ mod tests {
     #[test]
     fn parse_art_placeholder_and_carry() {
         let colors: &'static [&'static str] = &["31", "34"];
-        let (lines, width) = parse_art("  $1abc$2def\n  carried", Some(colors), false);
+        let (lines, width) = parse_art("  $1abc$2def\n  carried".as_bytes(), Some(colors), false);
         assert_eq!(lines.len(), 2);
         assert_eq!(seg_text(&lines[0]), "  abcdef");
         // text before the first placeholder carries colors[0], like
@@ -1088,7 +1098,7 @@ mod tests {
     #[test]
     fn parse_art_marker_ending_the_line_flushes_its_escape() {
         let colors: &'static [&'static str] = &["31", "34"];
-        let (lines, width) = parse_art("ab$2\ncd", Some(colors), false);
+        let (lines, width) = parse_art(b"ab$2\ncd", Some(colors), false);
         // the trailing `$2` still emits `\e[34m` before the reset, while
         // the next line re-emits it as the carried color
         assert_eq!(seg_codes(&lines[0]), ["31", "34"]);
@@ -1100,7 +1110,7 @@ mod tests {
     #[test]
     fn parse_art_zero_is_a_plain_dollar_and_missing_index_is_empty() {
         let colors: &'static [&'static str] = &["31"];
-        let (lines, _) = parse_art("$1a$0b$2c", Some(colors), false);
+        let (lines, _) = parse_art(b"$1a$0b$2c", Some(colors), false);
         // each marker starts a segment, even with empty text before it
         assert_eq!(seg_codes(&lines[0]), ["31", "31", ""]);
         assert_eq!(seg_text(&lines[0]), "a$0bc");
@@ -1109,7 +1119,7 @@ mod tests {
     #[test]
     fn parse_art_dollar_without_digit_is_literal() {
         let colors: &'static [&'static str] = &["31"];
-        let (lines, _) = parse_art("a$ b$1", Some(colors), false);
+        let (lines, _) = parse_art(b"a$ b$1", Some(colors), false);
         assert_eq!(seg_text(&lines[0]), "a$ b");
         assert_eq!(seg_codes(&lines[0]), ["31", "31"]);
     }
@@ -1117,7 +1127,7 @@ mod tests {
     #[test]
     fn parse_art_tab_widens_and_escape_carries_without_width() {
         let colors: &'static [&'static str] = &["36"];
-        let (lines, width) = parse_art("A\tB\n\x1b[31mBBB\nCCC", Some(colors), false);
+        let (lines, width) = parse_art(b"A\tB\n\x1b[31mBBB\nCCC", Some(colors), false);
         assert_eq!(seg_text(&lines[0]), "A    B");
         // the escape passes through, counts no width and carries to the
         // next lines
@@ -1130,7 +1140,7 @@ mod tests {
     #[test]
     fn parse_art_pipe_swallows_dollars_and_drops_the_seed() {
         let colors: &'static [&'static str] = &["31", "34"];
-        let (lines, width) = parse_art("ab$2cd$1", Some(colors), true);
+        let (lines, width) = parse_art(b"ab$2cd$1", Some(colors), true);
         assert_eq!(seg_text(&lines[0]), "abcd");
         assert_eq!(width, 4);
         // no carry seed in pipe mode: the line has no code segments

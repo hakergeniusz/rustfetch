@@ -26,7 +26,7 @@ pub(crate) fn colorize_cache(
     color: bool,
     pad_left: usize,
     bare: (usize, usize),
-) -> Vec<(String, usize)> {
+) -> Vec<(Vec<u8>, usize)> {
     let mut carry: Option<&SegmentColor> = None;
     let seed = lines
         .iter()
@@ -45,15 +45,16 @@ pub(crate) fn colorize_cache(
         .enumerate()
         .map(|(index, line)| {
             let bare_entry = index < bare.0 || index >= lines.len() - bare.1;
-            // The display width: wcwidth per char, not the char count
-            // (wide logo glyphs count 2, combining ones 0).
+            // The display width: wcwidth per decoded sequence, not the
+            // byte count (wide logo glyphs count 2, combining ones 0,
+            // invalid bytes 1).
             let content_width = line
                 .iter()
-                .map(|seg| seg.text.chars().map(|c| crate::wcwidth::wcwidth(c as u32) as usize).sum::<usize>())
+                .map(|seg| crate::wcwidth::utf8_bytes_width(&seg.text) as usize)
                 .sum::<usize>();
             let width = if bare_entry { 0 } else { pad_left + content_width };
             if width == 0 {
-                return (String::new(), 0);
+                return (Vec::new(), 0);
             }
             // The carry escape: the line's own first segment carries it —
             // emit the spaces after that escape and skip the duplicate.
@@ -62,45 +63,45 @@ pub(crate) fn colorize_cache(
             } else {
                 line.first().map(|seg| &seg.color)
             };
-            let mut out = String::new();
+            let mut out = Vec::new();
             if color {
-                out.push_str("\x1b[1m");
+                out.extend_from_slice(b"\x1b[1m");
             }
             let mut skip_first_escape = false;
             if let Some(carry_color) = carry_here {
                 match carry_color {
                     SegmentColor::Code(code) => {
-                        out.push_str("\x1b[");
-                        out.push_str(code);
-                        out.push('m');
+                        out.extend_from_slice(b"\x1b[");
+                        out.extend_from_slice(code.as_bytes());
+                        out.push(b'm');
                         skip_first_escape = true;
                     },
                     SegmentColor::Esc(bytes) => {
-                        out.push_str(bytes.as_str());
+                        out.extend_from_slice(bytes.as_bytes());
                         skip_first_escape = true;
                     },
                     SegmentColor::Pass => {},
                 }
             }
-            out.push_str(&" ".repeat(pad_left));
+            out.extend(std::iter::repeat_n(b' ', pad_left));
             for (position, seg) in line.iter().enumerate() {
                 if position == 0 && skip_first_escape {
-                    out.push_str(&seg.text);
+                    out.extend_from_slice(&seg.text);
                     continue;
                 }
                 match &seg.color {
                     SegmentColor::Code(code) => {
-                        out.push_str("\x1b[");
-                        out.push_str(code);
-                        out.push('m');
+                        out.extend_from_slice(b"\x1b[");
+                        out.extend_from_slice(code.as_bytes());
+                        out.push(b'm');
                     },
-                    SegmentColor::Esc(bytes) => out.push_str(bytes.as_str()),
+                    SegmentColor::Esc(bytes) => out.extend_from_slice(bytes.as_bytes()),
                     SegmentColor::Pass => {},
                 }
-                out.push_str(&seg.text);
+                out.extend_from_slice(&seg.text);
             }
             if color {
-                out.push_str("\x1b[m");
+                out.extend_from_slice(b"\x1b[m");
             }
             if let Some(last) = line.last()
                 && updates_carry(&last.color)
@@ -178,7 +179,7 @@ struct CharsLayout<'a> {
 /// for ffPrintLogoAndKey's ffLogoPrintLine + key sequence.
 fn emit_chars_row(
     out: &mut BufWriter<std::io::StdoutLock<'_>>,
-    logo_lines: &[(String, usize)],
+    logo_lines: &[(Vec<u8>, usize)],
     logo_index: &mut usize,
     layout: &CharsLayout<'_>,
     row: &Row,
@@ -192,23 +193,24 @@ fn emit_chars_row(
                 // key. Rows past the logo print nothing for the logo part.
                 if let Some((text, _)) = logo_lines.get(*logo_index) {
                     let _ = write!(out, "\x1b[9999999C\x1b[{}D", layout.right_offset);
-                    let _ = write!(out, "{text}");
+                    let _ = out.write_all(text);
                     let _ = write!(out, "\x1b[G");
                 }
             },
             _ => {
                 if let Some((text, width)) = logo_lines.get(*logo_index) {
-                    let _ = write!(out, "{text}");
-                    let _ = write!(
-                        out,
-                        "{:width$}",
-                        "",
-                        width = layout.key_column.saturating_sub(*width)
-                    );
+                    let _ = out.write_all(text);
+                    let pad = layout.key_column.saturating_sub(*width);
+                    if pad > 0 {
+                        let _ = out.write_all(&vec![b' '; pad]);
+                    }
                 } else if layout.position == Position::Left {
                     // Cache exhausted: the key column fills with spaces so
                     // the two-column alignment holds.
-                    let _ = write!(out, "{:width$}", "", width = layout.key_column);
+                    let pad = layout.key_column;
+                    if pad > 0 {
+                        let _ = out.write_all(&vec![b' '; pad]);
+                    }
                 }
             },
         }
@@ -481,7 +483,7 @@ pub fn print(
             // assembled the full cache (paddingTop front, art, height-fill
             // back) and floored the width, so both the TOP dump and the
             // LEFT/RIGHT line pairing draw from one cache.
-            let mut logo_lines: Vec<(String, usize)> = match lines {
+            let mut logo_lines: Vec<(Vec<u8>, usize)> = match lines {
                 Some(lines) => colorize_cache(lines, color, pad_left, bare),
                 None => Vec::new(),
             };
@@ -501,7 +503,7 @@ pub fn print(
                     }
                     let mut dump = Vec::new();
                     for (text, _) in &logo_lines {
-                        dump.extend_from_slice(text.as_bytes());
+                        dump.extend_from_slice(text);
                         dump.push(b'\n');
                     }
                     // paddingBottom newlines close the dump, in the same
@@ -530,7 +532,7 @@ pub fn print(
                         };
                         let mut dump = Vec::new();
                         for (text, _) in colorize_cache(&new_lines, color, pad_left, bare) {
-                            dump.extend_from_slice(text.as_bytes());
+                            dump.extend_from_slice(&text);
                             dump.push(b'\n');
                         }
                         dump.extend(std::iter::repeat_n(b'\n', opts.padding_bottom as usize));
@@ -653,7 +655,7 @@ pub fn print(
                             if position == Position::Right {
                                 let _ = write!(out, "\x1b[9999999C\x1b[{}D", layout.right_offset);
                             }
-                            let _ = write!(out, "{text}");
+                            let _ = out.write_all(text);
                             let _ = writeln!(out);
                             logo_index += 1;
                         }
