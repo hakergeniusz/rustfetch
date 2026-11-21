@@ -60,7 +60,9 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
     // bios.c maps an ignCase "BIOS" type to "Legacy" (empty would be
     // "Unknown"; the detection here always yields UEFI or BIOS) and always
-    // interpolates: "%s (%s)".
+    // interpolates: "%s (%s)". The mapping happens in the key branch,
+    // before FF_PRINT_FORMAT_CHECKED, so the custom-format `type` argument
+    // reads the same mapped value.
     let bios_type = if bios.firmware_type.eq_ignore_ascii_case("BIOS") {
         "Legacy"
     } else {
@@ -68,17 +70,32 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     };
     let key = format!("{} ({bios_type})", instance.display_name("bios"));
 
-    let mut value = bios.version;
-    let release = if bios.release.is_empty() {
-        bios.date.clone()
-    } else {
-        bios.release.clone()
-    };
-    if !release.is_empty() {
-        value.push_str(&format!(" ({release})"));
-    }
+    let Some(format) = crate::modules::entry_format(instance.entry) else {
+        let mut value = bios.version;
+        let release = if bios.release.is_empty() {
+            bios.date.clone()
+        } else {
+            bios.release.clone()
+        };
+        if !release.is_empty() {
+            value.push_str(&format!(" ({release})"));
+        }
 
-    vec![Row::new(&key, value)]
+        return vec![Row::new(&key, value)];
+    };
+
+    // Upstream FF_PRINT_FORMAT_CHECKED passes the five bios strbufs as
+    // FF_ARG_TYPE_STRBUF values: date, release, vendor, version and the
+    // mapped type above.
+    let args = [
+        crate::format_args::FormatArg { name: "date", value: crate::format_args::ArgValue::Str(&bios.date) },
+        crate::format_args::FormatArg { name: "release", value: crate::format_args::ArgValue::Str(&bios.release) },
+        crate::format_args::FormatArg { name: "vendor", value: crate::format_args::ArgValue::Str(&bios.vendor) },
+        crate::format_args::FormatArg { name: "version", value: crate::format_args::ArgValue::Str(&bios.version) },
+        crate::format_args::FormatArg { name: "type", value: crate::format_args::ArgValue::Str(bios_type) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(&key, rendered)]
 }
 
 /// ffGenerateBiosJsonResult.
