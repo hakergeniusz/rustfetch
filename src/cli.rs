@@ -125,6 +125,12 @@ pub struct Cli {
     pub format_json: bool,
     /// `--player-name <str>`: the media module's explicit MPRIS bus.
     pub player_name: Option<String>,
+    /// `--disable-linewrap <?bool>`: `\e[?7l` before output, `\e[?7h` at
+    /// the end; both pipe-disabled.
+    pub disable_linewrap: Option<bool>,
+    /// `--hide-cursor <?bool>`: `\e[?25l` before output, `\e[?25h` at the
+    /// end; both pipe-disabled.
+    pub hide_cursor: Option<bool>,
     /// The config document loaded during the command pass: upstream
     /// processes `-c` before the option pass, so its errors (413/414)
     /// fire in argv order ahead of unknown-option errors.
@@ -170,6 +176,8 @@ impl Cli {
             show_errors: None,
             stat: None,
             player_name: None,
+            disable_linewrap: None,
+            hide_cursor: None,
             pipe: None,
             watch_interval: 0,
             format_json: false,
@@ -506,6 +514,12 @@ impl Cli {
                 },
                 "--player-name" => {
                     cli.player_name = Some(parse_string(key, value));
+                },
+                "--disable-linewrap" => {
+                    cli.disable_linewrap = Some(parse_boolean(value));
+                },
+                "--hide-cursor" => {
+                    cli.hide_cursor = Some(parse_boolean(value));
                 },
                 "--stat" => {
                     // A truthy value or a full strtoul number times the

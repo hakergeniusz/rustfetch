@@ -141,6 +141,8 @@ mod tests {
                 show_errors: None,
                 stat: None,
                 player_name: None,
+                disable_linewrap: None,
+                hide_cursor: None,
                 pipe: None,
                 watch_interval: 0,
                 format_json: false,
@@ -151,6 +153,8 @@ mod tests {
             false,
             -1,
             String::new(),
+            false,
+            false,
             crate::logo::LogoOptions::default(),
             &[],
         )

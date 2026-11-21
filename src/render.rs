@@ -295,34 +295,47 @@ pub fn print(
     let key_color = instance.logo_colors.get().and_then(|colors| colors.key);
     let opts = &instance.logo_options;
 
-    // ffStart: the buffered reset; watch mode additionally enables the
-    // alternate screen buffer, homes the cursor and flushes before any
-    // logo output. The image printers flush these ahead of their raw
-    // dumps instead (upstream's fflush; a .raw file keeps the reset
-    // buffered behind the dump — observable wire order).
+    // ffStart (init.c:111): the buffered reset, then the pipe-disabled
+    // cursor/linewrap toggles; watch mode additionally enables the
+    // alternate screen buffer, homes the cursor and flushes. Built once —
+    // ffStart runs a single time per process. The image printers flush
+    // all of it ahead of their raw dumps instead (upstream's fflush; a
+    // .raw file keeps the reset buffered behind the dump — observable
+    // wire order).
     let flushes_start = matches!(logo.as_ref(), Some(Logo::Raw { flush_start: true, .. }));
-    if color && !instance.ff_started.get() && !flushes_start {
-        let _ = write!(out, "\x1b[m");
+    let mut start_bytes = Vec::new();
+    if color {
+        start_bytes.extend_from_slice(b"\x1b[m");
     }
-    if watch.is_some() && !instance.ff_started.get() && !flushes_start {
-        let _ = write!(out, "\x1b[?1049h\x1b[H");
-        let _ = out.flush();
+    if instance.hide_cursor {
+        start_bytes.extend_from_slice(b"\x1b[?25l");
+    }
+    if instance.disable_linewrap {
+        start_bytes.extend_from_slice(b"\x1b[?7l");
+    }
+    if watch.is_some() {
+        start_bytes.extend_from_slice(b"\x1b[?1049h\x1b[H");
+    }
+    if flushes_start {
+        instance.ff_started.set(false);
+    } else if !instance.ff_started.get() {
+        let _ = out.write_all(&start_bytes);
+        if watch.is_some() {
+            let _ = out.flush();
+        }
+        instance.ff_started.set(true);
     }
 
     match logo.as_ref() {
         Some(Logo::Raw { content, position, static_layout, cpr, flush_start }) => {
             let (mut logo_width, mut logo_height) = (0usize, 0usize);
-            // ffStart's reset (+ the watch alternate screen) goes on the
-            // wire ahead of the dump for the image printers only; a .raw
-            // file leaves it buffered behind (upstream has no fflush).
+            // ffStart's reset (+ the toggles and the watch alternate
+            // screen) goes on the wire ahead of the dump for the image
+            // printers only; a .raw file leaves it buffered behind
+            // (upstream has no fflush).
             let mut ff_start = Vec::new();
             if *flush_start && !instance.ff_started.get() {
-                if color {
-                    ff_start.extend_from_slice(b"\x1b[m");
-                }
-                if watch.is_some() {
-                    ff_start.extend_from_slice(b"\x1b[?1049h\x1b[H");
-                }
+                ff_start = start_bytes.clone();
                 instance.ff_started.set(true);
             }
             match static_layout {
@@ -686,6 +699,19 @@ pub fn print(
             }
             }
         },
+    }
+    // resetConsole (ffFinish, init.c:81): the matching restores of the
+    // toggles, linewrap first, then the watch alternate screen. JSON mode
+    // never reaches it — fastfetch.c only calls ffFinish outside the
+    // resultDoc branch.
+    if instance.disable_linewrap {
+        let _ = write!(out, "\x1b[?7h");
+    }
+    if instance.hide_cursor {
+        let _ = write!(out, "\x1b[?25h");
+    }
+    if watch.is_some() {
+        let _ = write!(out, "\x1b[?1049l");
     }
     let _ = out.flush();
 }

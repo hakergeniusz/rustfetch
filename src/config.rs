@@ -62,6 +62,10 @@ pub struct Config {
     pub spin_angle: Option<f32>,
     /// `display.showErrors`, implied by a truthy `display.stat`.
     pub show_errors: bool,
+    /// `display.disableLinewrap` / `display.hideCursor`: the terminal
+    /// escape toggles, pipe-disabled. None when the key is absent.
+    pub disable_linewrap: Option<bool>,
+    pub hide_cursor: Option<bool>,
     /// `display.stat`: the per-module timing threshold — 0 plain, a
     /// positive number colored green/yellow/red, -1 unset. None when the
     /// key is absent.
@@ -103,6 +107,8 @@ impl Config {
             spin_tilt: None,
             spin_angle: None,
             show_errors: false,
+            disable_linewrap: None,
+            hide_cursor: None,
             stat: None,
             pipe: false,
             player_name: String::new(),
@@ -677,10 +683,12 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
                     "display.stat must be a boolean or a positive integer",
                 ),
             },
+            "disableLinewrap" => config.disable_linewrap = Some(value.as_bool().unwrap_or(false)),
+            "hideCursor" => config.hide_cursor = Some(value.as_bool().unwrap_or(false)),
             // yyjson_get_bool accepts any value type; non-bools read as false.
             "pipe" => config.pipe = value.as_bool().unwrap_or(false),
             "showErrors" => config.show_errors = value.as_bool().unwrap_or(false),
-            "disableLinewrap" | "hideCursor" | "brightColor" | "noBuffer" => {},
+            "brightColor" | "noBuffer" => {},
             "separator" | "color" | "key" | "constants" => {},
             "duration" | "size" | "temp" | "percent" | "bar" | "fraction" | "freq" | "common" => {
                 if !value.is_object() {

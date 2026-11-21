@@ -72,6 +72,11 @@ pub struct Instance {
     /// ffStart's reset already went out (the image printers flush it
     /// ahead of their raw dumps); the renderer skips its own.
     pub ff_started: Cell<bool>,
+    /// display.disableLinewrap / display.hideCursor, pipe-disabled
+    /// (ffStart's globals): `\e[?7l`/`\e[?25l` before output and the
+    /// matching restore at ffFinish.
+    pub disable_linewrap: bool,
+    pub hide_cursor: bool,
     /// Memoized GSettings/dconf reads per (schema, key), filled lazily by the
     /// GTK modules. A Mutex because modules run in parallel threads.
     pub gnome_settings: Mutex<HashMap<String, Option<String>>>,
@@ -98,6 +103,8 @@ impl Clone for Instance {
             spin: std::cell::RefCell::new(None),
             entry: self.entry,
             ff_started: Cell::new(self.ff_started.get()),
+            disable_linewrap: self.disable_linewrap,
+            hide_cursor: self.hide_cursor,
             player_name: self.player_name.clone(),
             title_fqdn: Cell::new(self.title_fqdn.get()),
             gnome_settings: Mutex::new(self.gnome_settings.lock().unwrap_or_else(|e| e.into_inner()).clone()),
@@ -106,12 +113,15 @@ impl Clone for Instance {
 }
 
 impl Instance {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         cli: &Cli,
         config_pipe: bool,
         show_errors: bool,
         stat: i32,
         player_name: String,
+        disable_linewrap: bool,
+        hide_cursor: bool,
         logo_options: crate::logo::LogoOptions,
         logo_color_overrides: &'static [(usize, &'static str)],
     ) -> Self {
@@ -125,6 +135,7 @@ impl Instance {
             } else {
                 !std::io::stdout().is_terminal() || std::env::var_os("NO_COLOR").is_some()
             });
+
         let color = !pipe && !cli.format_json;
 
         let mut distro_id = None;
@@ -160,6 +171,11 @@ impl Instance {
             entry: None,
             title_fqdn: Cell::new(false),
             player_name,
+            // ffStart's globals (init.c:112): both toggles are computed
+            // pipe-disabled, gating the ffStart prefixes and the ffFinish
+            // restores alike.
+            disable_linewrap: disable_linewrap && !pipe,
+            hide_cursor: hide_cursor && !pipe,
             ff_started: Cell::new(false),
             gnome_settings: Mutex::new(HashMap::new()),
             logo_colors: OnceLock::new(),

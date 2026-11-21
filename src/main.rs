@@ -25,14 +25,33 @@ mod tty;
 mod util;
 
 /// init.c's resetConsole through the exitSignalHandler: SIGINT/SIGTERM/
-/// SIGQUIT restore the console and exit(0). The alternate screen buffer
-/// is the only state the port leaves behind, and only watch mode enters
-/// it (the hide-cursor escape is not ported).
+/// SIGQUIT restore the console and exit(0) — the linewrap/cursor toggles
+/// and the alternate screen buffer are the only state to undo. The flags
+/// mirror ffStart's pipe-disabled globals; watch mode additionally enters
+/// the alternate buffer.
 static WATCH_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static LINEWRAP_RESTORE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static CURSOR_RESTORE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 extern "C" fn exit_signal_handler(_signal: libc::c_int) {
+    const RESTORE_LINEWRAP: &[u8] = b"\x1b[?7h";
+    const RESTORE_CURSOR: &[u8] = b"\x1b[?25h";
     const LEAVE_ALT_BUFFER: &[u8] = b"\x1b[?1049l";
     unsafe {
+        if LINEWRAP_RESTORE.load(std::sync::atomic::Ordering::Relaxed) {
+            libc::write(
+                libc::STDOUT_FILENO,
+                RESTORE_LINEWRAP.as_ptr().cast(),
+                RESTORE_LINEWRAP.len(),
+            );
+        }
+        if CURSOR_RESTORE.load(std::sync::atomic::Ordering::Relaxed) {
+            libc::write(
+                libc::STDOUT_FILENO,
+                RESTORE_CURSOR.as_ptr().cast(),
+                RESTORE_CURSOR.len(),
+            );
+        }
         if WATCH_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
             libc::write(
                 libc::STDOUT_FILENO,
@@ -160,17 +179,42 @@ fn main() {
         .clone()
         .or_else(|| cfg.map(|config| config.player_name.clone()))
         .unwrap_or_default();
+    let disable_linewrap = cli
+        .disable_linewrap
+        .or(cfg.and_then(|config| config.disable_linewrap))
+        .unwrap_or(false);
+    let hide_cursor = cli
+        .hide_cursor
+        .or(cfg.and_then(|config| config.hide_cursor))
+        .unwrap_or(false);
     let instance = instance::Instance::new(
         &cli,
         config.as_ref().is_some_and(|config| config.pipe),
         show_errors,
         stat,
         player_name,
+        disable_linewrap,
+        hide_cursor,
         logo_options,
         logo_color_overrides.leak(),
     );
+    // The signal handler's resetConsole mirrors the pipe-disabled globals.
+    LINEWRAP_RESTORE.store(instance.disable_linewrap, std::sync::atomic::Ordering::Relaxed);
+    CURSOR_RESTORE.store(instance.hide_cursor, std::sync::atomic::Ordering::Relaxed);
 
     if cli.format_json {
+        // ffStart runs ahead of the JSON document too (fastfetch.c:801):
+        // the reset and the pipe-disabled toggles go out first, while
+        // ffFinish never does (the resultDoc branch skips it).
+        if !instance.pipe {
+            print!("\x1b[m");
+        }
+        if instance.hide_cursor {
+            print!("\x1b[?25l");
+        }
+        if instance.disable_linewrap {
+            print!("\x1b[?7l");
+        }
         let items = modules::collect_json(&structure_modules, structure_given, config.as_ref(), &instance);
         render::print_json(&items);
         return;
