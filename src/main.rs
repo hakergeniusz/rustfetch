@@ -18,6 +18,7 @@ mod platform;
 mod render;
 mod settings;
 mod smbios;
+mod image;
 mod spin;
 mod wcwidth;
 mod tty;
@@ -118,6 +119,10 @@ fn main() {
         padding_right: cli.logo_padding_right.or(cfg.and_then(|config| config.padding_right)).unwrap_or(4),
         width: cli.logo_width.or(cfg.and_then(|config| config.logo_width)).unwrap_or(0),
         height: cli.logo_height.or(cfg.and_then(|config| config.logo_height)).unwrap_or(0),
+        preserve_aspect_ratio: cli
+            .logo_preserve_aspect_ratio
+            .or(cfg.and_then(|config| config.preserve_aspect_ratio))
+            .unwrap_or(false),
         print_remaining: cli.logo_print_remaining.or(cfg.and_then(|config| config.logo_print_remaining)).unwrap_or(true),
         spin_speed_per_frame: 0.0,
         spin_speed_per_round: 0.0,

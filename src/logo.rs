@@ -94,6 +94,15 @@ pub enum Logo {
         /// logoWidth/logoHeight the rows align against; None runs the
         /// cursor-query path instead.
         static_layout: Option<(Vec<u8>, Vec<u8>, usize, usize)>,
+        /// The image printers' cursor-query differences: the failure
+        /// message's name and printError gate (iterm's is ungated
+        /// upstream), and the bytes written after a successful query.
+        /// None is the .raw file logo's own behavior.
+        cpr: Option<crate::image::ImageCpr>,
+        /// The image printers flush ffStart's reset ahead of their dump
+        /// (upstream's fflush); a .raw file keeps it buffered behind the
+        /// dump — the wire order differs and is observable.
+        flush_start: bool,
     },
 }
 
@@ -109,6 +118,9 @@ pub struct LogoOptions {
     pub padding_right: u32,
     pub width: u32,
     pub height: u32,
+    /// --logo-preserve-aspect-ratio / config logo.preserveAspectRatio,
+    /// read by the iterm image printer's payload.
+    pub preserve_aspect_ratio: bool,
     pub print_remaining: bool,
     pub spin_speed_per_frame: f32,
     pub spin_speed_per_round: f32,
@@ -147,6 +159,7 @@ impl Default for LogoOptions {
             padding_right: 4,
             width: 0,
             height: 0,
+            preserve_aspect_ratio: false,
             print_remaining: true,
             spin_speed_per_frame: 0.0,
             spin_speed_per_round: 0.0,
@@ -549,6 +562,33 @@ fn update_logo_path(source: &str, _instance: &Instance) -> Option<Vec<u8>> {
     None
 }
 
+/// updateLogoPath's path resolution without the read: the direct file,
+/// "-" (stdin, not a file — the image ladder rejects it), or the first
+/// wordexp/dataDirs match. media-cover stays unresolvable.
+fn resolve_logo_path(source: &str, _instance: &Instance) -> Option<String> {
+    if source == "-" {
+        return Some(source.to_string());
+    }
+    if source == "media-cover" {
+        return None;
+    }
+    if std::path::Path::new(source).is_file() {
+        return Some(source.to_string());
+    }
+    if let Some(path) = wordexp_first(source)
+        && std::path::Path::new(&path).is_file()
+    {
+        return Some(path);
+    }
+    for dir in crate::config::data_dirs() {
+        let candidate = format!("{dir}fastfetch/logos/{source}");
+        if std::path::Path::new(&candidate).is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 /// The first wordexp expansion of the source, like ffPathExpandEnv's
 /// wordexp(in, &exp, 0) without upstream's random pick among matches.
 fn wordexp_first(source: &str) -> Option<String> {
@@ -681,6 +721,9 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
         },
         Some(LogoTypeOpt::File) => {
             let Some(content) = update_logo_path(source, instance) else {
+                if instance.show_errors {
+                    eprintln!("Logo: Failed to resolve logo source: {source}");
+                }
                 return fallback();
             };
             let Ok(art) = String::from_utf8(content) else {
@@ -695,6 +738,9 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
             // the bytes still go through the chars pipeline — FILE_RAW's
             // "raw" means unprocessed palette, not unprocessed bytes.
             let Some(content) = update_logo_path(source, instance) else {
+                if instance.show_errors {
+                    eprintln!("Logo: Failed to resolve logo source: {source}");
+                }
                 return fallback();
             };
             let Ok(art) = String::from_utf8(content) else {
@@ -705,6 +751,9 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
         },
         Some(LogoTypeOpt::ImageRaw) => {
             let Some(content) = update_logo_path(source, instance) else {
+                if instance.show_errors {
+                    eprintln!("Logo: Failed to resolve logo source: {source}");
+                }
                 return fallback();
             };
             maybe_image_attempt(source, pipe);
@@ -717,6 +766,12 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
                         opts.width + opts.padding_left + opts.padding_right,
                     ),
                     static_layout: None,
+                    cpr: Some(crate::image::ImageCpr {
+                        who: "(image-raw)",
+                        gated: true,
+                        trailing: "\x1b[H",
+                    }),
+                    flush_start: false,
                 }),
                 entry_colors(detected),
             );
@@ -729,11 +784,28 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
             | LogoTypeOpt::ImageIterm
             | LogoTypeOpt::ImageChafa),
         ) => {
-            // The image attempt costs the sizing probe, then the load fails
-            // without image support and the caller falls back to detected.
-            let _ = kind;
-            maybe_image_attempt(source, pipe);
-            return fallback();
+            // logoTryKnownType resolves the path first; the image ladder
+            // then fast-fails (pipe, missing source, TERM=screen) or runs
+            // one of the pixel-free printers. Without the image payload
+            // encoders, sixel/kitty/chafa report the upstream build errors.
+            let Some(resolved) = resolve_logo_path(source, instance) else {
+                if instance.show_errors {
+                    eprintln!("Logo: Failed to resolve logo source: {source}");
+                }
+                return fallback();
+            };
+            let kind = match kind {
+                LogoTypeOpt::ImageSixel => crate::image::ImageKind::Sixel,
+                LogoTypeOpt::ImageKitty => crate::image::ImageKind::Kitty,
+                LogoTypeOpt::ImageKittyDirect => crate::image::ImageKind::KittyDirect,
+                LogoTypeOpt::ImageKittyIcat => crate::image::ImageKind::KittyIcat,
+                LogoTypeOpt::ImageIterm => crate::image::ImageKind::Iterm,
+                _ => crate::image::ImageKind::Chafa,
+            };
+            return match crate::image::print_image(kind, &resolved, configured, opts, instance) {
+                Some(logo) => (Some(logo), entry_colors(detected)),
+                None => fallback(),
+            };
         },
         Some(LogoTypeOpt::Spin) => {
             return load_spin(Some(source), configured, opts, instance, cli, detected);
@@ -799,6 +871,8 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
                     content,
                     position,
                     static_layout: Some((prefix, suffix, logo_width, logo_height)),
+                    cpr: None,
+                    flush_start: false,
                 }),
                 entry_colors(detected),
             );
@@ -817,6 +891,12 @@ pub fn load(cli: &Cli, config: Option<&crate::config::Config>, instance: &Instan
                 content,
                 position,
                 static_layout: None,
+                cpr: Some(crate::image::ImageCpr {
+                    who: "(image-raw)",
+                    gated: true,
+                    trailing: "\x1b[H",
+                }),
+                flush_start: false,
             }),
             entry_colors(detected),
         );

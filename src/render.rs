@@ -295,23 +295,41 @@ pub fn print(
 
     // ffStart: the buffered reset; watch mode additionally enables the
     // alternate screen buffer, homes the cursor and flushes before any
-    // logo output.
-    if color {
+    // logo output. The image printers flush these ahead of their raw
+    // dumps instead (upstream's fflush; a .raw file keeps the reset
+    // buffered behind the dump — observable wire order).
+    let flushes_start = matches!(logo.as_ref(), Some(Logo::Raw { flush_start: true, .. }));
+    if color && !instance.ff_started.get() && !flushes_start {
         let _ = write!(out, "\x1b[m");
     }
-    if watch.is_some() {
+    if watch.is_some() && !instance.ff_started.get() && !flushes_start {
         let _ = write!(out, "\x1b[?1049h\x1b[H");
         let _ = out.flush();
     }
 
     match logo.as_ref() {
-        Some(Logo::Raw { content, position, static_layout }) => {
+        Some(Logo::Raw { content, position, static_layout, cpr, flush_start }) => {
             let (mut logo_width, mut logo_height) = (0usize, 0usize);
+            // ffStart's reset (+ the watch alternate screen) goes on the
+            // wire ahead of the dump for the image printers only; a .raw
+            // file leaves it buffered behind (upstream has no fflush).
+            let mut ff_start = Vec::new();
+            if *flush_start && !instance.ff_started.get() {
+                if color {
+                    ff_start.extend_from_slice(b"\x1b[m");
+                }
+                if watch.is_some() {
+                    ff_start.extend_from_slice(b"\x1b[?1049h\x1b[H");
+                }
+                instance.ff_started.set(true);
+            }
             match static_layout {
                 Some((prefix, suffix, width, height)) => {
                     // The width+height static path: no clear, no cursor
-                    // query; prefix + bytes + suffix go out as one write.
-                    let mut dump = prefix.clone();
+                    // query; ffStart + prefix + bytes + suffix go out as one
+                    // write.
+                    let mut dump = ff_start.clone();
+                    dump.extend_from_slice(prefix);
                     dump.extend_from_slice(content);
                     dump.extend_from_slice(suffix);
                     unsafe {
@@ -325,7 +343,7 @@ pub fn print(
                     // and paddingLeft spaces, then the bytes unprocessed;
                     // logoWidth/logoHeight stay zero and paddingRight
                     // newlines follow on the buffered stdout.
-                    let mut dump = Vec::new();
+                    let mut dump = ff_start.clone();
                     dump.extend(std::iter::repeat_n(b'\n', opts.padding_top as usize));
                     dump.extend(std::iter::repeat_n(b' ', opts.padding_left as usize));
                     dump.extend_from_slice(content);
@@ -353,37 +371,50 @@ pub fn print(
                     }
                     .into_bytes();
                     dump.extend_from_slice(content);
-                    // One raw write to fd 1: the buffered ffStart reset must
-                    // not be flushed ahead of it, and the query below writes
-                    // to /dev/tty.
+                    // One raw write to fd 1: ffStart's reset goes ahead of
+                    // it (upstream's image printers fflush first), and the
+                    // query below writes to /dev/tty.
+                    let mut with_start = ff_start.clone();
+                    with_start.extend_from_slice(&dump);
                     unsafe {
-                        libc::write(libc::STDOUT_FILENO, dump.as_ptr().cast(), dump.len());
+                        libc::write(libc::STDOUT_FILENO, with_start.as_ptr().cast(), with_start.len());
                     }
                     // The cursor query learns where the dump ended: X (raised
                     // to width+paddingLeft, both unparsed) gives the key
-                    // column, Y the logo height. On failure upstream leaves
-                    // both at zero — no \e[H — and reports the query error
-                    // whenever printError is set, which it always is for .raw
-                    // files. On failure upstream reports "\nLogo (image-raw):
-                    // fail to query cursor position: <error>" only when
-                    // display.showErrors is set, which this port does not
-                    // implement: the message stays hidden and the width/
-                    // height stay zero (no \e[H).
-                    if let Ok((y, x)) = crate::tty::response_with(b"\x1b[6n", crate::tty::parse_cpr) {
-                        let mut x = x as usize;
-                        // The width option raises X when the dump ends left
-                        // of the configured key column; the key column is
-                        // learned only for LEFT — RIGHT leaves logoWidth at
-                        // zero so the rows print at column 0.
-                        if *position == Position::Left {
-                            let want = opts.width as usize + opts.padding_left as usize;
-                            if want > x {
-                                x = want;
+                    // column, Y the logo height. On failure both stay at
+                    // zero — no trailing move — and the query error prints
+                    // per the printer's gate (the .raw message is gated;
+                    // iterm's is not, upstream).
+                    let Some(cpr) = cpr else {
+                        return;
+                    };
+                    match crate::tty::response_with(b"\x1b[6n", crate::tty::parse_cpr) {
+                        Ok((y, x)) => {
+                            let mut x = x as usize;
+                            // The width option raises X when the dump ends
+                            // left of the configured key column; the key
+                            // column is learned only for LEFT — RIGHT leaves
+                            // logoWidth at zero so the rows print at
+                            // column 0.
+                            if *position == Position::Left {
+                                let want = opts.width as usize + opts.padding_left as usize;
+                                if want > x {
+                                    x = want;
+                                }
+                                logo_width = x + opts.padding_right as usize - 1;
                             }
-                            logo_width = x + opts.padding_right as usize - 1;
-                        }
-                        logo_height = y as usize;
-                        let _ = write!(out, "\x1b[H");
+                            logo_height = y as usize;
+                            let _ = write!(out, "{}", cpr.trailing);
+                        },
+                        Err(error) => {
+                            // The message is gated per printer (iterm's is
+                            // ungated upstream); the rows still print with
+                            // the key column at zero.
+                            if !cpr.gated || instance.show_errors {
+                                let _ = out.flush();
+                                eprintln!("\nLogo {}: fail to query cursor position: {error}", cpr.who);
+                            }
+                        },
                     }
                 },
             }

@@ -137,8 +137,10 @@ mod tests {
                 logo_spin_speed_per_round: None,
                 logo_spin_tilt: None,
                 logo_spin_angle: None,
+                logo_preserve_aspect_ratio: None,
                 show_errors: None,
                 stat: None,
+                player_name: None,
                 pipe: None,
                 watch_interval: 0,
                 format_json: false,
@@ -148,6 +150,7 @@ mod tests {
             false,
             false,
             -1,
+            String::new(),
             crate::logo::LogoOptions::default(),
             &[],
         )

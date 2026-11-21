@@ -72,6 +72,9 @@ pub struct Cli {
     /// `--logo-width` / `--logo-height`: floors on the parsed art size
     /// (ffOptionParseUInt32, 0 leaves the option unset).
     pub logo_width: Option<u32>,
+    /// `--logo-preserve-aspect-ratio <?bool>`: the iterm image payload's
+    /// preserveAspectRatio flag.
+    pub logo_preserve_aspect_ratio: Option<bool>,
     pub logo_height: Option<u32>,
     /// `--logo-padding` sets both horizontal paddings; the four sided
     /// flags set one each. The vertical pair feeds the cache build, the
@@ -150,6 +153,7 @@ impl Cli {
             logo_source: None,
             logo_position: None,
             logo_width: None,
+            logo_preserve_aspect_ratio: None,
             logo_height: None,
             logo_padding_top: None,
             logo_padding_bottom: None,
@@ -482,7 +486,7 @@ impl Cli {
                     std::process::exit(477);
                 },
                 "--logo-preserve-aspect-ratio" => {
-                    parse_boolean(value);
+                    cli.logo_preserve_aspect_ratio = Some(parse_boolean(value));
                 },
                 "--logo-animation-frame" => cli.logo_animation_frame = Some(parse_int32(key, value)),
                 "--logo-spin-speed-per-frame" => {

@@ -69,6 +69,9 @@ pub struct Instance {
     /// general.playerName: the media module's explicit MPRIS bus, CLI
     /// `--player-name` over the config value.
     pub player_name: String,
+    /// ffStart's reset already went out (the image printers flush it
+    /// ahead of their raw dumps); the renderer skips its own.
+    pub ff_started: Cell<bool>,
     /// Memoized GSettings/dconf reads per (schema, key), filled lazily by the
     /// GTK modules. A Mutex because modules run in parallel threads.
     pub gnome_settings: Mutex<HashMap<String, Option<String>>>,
@@ -94,6 +97,7 @@ impl Clone for Instance {
             // none.
             spin: std::cell::RefCell::new(None),
             entry: self.entry,
+            ff_started: Cell::new(self.ff_started.get()),
             player_name: self.player_name.clone(),
             title_fqdn: Cell::new(self.title_fqdn.get()),
             gnome_settings: Mutex::new(self.gnome_settings.lock().unwrap_or_else(|e| e.into_inner()).clone()),
@@ -156,6 +160,7 @@ impl Instance {
             entry: None,
             title_fqdn: Cell::new(false),
             player_name,
+            ff_started: Cell::new(false),
             gnome_settings: Mutex::new(HashMap::new()),
             logo_colors: OnceLock::new(),
         }

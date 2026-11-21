@@ -40,6 +40,8 @@ pub struct Config {
     /// `logo.width` / `logo.height`: the art size floors; null resets to
     /// zero, anything that does not read as a positive integer errors.
     pub logo_width: Option<u32>,
+    /// `logo.preserveAspectRatio` (yyjson_get_bool: non-bools read false).
+    pub preserve_aspect_ratio: Option<bool>,
     pub logo_height: Option<u32>,
     /// `logo.printRemaining` (yyjson_get_bool: only JSON true reads as
     /// true).
@@ -90,6 +92,7 @@ impl Config {
             padding_left: None,
             padding_right: None,
             logo_width: None,
+            preserve_aspect_ratio: None,
             logo_height: None,
             logo_print_remaining: None,
             logo_type: None,
@@ -579,7 +582,11 @@ fn apply_logo(root: &jsonc::Value, config: &mut Config) {
                     }
                 }
             },
-            "preserveAspectRatio" | "cache" | "recache" | "animationFrame" => {
+            "preserveAspectRatio" => {
+                // yyjson_get_bool: any non-bool reads false.
+                config.preserve_aspect_ratio = Some(value.as_bool().unwrap_or(false));
+            },
+            "cache" | "recache" | "animationFrame" => {
                 // accepted; rendering support grows with the logo rounds
             },
             "padding" => {
