@@ -6,8 +6,6 @@
 //! showErrors-gated rows printed ahead of the separator, like upstream's
 //! ffPrintError calls during ffParseSeparatorJsonObject.
 
-use std::cell::Cell;
-
 use crate::{
     instance::Instance,
     modules::Row,
