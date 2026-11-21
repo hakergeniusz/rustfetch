@@ -87,7 +87,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             let key = if index == 0 {
                 "Gamepad".to_string()
             } else {
-                format!("Gamepad {index}")
+                format!("{} {index}", instance.display_name("gamepad"))
             };
 
             let mut value = device.name.clone();

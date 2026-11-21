@@ -208,7 +208,7 @@ fn detect() -> Option<Vec<User>> {
     Some(users)
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Some(users) = detect() else {
         return Vec::new();
     };
@@ -225,7 +225,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             let key = if index == 0 {
                 "Users".to_string()
             } else {
-                format!("Users {index}")
+                format!("{} {index}", instance.display_name("users"))
             };
             let mut value = user.name.clone();
             if !user.host.is_empty() {

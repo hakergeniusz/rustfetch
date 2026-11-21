@@ -146,6 +146,10 @@ pub struct Cli {
     pub key_padding_left: Option<u16>,
     /// `--key-type`: display.keyType (FF_MODULE_KEY_TYPE bits).
     pub key_type: Option<u8>,
+    /// `--key-language`: optionParseLanguageString's canonical code; a
+    /// missing value auto-detects (upstream wraps nullptr in an empty
+    /// FFstrbuf, whose length 0 is the `detected` flag).
+    pub key_language: Option<&'static str>,
     /// `--bright-color <?bool>`: the bolt ahead of the key/title colors.
     pub bright_color: Option<bool>,
     /// The config document loaded during the command pass: upstream
@@ -203,6 +207,7 @@ impl Cli {
             key_width: None,
             key_padding_left: None,
             key_type: None,
+            key_language: None,
             bright_color: None,
             pipe: None,
             watch_interval: 0,
@@ -616,7 +621,9 @@ impl Cli {
                         "width" => cli.key_width = Some(parse_uint32(key, value) as u16),
                         "type" => cli.key_type = Some(key_type_enum(key, value)),
                         "padding-left" => cli.key_padding_left = Some(parse_uint32(key, value) as u16),
-                        // --key-language lands with the display-name table.
+                        "language" => {
+                            cli.key_language = Some(crate::config::parse_language_string(value.unwrap_or("")));
+                        },
                         _ => {
                             if !parse_module_options(key, value) {
                                 eprintln!("Error: unknown option: {key}");

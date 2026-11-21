@@ -72,7 +72,7 @@ fn detect() -> Result<Vec<String>, &'static str> {
     Ok(servers)
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(servers) = detect() else {
         // ffPrintError is gated behind --show-errors, off by default.
         return Vec::new();
@@ -93,7 +93,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             value.push(server.clone());
         }
     }
-    vec![Row::new("DNS", value.join(" "))]
+    vec![Row::new(instance.display_name("dns"), value.join(" "))]
 }
 
 

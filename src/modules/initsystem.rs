@@ -131,7 +131,7 @@ fn detect() -> Option<InitSystemResult> {
     })
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let mut cell = match result_cell().lock() {
         Ok(cell) => cell,
         Err(poisoned) => poisoned.into_inner(),
@@ -148,7 +148,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     } else {
         format!("{} {}", result.name, result.version)
     };
-    vec![Row::new("Init System", value)]
+    vec![Row::new(instance.display_name("initsystem"), value)]
 }
 
 /// ffGenerateInitSystemJsonResult.

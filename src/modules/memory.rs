@@ -70,7 +70,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
     let pct = memory.used as f64 * 100.0 / memory.total as f64;
     vec![Row::new(
-        "Memory",
+        instance.display_name("memory"),
         format!(
             "{} / {} ({})",
             util::fmt_bytes(memory.used),

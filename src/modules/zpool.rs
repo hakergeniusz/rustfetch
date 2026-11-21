@@ -245,7 +245,7 @@ fn item_value(item: &ZpoolItem, color: bool) -> String {
     value
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(items) = detect() else {
         // The detection error string is an error row, hidden by default.
         return Vec::new();
@@ -262,12 +262,12 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             let mut key = if item.name.is_empty() {
                 "Zpool".to_string()
             } else {
-                format!("Zpool ({})", item.name)
+                format!("{} ({})", instance.display_name("zpool"), item.name)
             };
             if !single {
                 key.push_str(&format!(" {}", index + 1));
             }
-            Row::new(&key, item_value(&item, _instance.color))
+            Row::new(&key, item_value(&item, instance.color))
         })
         .collect()
 }

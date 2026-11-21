@@ -57,7 +57,7 @@ pub fn run_text(
     shell: &str,
     param: Option<&str>,
     split_lines: bool,
-    _instance: &Instance,
+    instance: &Instance,
 ) -> Vec<Row> {
     let Ok(result) = run_result(text, shell, param) else {
         return Vec::new();
@@ -68,7 +68,7 @@ pub fn run_text(
     }
 
     if !split_lines {
-        return vec![Row::new("Command", result)];
+        return vec![Row::new(instance.display_name("command"), result)];
     }
     let lines: Vec<&str> = result.lines().collect();
     lines
@@ -76,7 +76,7 @@ pub fn run_text(
         .enumerate()
         .map(|(index, line)| {
             // splitLines numbers from 1, so even a single line is "Command 1".
-            Row::new(&format!("Command {}", index + 1), *line).with_index(index as u32 + 1)
+            Row::new(&format!("{} {}", instance.display_name("command"), index + 1), *line).with_index(index as u32 + 1)
         })
         .collect()
 }
@@ -118,6 +118,7 @@ mod tests {
     fn instance() -> crate::instance::Instance {
         crate::instance::Instance::new(
             &crate::cli::Cli {
+                key_language: None,
                 logo_position: None,
                 structure: None,
                 logo_none: false,

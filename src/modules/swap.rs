@@ -132,7 +132,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 let key = if item.name.is_empty() {
                     "Swap".to_string()
                 } else {
-                    format!("Swap ({})", item.name)
+                    format!("{} ({})", instance.display_name("swap"), item.name)
                 };
                 Row::new(&key, aggregate_value(item, items.len(), instance.color))
             })
@@ -145,7 +145,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         total.used = total.used.saturating_add(item.used);
         total.total = total.total.saturating_add(item.total);
     }
-    vec![Row::new("Swap", aggregate_value(&total, items.len(), instance.color))]
+    vec![Row::new(instance.display_name("swap"), aggregate_value(&total, items.len(), instance.color))]
 }
 
 /// ffGenerateSwapJsonResult: one object per device, empty array when none.

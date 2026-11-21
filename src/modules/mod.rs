@@ -1458,7 +1458,7 @@ pub(crate) fn stamp_common(rows: &mut [Row], args: &CommonArgs, module: &str, in
     // bare rows get theirs from stamp_custom instead.
     let has_custom = args.key.as_deref().is_some_and(|key| !key.is_empty() && key != " ");
     let error_fixed = ERROR_FIXED_KEY.contains(&module);
-    let module_name = crate::module_display_names::display_name_for(module);
+    let module_name = instance.display_name(module);
     let default_icon = crate::module_icons::icon_for(module);
     for row in rows.iter_mut() {
         // The late placeholder carries the entry so the renderer can
@@ -1482,7 +1482,7 @@ pub(crate) fn stamp_common(rows: &mut [Row], args: &CommonArgs, module: &str, in
 /// The custom module's rows: its default key is the magic `" "`, so a
 /// custom key turns the bare row into a keyed one.
 fn stamp_custom(rows: &mut [Row], args: &CommonArgs, instance: &Instance) {
-    let module_name = crate::module_display_names::display_name_for("custom");
+    let module_name = instance.display_name("custom");
     let icon = args
         .key_icon
         .as_deref()

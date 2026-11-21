@@ -84,6 +84,9 @@ pub struct Config {
     pub key_width: Option<u16>,
     pub key_padding_left: Option<u16>,
     pub key_type: Option<u8>,
+    /// `display.key.language` (optionParseLanguageString's canonical
+    /// code); None keeps the default English column.
+    pub key_language: Option<&'static str>,
     /// `display.pipe` (applies unless `--pipe` was given on the command
     /// line, which is parsed after the config).
     pub pipe: bool,
@@ -133,6 +136,7 @@ impl Config {
             key_width: None,
             key_padding_left: None,
             key_type: None,
+            key_language: None,
             pipe: false,
             player_name: String::new(),
             entries: Vec::new(),
@@ -802,14 +806,11 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
                 if let Some(padding) = value.get("paddingLeft") {
                     config.key_padding_left = Some(json_get_uint16(padding));
                 }
-                // `language` parses through optionParseLanguageString for
-                // its error behavior; the resolved value is consumed by the
-                // display-name table (the --key-language commit).
                 if let Some(language) = value.get("language") {
                     if language.as_str().is_none() && !matches!(language, jsonc::Value::Null) {
                         section_error("display", Some(key), "display.key.language must be a string or null");
                     }
-                    let _ = parse_language_string(language.as_str().unwrap_or(""));
+                    config.key_language = Some(parse_language_string(language.as_str().unwrap_or("")));
                 }
             },
             "constants" => {
@@ -883,9 +884,9 @@ fn json_config_enum(value: &jsonc::Value, pairs: &[(&str, u8)]) -> u8 {
 
 /// optionParseLanguageString's detection + normalization + 2-char switch,
 /// returning the canonical language code; the error paths match upstream
-/// exactly. (The resolved value feeds the display-name table in the
-/// --key-language commit; until then it is parsed and dropped.)
-fn parse_language_string(value: &str) -> &'static str {
+/// exactly. The resolved value feeds the display-name table
+/// (Instance::display_name).
+pub(crate) fn parse_language_string(value: &str) -> &'static str {
     // ffDetectLocale: LC_ALL, then LANG, then setlocale(LC_TIME, nullptr) —
     // the port's startup equivalent of `setlocale(LC_TIME, "")` reads
     // LC_TIME when LC_ALL/LANG were empty, else the "C" locale. All empty
@@ -934,16 +935,17 @@ fn parse_language_string(value: &str) -> &'static str {
         }
     }
     // The switch matches the first two chars only: "de_DE" resolves to de,
-    // while zh needs the full zh_cn/zh_tw spelling.
-    if !LANGS.contains(&&language[..2]) {
-        return unsupported(&language);
-    }
+    // while zh needs the full zh_cn/zh_tw spelling (the switch's own case,
+    // not part of the LANGS tail).
     if &language[..2] == "zh" {
         return match language.as_str() {
             "zh_cn" => "zh_cn",
             "zh_tw" => "zh_tw",
             _ => unsupported(&language),
         };
+    }
+    if !LANGS.contains(&&language[..2]) {
+        return unsupported(&language);
     }
     LANGS.iter().find(|lang| **lang == &language[..2]).copied().unwrap()
 }

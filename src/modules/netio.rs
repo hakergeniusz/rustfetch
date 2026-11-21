@@ -430,7 +430,7 @@ fn detect() -> Result<Vec<NetIoSample>, &'static str> {
     Ok(counters2)
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(counters2) = detect() else {
         return Vec::new();
     };
@@ -444,7 +444,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                 inf.name.clone()
             };
             Row::new(
-                &format!("Network I/O ({name})"),
+                &format!("{} ({name})", instance.display_name("netio")),
                 format!(
                     "{}/s (IN) - {}/s (OUT)",
                     util::fmt_bytes(inf.rx_bytes),

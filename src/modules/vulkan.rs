@@ -428,7 +428,7 @@ fn detect() -> Result<VulkanResult, &'static str> {
     outcome
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(result) = detect() else {
         // The detection error rows are hidden by default.
         return Vec::new();
@@ -447,7 +447,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         value
     };
     let _ = &mut value;
-    vec![Row::new("Vulkan", value)]
+    vec![Row::new(instance.display_name("vulkan"), value)]
 }
 
 /// ffGenerateVulkanJsonResult.

@@ -75,7 +75,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     if value.is_empty() {
         Vec::new()
     } else {
-        vec![Row::new("Theme", value)]
+        vec![Row::new(instance.display_name("theme"), value)]
     }
 }
 

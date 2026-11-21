@@ -144,7 +144,7 @@ fn detect() -> PackagesResult {
     counts
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let counts = detect();
     let mut any = false;
     let mut parts = Vec::new();
@@ -174,7 +174,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     if !any {
         return Vec::new();
     }
-    vec![Row::new("Packages", parts.join(", "))]
+    vec![Row::new(instance.display_name("packages"), parts.join(", "))]
 }
 
 /// ffGeneratePackagesJsonResult: `all` plus each nonzero manager count,

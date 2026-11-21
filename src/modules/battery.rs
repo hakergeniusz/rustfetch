@@ -300,7 +300,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             let key = if battery.model_name.is_empty() {
                 "Battery".to_string()
             } else {
-                format!("Battery ({})", battery.model_name)
+                format!("{} ({})", instance.display_name("battery"), battery.model_name)
             };
             Row::new(&key, item_value(battery, &options, instance.color))
         })

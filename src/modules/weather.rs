@@ -128,7 +128,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(body) = detect(&WeatherOptions::from_instance(instance)) else {
         return Vec::new();
     };
-    vec![Row::new("Weather", body)]
+    vec![Row::new(instance.display_name("weather"), body)]
 }
 
 /// ffGenerateWeatherJsonResult.

@@ -14,11 +14,11 @@ use crate::{
 /// The reference build's __DATE__ " " __TIME__-derived compile time.
 const REF_COMPILE_TIME: &str = "Nov  6 2026, 07:40:47";
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     // printf("%s %s%s%s (%s)", projectName, version, versionTweak,
     // debugMode ? "-debug" : "", architecture): the reference build is a
     // release build, so no suffix regardless of our own profile.
-    vec![Row::new("Version", "fastfetch 2.71.0 (x86_64)")]
+    vec![Row::new(instance.display_name("version"), "fastfetch 2.71.0 (x86_64)")]
 }
 
 /// ffGenerateVersionJsonResult, reporting the reference 2.71.0 package

@@ -212,7 +212,7 @@ pub fn detect() -> Result<LMResult, &'static str> {
     Ok(result)
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(lm) = detect() else {
         // The detection error is an error row, hidden by default.
         return Vec::new();
@@ -226,7 +226,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     } else {
         format!("{} {}", lm.pretty_name, lm.version)
     };
-    vec![Row::new("Login Manager", value)]
+    vec![Row::new(instance.display_name("lm"), value)]
 }
 
 /// ffGenerateLMJsonResult.

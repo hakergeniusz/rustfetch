@@ -1013,7 +1013,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         value.push_str(" / ");
         value.push_str(&result.fallback.pretty);
     }
-    vec![Row::new("Terminal Font", value)]
+    vec![Row::new(instance.display_name("terminalfont"), value)]
 }
 
 fn font_json(font: &FFfont) -> Json {

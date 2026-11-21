@@ -184,7 +184,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             let key = if volume.name.is_empty() {
                 "BTRFS".to_string()
             } else {
-                format!("BTRFS ({})", volume.name)
+                format!("{} ({})", instance.display_name("btrfs"), volume.name)
             };
             let mut used = 0;
             let mut allocated = 0;

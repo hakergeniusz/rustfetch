@@ -137,7 +137,7 @@ fn detect() -> Result<EditorResult, &'static str> {
     })
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(editor) = detect() else {
         // ffPrintError is gated behind --show-errors, off by default.
         return Vec::new();
@@ -147,7 +147,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     } else {
         format!("{} {}", editor.exe, editor.version)
     };
-    vec![Row::new("Editor", value)]
+    vec![Row::new(instance.display_name("editor"), value)]
 }
 
 /// ffGenerateEditorJsonResult.

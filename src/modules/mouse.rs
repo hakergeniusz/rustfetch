@@ -36,7 +36,7 @@ fn detect() -> Vec<MouseDevice> {
     devices
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let devices = detect();
     if devices.is_empty() {
         // "No devices detected" is an error row, hidden by default.
@@ -51,7 +51,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             let key = if index == 0 {
                 "Mouse".to_string()
             } else {
-                format!("Mouse {index}")
+                format!("{} {index}", instance.display_name("mouse"))
             };
             Row::new(&key, device.name.clone()).with_index(index as u32)
         })

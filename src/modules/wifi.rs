@@ -1433,7 +1433,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             let key = if single {
                 "Wi-Fi".to_string()
             } else {
-                format!("Wi-Fi {}", index + 1)
+                format!("{} {}", instance.display_name("wifi"), index + 1)
             };
             Row::new(&key, item_value(&item, instance.color))
                 .with_index(if single { 0 } else { index as u32 + 1 })

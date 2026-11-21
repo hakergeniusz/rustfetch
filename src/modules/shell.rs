@@ -148,7 +148,7 @@ fn shell_version(exe_name: &str, exe: Option<&str>) -> Option<String> {
     }
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let result = detect_full();
     if result.process_name.is_empty() {
         return Vec::new();
@@ -159,7 +159,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     } else {
         format!("{} {}", result.pretty_name, result.version)
     };
-    vec![Row::new("Shell", value)]
+    vec![Row::new(instance.display_name("shell"), value)]
 }
 
 /// ffGenerateShellJsonResult: exe first, tty null when the walk failed.

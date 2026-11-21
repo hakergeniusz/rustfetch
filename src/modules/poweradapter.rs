@@ -70,13 +70,13 @@ fn detect() -> Result<Vec<PowerAdapterResult>, &'static str> {
     Ok(results)
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(results) = detect() else {
         return Vec::new();
     };
     results
         .iter()
-        .map(|adapter| Row::new("Power Adapter", format!("{}W", adapter.watts)))
+        .map(|adapter| Row::new(instance.display_name("poweradapter"), format!("{}W", adapter.watts)))
         .collect()
 }
 

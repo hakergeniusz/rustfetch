@@ -8,7 +8,7 @@ use crate::{
     util,
 };
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     unsafe {
         let now = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = std::mem::zeroed();
@@ -22,7 +22,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             return Vec::new();
         }
         let text = String::from_utf8_lossy(&buffer[..len]).into_owned();
-        vec![Row::new("Date & Time", text)]
+        vec![Row::new(instance.display_name("datetime"), text)]
     }
 }
 

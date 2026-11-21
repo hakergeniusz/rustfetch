@@ -226,9 +226,9 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     };
     // ffPrintPublicIp: the location block only prints when non-empty.
     if location.is_empty() {
-        vec![Row::new("Public IP", ip)]
+        vec![Row::new(instance.display_name("publicip"), ip)]
     } else {
-        vec![Row::new("Public IP", format!("{ip} ({location})"))]
+        vec![Row::new(instance.display_name("publicip"), format!("{ip} ({location})"))]
     }
 }
 

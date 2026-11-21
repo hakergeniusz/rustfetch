@@ -45,13 +45,13 @@ pub fn detect() -> Result<UptimeResult, String> {
     Ok(UptimeResult { uptime, boot_time: now_millis().saturating_sub(uptime) })
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(uptime) = detect() else {
         return Vec::new();
     };
     // The module prints ffDurationAppendNum((uptime + 500) / 1000).
     let total_seconds = (uptime.uptime + 500) / 1000;
-    vec![Row::new("Uptime", util::duration_parts(total_seconds).join(", "))]
+    vec![Row::new(instance.display_name("uptime"), util::duration_parts(total_seconds).join(", "))]
 }
 
 /// ffGenerateUptimeJsonResult: raw milliseconds plus the formatted boot

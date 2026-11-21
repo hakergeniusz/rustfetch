@@ -72,7 +72,7 @@ fn detect_of(content: &str) -> Vec<KeyboardDevice> {
     devices
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let devices = detect();
     if devices.is_empty() {
         // "No devices detected" is an error row, hidden by default.
@@ -86,9 +86,9 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             let name = &device.name;
             let index = if devices.len() > 1 { index + 1 } else { 0 };
             let key = if index == 0 {
-                "Keyboard".to_string()
+                instance.display_name("keyboard").to_string()
             } else {
-                format!("Keyboard {index}")
+                format!("{} {index}", instance.display_name("keyboard"))
             };
             Row::new(&key, name.clone()).with_index(index as u32)
         })

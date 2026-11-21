@@ -376,7 +376,7 @@ impl CodecOptions {
 
 /// printCodecLine: "Codec (Direction - gpu)" when the device string is
 /// non-empty, "Codec (Direction)" otherwise; empty lists print "None".
-fn codec_row(direction: &str, gpu: &str, types: CodecType) -> Row {
+fn codec_row(instance: &Instance, direction: &str, gpu: &str, types: CodecType) -> Row {
     let mut value = String::new();
     for type_ in VA_TYPES {
         if types.0 & type_.0 != 0 {
@@ -390,9 +390,9 @@ fn codec_row(direction: &str, gpu: &str, types: CodecType) -> Row {
         value.push_str("None");
     }
     let key = if gpu.is_empty() {
-        format!("Codec ({direction})")
+        format!("{} ({direction})", instance.display_name("codec"))
     } else {
-        format!("Codec ({direction} - {gpu})")
+        format!("{} ({direction} - {gpu})", instance.display_name("codec"))
     };
     Row::new(&key, value)
 }
@@ -414,10 +414,10 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     if options.split_gpu {
         for result in &results {
             if options.show_encoder {
-                rows.push(codec_row("Encoder", &result.gpu, result.encoders));
+                rows.push(codec_row(instance, "Encoder", &result.gpu, result.encoders));
             }
             if options.show_decoder {
-                rows.push(codec_row("Decoder", &result.gpu, result.decoders));
+                rows.push(codec_row(instance, "Decoder", &result.gpu, result.decoders));
             }
         }
     } else {
@@ -433,10 +433,10 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             merged.platform_api = result.platform_api;
         }
         if options.show_encoder {
-            rows.push(codec_row("Encoder", &merged.gpu, merged.encoders));
+            rows.push(codec_row(instance, "Encoder", &merged.gpu, merged.encoders));
         }
         if options.show_decoder {
-            rows.push(codec_row("Decoder", &merged.gpu, merged.decoders));
+            rows.push(codec_row(instance, "Decoder", &merged.gpu, merged.decoders));
         }
     }
     rows

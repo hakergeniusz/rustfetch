@@ -127,7 +127,7 @@ fn detect() -> Result<Vec<CameraDevice>, &'static str> {
     Ok(result)
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(cameras) = detect() else {
         return Vec::new();
     };
@@ -147,7 +147,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             let key = if index == 0 {
                 "Camera".to_string()
             } else {
-                format!("Camera {index}")
+                format!("{} {index}", instance.display_name("camera"))
             };
             let mut value = name.clone();
             if !colorspace.is_empty() {

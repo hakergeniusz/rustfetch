@@ -108,7 +108,7 @@ fn detect() -> Vec<Vec<CacheEntry>> {
     result.into()
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let levels = detect();
 
     levels
@@ -133,7 +133,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                 };
                 value.push_str(&format!(" ({letter})"));
             }
-            Row::new(&format!("CPU Cache (L{})", level + 1), value)
+            Row::new(&format!("{} (L{})", instance.display_name("cpucache"), level + 1), value)
         })
         .collect()
 }

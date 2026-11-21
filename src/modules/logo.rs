@@ -11,10 +11,10 @@ use crate::{
     modules::Row,
 };
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     // ffPrintLogo: the text-mode printer is this one error row; collect's
     // showErrors gate hides it by default.
-    vec![Row::error("Logo", "Supported in JSON format only")]
+    vec![Row::error(instance.display_name("logo"), "Supported in JSON format only")]
 }
 
 use crate::logo::{get_builtin, get_builtin_detected, Size};

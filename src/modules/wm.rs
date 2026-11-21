@@ -17,7 +17,7 @@ fn wm_version(_process_name: &str) -> Option<String> {
     None
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let ds = displayserver::connect();
     if ds.wm_pretty_name.is_empty() {
         // "No WM found" is an error row, hidden by default.
@@ -32,7 +32,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     if !ds.wm_protocol_name.is_empty() {
         value.push_str(&format!(" ({})", ds.wm_protocol_name));
     }
-    vec![Row::new("Window Manager", value)]
+    vec![Row::new(instance.display_name("wm"), value)]
 }
 
 /// ffGenerateWMJsonResult: the five fields in upstream order; pluginName

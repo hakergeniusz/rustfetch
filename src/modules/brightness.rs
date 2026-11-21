@@ -379,7 +379,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             let pct = display.current / display.max * 100.0;
             // Brightness hardcodes green=100/yellow=100: the number is green.
             Row::new(
-                &format!("Brightness ({})", display.name),
+                &format!("{} ({})", instance.display_name("brightness"), display.name),
                 format!(
                     "{} [{}]",
                     colorize_percent(pct, 100, 100, instance.color),

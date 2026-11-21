@@ -320,12 +320,12 @@ fn detect() -> Result<OpenClResult, &'static str> {
     handle_data(get_platform_ids, get_platform_info, get_device_ids, get_device_info)
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(result) = detect() else {
         // The detection error rows are hidden by default.
         return Vec::new();
     };
-    vec![Row::new("OpenCL", result.version)]
+    vec![Row::new(instance.display_name("opencl"), result.version)]
 }
 
 /// ffGenerateOpenCLJsonResult.

@@ -420,7 +420,7 @@ fn format_value(
 }
 
 /// GNOME session path: mutter tells us the active modes; EDID adds sizes.
-fn rows_from_mutter(displays: &[MutterDisplay], edids: &[(String, Edid)]) -> Vec<Row> {
+fn rows_from_mutter(instance: &Instance, displays: &[MutterDisplay], edids: &[(String, Edid)]) -> Vec<Row> {
     displays
         .iter()
         .map(|display| {
@@ -432,19 +432,19 @@ fn rows_from_mutter(displays: &[MutterDisplay], edids: &[(String, Edid)]) -> Vec
             let name = edid
                 .and_then(|(_, edid)| edid.name.clone())
                 .unwrap_or_else(|| display.model.clone());
-            Row::new(&format!("Display ({name})"), value)
+            Row::new(&format!("{} ({name})", instance.display_name("display")), value)
         })
         .collect()
 }
 
 /// Fallback without D-Bus: every connected connector's preferred timing.
-fn rows_from_edid(edids: &[(String, Edid)]) -> Vec<Row> {
+fn rows_from_edid(instance: &Instance, edids: &[(String, Edid)]) -> Vec<Row> {
     let mut rows = Vec::new();
     for (connector, edid) in edids {
         let built_in = connector.contains("eDP") || connector.contains("LVDS");
         let value = format_value(edid.width, edid.height, edid.refresh, edid.physical_mm, built_in);
         let key = match &edid.name {
-            Some(name) => format!("Display ({name})"),
+            Some(name) => format!("{} ({name})", instance.display_name("display")),
             None => "Display".to_string(),
         };
         rows.push(Row::new(&key, value));
@@ -458,12 +458,12 @@ pub(crate) fn display_count() -> usize {
     mutter_displays().map_or(0, |displays| displays.len())
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let edids = edids_by_connector();
 
     match mutter_displays() {
-        Some(displays) => rows_from_mutter(&displays, &edids),
-        None => rows_from_edid(&edids),
+        Some(displays) => rows_from_mutter(instance, &displays, &edids),
+        None => rows_from_edid(instance, &edids),
     }
 }
 

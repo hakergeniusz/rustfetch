@@ -736,7 +736,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             .map(|ip| print_ip(ip, false))
             .collect::<Vec<_>>()
             .join(" - ");
-        return vec![Row::new("Local IP", joined)];
+        return vec![Row::new(instance.display_name("localip"), joined)];
     }
 
     results
@@ -749,7 +749,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 ip.name.clone()
             };
             let mark_default = show & show::DEFAULT_ROUTE_ONLY == 0;
-            Row::new(&format!("Local IP ({name})"), print_ip(ip, mark_default))
+            Row::new(&format!("{} ({name})", instance.display_name("localip")), print_ip(ip, mark_default))
         })
         .collect()
 }

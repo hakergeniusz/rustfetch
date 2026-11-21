@@ -57,7 +57,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         pretty.push(')');
     }
 
-    vec![Row::new("Media Player", pretty)]
+    vec![Row::new(instance.display_name("player"), pretty)]
 }
 
 

@@ -53,7 +53,7 @@ pub fn detect() -> BoardResult {
     result
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let board = detect();
     if board.name.is_empty() {
         // "board_name is not set." is an error row, hidden by default.
@@ -67,7 +67,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         value.push_str(&format!(" ({})", board.version));
     }
 
-    vec![Row::new("Board", value)]
+    vec![Row::new(instance.display_name("board"), value)]
 }
 
 /// ffGenerateBoardJsonResult.

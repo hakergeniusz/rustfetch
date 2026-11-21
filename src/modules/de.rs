@@ -89,7 +89,7 @@ pub fn detect() -> Option<&'static str> {
         .map(|(_, pretty)| *pretty)
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let ds = displayserver::connect();
     if ds.de_pretty_name.is_empty() {
         // "No DE found" is an error row, hidden by default.
@@ -101,7 +101,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         value.push(' ');
         value.push_str(&version);
     }
-    vec![Row::new("Desktop Environment", value)]
+    vec![Row::new(instance.display_name("de"), value)]
 }
 
 /// ffGenerateDEJsonResult: process and pretty names from the shared

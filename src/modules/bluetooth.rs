@@ -156,7 +156,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             let key = if index == 0 {
                 "Bluetooth".to_string()
             } else {
-                format!("Bluetooth {index}")
+                format!("{} {index}", instance.display_name("bluetooth"))
             };
 
             let mut value = device.name.clone();

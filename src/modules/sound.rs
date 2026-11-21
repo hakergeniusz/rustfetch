@@ -1519,7 +1519,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             let key = if single {
                 "Sound".to_string()
             } else {
-                format!("Sound {}", index + 1)
+                format!("{} {}", instance.display_name("sound"), index + 1)
             };
             Row::new(&key, value).with_index(if single { 0 } else { index as u32 + 1 })
         })

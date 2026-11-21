@@ -51,7 +51,7 @@ fn detect() -> Result<(u64, u64), &'static str> {
     Ok((processes, threads))
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok((processes, threads)) = detect() else {
         return Vec::new();
     };
@@ -64,7 +64,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     } else {
         processes.to_string()
     };
-    vec![Row::new("Processes", value)]
+    vec![Row::new(instance.display_name("processes"), value)]
 }
 
 /// ffGenerateProcessesJsonResult.

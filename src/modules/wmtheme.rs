@@ -155,7 +155,7 @@ pub fn detect(instance: &Instance) -> Result<String, String> {
 
 pub fn run(instance: &Instance) -> Vec<Row> {
     match detect(instance) {
-        Ok(theme) => vec![Row::new("WM Theme", theme)],
+        Ok(theme) => vec![Row::new(instance.display_name("wmtheme"), theme)],
         // Detection errors are hidden rows by default.
         Err(_) => Vec::new(),
     }

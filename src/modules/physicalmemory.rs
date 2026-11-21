@@ -264,7 +264,7 @@ fn detect() -> Result<Vec<Device>, &'static str> {
         .collect())
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(devices) = detect() else {
         // "Failed to get SMBIOS data" is an error row, hidden by default.
         return Vec::new();
@@ -282,7 +282,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
             let key = if index == 0 {
                 "Physical Memory".to_string()
             } else {
-                format!("Physical Memory {index}")
+                format!("{} {index}", instance.display_name("physicalmemory"))
             };
             let mut value = String::new();
             if device.installed {

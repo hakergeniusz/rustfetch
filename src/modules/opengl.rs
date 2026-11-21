@@ -295,11 +295,11 @@ fn detect() -> Result<OpenGLResult, &'static str> {
     outcome
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     match detect() {
         // The detection error rows are hidden by default.
         Err(_) => Vec::new(),
-        Ok(result) => vec![Row::new("OpenGL", result.version)],
+        Ok(result) => vec![Row::new(instance.display_name("opengl"), result.version)],
     }
 }
 

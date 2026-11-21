@@ -162,7 +162,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
 
 /// The deferred ffPrintTerminalTheme: detection, then the row or the
 /// hidden error (nothing at all, like ffPrintError with showErrors off).
-fn print(_instance: &Instance) -> Vec<Row> {
+fn print(instance: &Instance) -> Vec<Row> {
     let Some((fg, bg)) = detect_by_escape().or_else(detect_by_env) else {
         // "Failed to detect terminal theme" is an error row, hidden by default.
         return Vec::new();
@@ -179,7 +179,7 @@ fn print(_instance: &Instance) -> Vec<Row> {
         bg.b,
         if bg.dark { "Dark" } else { "Light" }
     );
-    vec![Row::new("Terminal Theme", value).stamped(crate::module_icons::icon_for("terminaltheme"))]
+    vec![Row::new(instance.display_name("terminaltheme"), value).stamped(crate::module_icons::icon_for("terminaltheme"))]
 }
 
 /// ffGenerateTerminalThemeJsonResult: {fg, bg} with r/g/b/dark each.

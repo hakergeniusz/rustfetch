@@ -46,15 +46,15 @@ fn format_value(
     value
 }
 
-fn row(name: &str, value: String) -> Row {
+fn row(instance: &Instance, name: &str, value: String) -> Row {
     if name.is_empty() {
-        Row::new("Monitor", value)
+        Row::new(instance.display_name("monitor"), value)
     } else {
-        Row::new(&format!("Monitor ({name})"), value)
+        Row::new(&format!("{} ({name})", instance.display_name("monitor")), value)
     }
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     match display::mutter_displays() {
         Some(displays) => {
             let edids = display::edids_by_connector();
@@ -83,7 +83,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                     let name = edid
                         .and_then(|(_, edid)| edid.name.clone())
                         .unwrap_or_else(|| display.model.clone());
-                    row(&name, value)
+                    row(instance, &name, value)
                 })
                 .collect()
         },
@@ -93,7 +93,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                 let value =
                     format_value(edid.width, edid.height, edid.refresh, edid.physical_mm, edid.hdr);
                 let name = edid.name.clone().unwrap_or_default();
-                row(&name, value)
+                row(instance, &name, value)
             })
             .collect(),
     }

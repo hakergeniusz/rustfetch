@@ -174,7 +174,7 @@ fn detect() -> Result<Vec<Radio>, &'static str> {
         .clone()
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let radios = detect().unwrap_or_default();
     let enabled: Vec<&Radio> = radios.iter().filter(|radio| radio.enabled).collect();
     if enabled.is_empty() {
@@ -192,7 +192,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                 Some(version) => format!("Bluetooth {version} ({})", radio.vendor),
                 None => radio.vendor.clone(),
             };
-            Row::new(&format!("Bluetooth Radio ({})", radio.name), value)
+            Row::new(&format!("{} ({})", instance.display_name("bluetoothradio"), radio.name), value)
         })
         .collect()
 }

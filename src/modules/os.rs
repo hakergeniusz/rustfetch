@@ -152,7 +152,7 @@ fn build_output_default(os: &OsResult, sysname: &str) -> String {
     result
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let os = OsResult::detect();
     if os.name.is_empty() && os.pretty_name.is_empty() && os.id.is_empty() {
         // "Could not detect OS" is an error row, hidden by default.
@@ -169,7 +169,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         value.push(' ');
         value.push_str(architecture);
     }
-    vec![Row::new("OS", value)]
+    vec![Row::new(instance.display_name("os"), value)]
 }
 
 /// ffGenerateOSJsonResult: all ten fields, empty ones included.

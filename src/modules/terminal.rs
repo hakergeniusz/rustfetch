@@ -1331,7 +1331,7 @@ pub fn detect_full() -> &'static TerminalResult {
     })
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let result = detect_full();
     if result.process_name.is_empty() {
         // "Couldn't detect terminal" is an error row, hidden by default.
@@ -1342,7 +1342,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     } else {
         format!("{} {}", result.pretty_name, result.version)
     };
-    vec![Row::new("Terminal", value)]
+    vec![Row::new(instance.display_name("terminal"), value)]
 }
 
 /// ffGenerateTerminalJsonResult: the nine fields in upstream order.

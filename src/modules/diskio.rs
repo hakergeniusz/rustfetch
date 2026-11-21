@@ -160,7 +160,7 @@ fn detect() -> Result<Vec<DiskIoSample>, &'static str> {
     Ok(counters2)
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(counters2) = detect() else {
         return Vec::new();
     };
@@ -174,7 +174,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
                 dev.name.clone()
             };
             Row::new(
-                &format!("Disk I/O ({key_name})"),
+                &format!("{} ({key_name})", instance.display_name("diskio")),
                 format!(
                     "{}/s (R) - {}/s (W)",
                     util::fmt_bytes(dev.bytes_read),

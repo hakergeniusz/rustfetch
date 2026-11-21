@@ -59,7 +59,7 @@ pub fn detect(instance: &Instance) -> Result<FontResult, &'static str> {
 
 pub fn run(instance: &Instance) -> Vec<Row> {
     match detect(instance) {
-        Ok(font) => vec![Row::new("Font", font.display)],
+        Ok(font) => vec![Row::new(instance.display_name("font"), font.display)],
         Err(_) => Vec::new(),
     }
 }

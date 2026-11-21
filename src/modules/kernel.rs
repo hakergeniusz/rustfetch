@@ -8,9 +8,9 @@ use crate::{
     platform,
 };
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let sysinfo = &platform::platform().sysinfo;
-    vec![Row::new("Kernel", format!("{} {}", sysinfo.name, sysinfo.release))]
+    vec![Row::new(instance.display_name("kernel"), format!("{} {}", sysinfo.name, sysinfo.release))]
 }
 
 pub fn json(_instance: &Instance) -> JsonOutcome {

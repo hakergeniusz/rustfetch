@@ -650,7 +650,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             let key = if index == 0 {
                 "GPU".to_string()
             } else {
-                format!("GPU {index}")
+                format!("{} {index}", instance.display_name("gpu"))
             };
             Row::new(&key, item_value(gpu, options.temp_range, instance.color)).with_index(index as u32)
         })

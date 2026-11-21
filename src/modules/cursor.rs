@@ -195,7 +195,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     } else {
         theme
     };
-    vec![Row::new("Cursor", value)]
+    vec![Row::new(instance.display_name("cursor"), value)]
 }
 
 /// ffGenerateCursorJsonResult: the raw, uncleaned theme and size.

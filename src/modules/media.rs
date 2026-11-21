@@ -435,7 +435,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         let _ = write!(value, " [{}]", media.status);
     }
 
-    vec![Row::new("Media", value)]
+    vec![Row::new(instance.display_name("media"), value)]
 }
 
 /// ffGenerateMediaJsonResult.

@@ -7,7 +7,7 @@ use crate::{
     util,
 };
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Some(content) = util::read_file("/proc/loadavg") else {
         return Vec::new();
     };
@@ -17,7 +17,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
-    vec![Row::new("Load Average", averages.join(", "))]
+    vec![Row::new(instance.display_name("loadavg"), averages.join(", "))]
 }
 
 /// ffDetectLoadavg: /proc/loadavg's first three fields, else sysinfo().

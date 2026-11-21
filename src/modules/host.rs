@@ -146,7 +146,7 @@ fn detect() -> HostResult {
     host
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let host = detect();
     if host.name.is_empty() && host.family.is_empty() {
         // "neither product_family nor product_name is set by O.E.M." is an
@@ -162,7 +162,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     if !host.version.is_empty() {
         value.push_str(&format!(" ({})", host.version));
     }
-    vec![Row::new("Host", value)]
+    vec![Row::new(instance.display_name("host"), value)]
 }
 
 /// ffGenerateHostJsonResult: the DMI identity, in its fixed order.

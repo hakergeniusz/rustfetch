@@ -52,17 +52,21 @@ pub fn detect() -> BiosResult {
     result
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let bios = detect();
     if bios.version.is_empty() {
         return Vec::new();
     }
 
-    let key = if bios.firmware_type == "UEFI" {
-        "BIOS (UEFI)"
+    // bios.c maps an ignCase "BIOS" type to "Legacy" (empty would be
+    // "Unknown"; the detection here always yields UEFI or BIOS) and always
+    // interpolates: "%s (%s)".
+    let bios_type = if bios.firmware_type.eq_ignore_ascii_case("BIOS") {
+        "Legacy"
     } else {
-        "BIOS"
+        &bios.firmware_type
     };
+    let key = format!("{} ({bios_type})", instance.display_name("bios"));
 
     let mut value = bios.version;
     let release = if bios.release.is_empty() {
@@ -74,7 +78,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         value.push_str(&format!(" ({release})"));
     }
 
-    vec![Row::new(key, value)]
+    vec![Row::new(&key, value)]
 }
 
 /// ffGenerateBiosJsonResult.

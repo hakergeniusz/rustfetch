@@ -37,7 +37,7 @@ pub fn detect() -> Result<TpmResult, &'static str> {
     Ok(result)
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(tpm) = detect() else {
         // The detection errors are error rows, hidden by default.
         return Vec::new();
@@ -45,7 +45,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     if tpm.version.is_empty() {
         return Vec::new();
     }
-    vec![Row::new("TPM", tpm.version)]
+    vec![Row::new(instance.display_name("tpm"), tpm.version)]
 }
 
 /// ffGenerateTPMJsonResult.

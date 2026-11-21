@@ -103,7 +103,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
 
 /// The deferred ffPrintTerminalSize: detection, then the row or the
 /// hidden error (nothing at all, like ffPrintError with showErrors off).
-fn print(_instance: &Instance) -> Vec<Row> {
+fn print(instance: &Instance) -> Vec<Row> {
     let Some((cols, rows, width_px, height_px)) = detect(false) else {
         // The error row is hidden by default, like upstream's ffPrintError.
         return Vec::new();
@@ -114,7 +114,7 @@ fn print(_instance: &Instance) -> Vec<Row> {
         value.push_str(&format!(" ({width_px}px x {height_px}px)"));
     }
 
-    vec![Row::new("Terminal Size", value).stamped(crate::module_icons::icon_for("terminalsize"))]
+    vec![Row::new(instance.display_name("terminalsize"), value).stamped(crate::module_icons::icon_for("terminalsize"))]
 }
 
 /// ffGenerateTerminalSizeJsonResult.

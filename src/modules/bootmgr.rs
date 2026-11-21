@@ -126,7 +126,7 @@ fn detect() -> Result<BootmgrResult, &'static str> {
     })
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Ok(bootmgr) = detect() else {
         // The efivar read failures are error rows, hidden by default.
         return Vec::new();
@@ -138,7 +138,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
         value.push_str(" - ");
         value.push_str(firmware_name);
     }
-    vec![Row::new("Boot Manager", value)]
+    vec![Row::new(instance.display_name("bootmgr"), value)]
 }
 
 /// ffGenerateBootmgrJsonResult.

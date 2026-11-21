@@ -224,7 +224,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             let key = if total == 1 {
                 "Top Processes".to_string()
             } else {
-                format!("Top Processes {}", index + 1)
+                format!("{} {}", instance.display_name("top"), index + 1)
             };
             let key_index = if total == 1 { 0 } else { index as u32 + 1 };
             let name = if process.name.is_empty() {

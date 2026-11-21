@@ -376,7 +376,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         .filter(|disk| show_types_match(disk.volume_type))
         .map(|disk| {
             Row::new(
-                &format!("Disk ({})", disk.mountpoint),
+                &format!("{} ({})", instance.display_name("disk"), disk.mountpoint),
                 item_value(disk, instance.color),
             )
         })

@@ -287,7 +287,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 value.push_str(" - ");
                 value.push_str(&super::temps_num(dev.temperature, options.temp_range.green, options.temp_range.yellow, instance.color));
             }
-            Row::new(&format!("Physical Disk ({key_name})"), value)
+            Row::new(&format!("{} ({key_name})", instance.display_name("physicaldisk")), value)
         })
         .collect()
 }

@@ -58,7 +58,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     detect(instance).map(|wallpaper| {
         // picture-uri is often a file:// URL; only the basename prints.
         let basename = wallpaper.rsplit('/').next().unwrap_or(&wallpaper).to_string();
-        vec![Row::new("Wallpaper", basename)]
+        vec![Row::new(instance.display_name("wallpaper"), basename)]
     }).unwrap_or_default()
 }
 

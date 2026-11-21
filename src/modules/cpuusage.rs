@@ -136,7 +136,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 
     let avg = percentages.iter().sum::<f64>() / percentages.len() as f64;
     vec![Row::new(
-        "CPU Usage",
+        instance.display_name("cpuusage"),
         colorize_percent(avg, 50, 80, instance.color),
     )]
 }

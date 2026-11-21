@@ -433,7 +433,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     if cpu.vendor.is_empty() && cpu.name.is_empty() && cpu.cores_online <= 1 {
         return Vec::new();
     }
-    vec![Row::new("CPU", format_value(&cpu, &options, instance.color))]
+    vec![Row::new(instance.display_name("cpu"), format_value(&cpu, &options, instance.color))]
 }
 
 /// ffGenerateCPUJsonResult.

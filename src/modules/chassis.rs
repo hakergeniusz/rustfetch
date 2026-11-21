@@ -125,7 +125,7 @@ fn detect() -> Option<ChassisResult> {
     })
 }
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
     let Some(chassis) = detect() else {
         return Vec::new();
     };
@@ -140,7 +140,7 @@ pub fn run(_instance: &Instance) -> Vec<Row> {
     } else {
         format!("{} ({})", chassis.chassis_type, chassis.version)
     };
-    vec![Row::new("Chassis", value)]
+    vec![Row::new(instance.display_name("chassis"), value)]
 }
 
 /// ffGenerateChassisJsonResult.

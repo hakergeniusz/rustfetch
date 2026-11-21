@@ -52,6 +52,10 @@ pub struct DisplaySurface {
     /// display.keyType: the NONE gate around the key block, the STRING
     /// bit's key text, and the (pending) icon bits.
     pub key_type: u8,
+    /// display.keyLanguage: optionParseLanguageString's canonical code;
+    /// None keeps the default English column. Selects the display-name
+    /// table column (FF_MODULE_GET_DISPLAY_NAME's offsetof delta).
+    pub key_language: Option<&'static str>,
 }
 
 impl Default for DisplaySurface {
@@ -66,6 +70,7 @@ impl Default for DisplaySurface {
             key_width: 0,
             key_padding_left: 0,
             key_type: KEY_TYPE_STRING,
+            key_language: None,
         }
     }
 }
@@ -268,5 +273,12 @@ impl Instance {
         } else {
             self.logo_colors.get().and_then(|colors| colors.title)
         }
+    }
+
+    /// FF_MODULE_GET_DISPLAY_NAME: the module's display name in the
+    /// resolved key language (default keys, interpolated key prefixes,
+    /// error rows and the {module-name} arg all read it).
+    pub fn display_name(&self, module: &str) -> &'static str {
+        crate::module_display_names::display_name_for(self.display.key_language, module)
     }
 }

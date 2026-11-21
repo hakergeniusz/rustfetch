@@ -29,9 +29,9 @@ impl Default for SeparatorOptions {
 impl SeparatorOptions {
     /// ffParseSeparatorJsonObject: parse errors become rows (ffPrintError
     /// is showErrors-gated) and parsing continues.
-    fn parse(&mut self, entry: &crate::jsonc::Value, errors: &mut Vec<Row>, state: &crate::cli::ColorState) {
+    fn parse(&mut self, entry: &crate::jsonc::Value, errors: &mut Vec<Row>, state: &crate::cli::ColorState, instance: &Instance) {
         let error = |errors: &mut Vec<Row>, message: String| {
-            errors.push(Row::error("Separator", message));
+            errors.push(Row::error(instance.display_name("separator"), message));
         };
         let crate::jsonc::Value::Object(entries) = entry else {
             return;
@@ -84,7 +84,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     let mut rows = Vec::new();
     if let Some(entry) = instance.entry {
         let state = crate::cli::ColorState::from_instance(instance);
-        options.parse(entry, &mut rows, &state);
+        options.parse(entry, &mut rows, &state, instance);
     }
 
     let text = if options.times > 0 {

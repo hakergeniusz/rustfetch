@@ -12,7 +12,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             if key == "type" || key == "condition" {
                 continue;
             }
-            rows.push(Row::error("Break", format!("Unknown JSON key {key}")));
+            rows.push(Row::error(instance.display_name("break"), format!("Unknown JSON key {key}")));
         }
     }
     rows.push(Row::raw(""));
