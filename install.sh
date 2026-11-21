@@ -1,5 +1,7 @@
 #!/bin/sh
 # rustfetch universal installer (Debian/Ubuntu, Fedora/RHEL, Arch, Alpine, openSUSE).
+# rustfetch is a fastfetch- and hyfetch-inspired system information tool written
+# in Rust.
 #
 # This file is a tiny POSIX-sh bootstrap plus a bash payload kept in a quoted
 # here-doc.  That lets the very same file work in three situations:
@@ -116,7 +118,8 @@ One-liner install:
   ${ONE_LINER}
   sh -c "\$(curl -fsSL https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/rewrite/install.sh)"
 
-rustfetch is self-contained at runtime (standard libc/libm/libgcc_s only);
+rustfetch is a fastfetch- and hyfetch-inspired system information tool written
+in Rust. It is self-contained at runtime (standard libc/libm/libgcc_s only);
 fastfetch is NOT required.
 EOF
 }

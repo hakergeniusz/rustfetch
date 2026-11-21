@@ -1,7 +1,7 @@
 Name:           rustfetch
 Version:        0.2.1
 Release:        1%{?dist}
-Summary:        Fastfetch, rewritten in Rust
+Summary:        A fastfetch- and hyfetch-inspired system information tool written in Rust
 
 License:        MIT
 URL:            https://github.com/hakergeniusz/rustfetch
@@ -15,10 +15,11 @@ Requires:       libgcc
 # fastfetch is NOT a runtime dependency.
 
 %description
-A fast, dependency-light system information tool written in Rust. It mirrors
-fastfetch's logo database, colors and modules, reading system information
-directly from procfs, sysfs, DMI and pci.ids. The binary is self-contained
-apart from the standard C runtime libraries.
+A fast, dependency-light system information tool written in Rust, inspired by
+fastfetch and hyfetch. It mirrors fastfetch's logo database, colors and
+modules, reading system information directly from procfs, sysfs, DMI and
+pci.ids. The binary is self-contained apart from the standard C runtime
+libraries.
 
 %prep
 %autosetup -n %{name}-%{version}

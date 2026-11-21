@@ -9,10 +9,11 @@ Homepage: https://github.com/hakergeniusz/rustfetch
 Package: rustfetch
 Architecture: any
 Depends: libc6, libgcc-s1
-Description: Fastfetch, rewritten in Rust
- A fast, dependency-light system information tool written in Rust. It mirrors
- fastfetch's logo database, colors and modules, reading system information
- directly from procfs, sysfs, DMI and pci.ids.
+Description: A fastfetch- and hyfetch-inspired system information tool written in Rust
+ A fast, dependency-light system information tool written in Rust, inspired by
+ fastfetch and hyfetch. It mirrors fastfetch's logo database, colors and
+ modules, reading system information directly from procfs, sysfs, DMI and
+ pci.ids.
  .
  The binary is self-contained apart from the standard C runtime libraries
  (libc6 and libgcc-s1). The fastfetch package is NOT required at runtime.

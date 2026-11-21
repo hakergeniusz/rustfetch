@@ -3,7 +3,7 @@
 pkgname=rustfetch
 pkgver=0.2.1
 pkgrel=1
-pkgdesc='Fastfetch, rewritten in Rust'
+pkgdesc='A fastfetch- and hyfetch-inspired system information tool written in Rust'
 arch=('x86_64' 'aarch64' 'armv7h' 'riscv64')
 url='https://github.com/hakergeniusz/rustfetch'
 license=('MIT')

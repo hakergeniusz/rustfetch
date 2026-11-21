@@ -1,7 +1,8 @@
 # Packaging rustfetch
 
-`rustfetch` is a single self-contained Rust binary. At runtime it needs only
-the standard system libraries (`libc`, `libm`, `libgcc_s`). Logos, distro data
+`rustfetch` is a fastfetch- and hyfetch-inspired system information tool
+written in Rust. It is a single self-contained Rust binary. At runtime it needs
+only the standard system libraries (`libc`, `libm`, `libgcc_s`). Logos, distro data
 and module code are compiled into the binary with `include_str!` — there is
 **no runtime dependency on fastfetch and no runtime dependency on any
 fastfetch package**. fastfetch is not detected, required, or invoked.

@@ -2,7 +2,7 @@
 name = "rustfetch"
 version = "0.2.1"
 edition = "2024"
-description = "Fastfetch, rewritten in Rust"
+description = "A fastfetch- and hyfetch-inspired system information tool written in Rust"
 license = "MIT"
 
 [[bin]]

@@ -1,8 +1,8 @@
 # Rustfetch
 
-Fastfetch, rewritten in Rust.
+A fastfetch- and hyfetch-inspired system information tool written in Rust.
 
-A fast, dependency-light system information tool that mirrors fastfetch's
+A dependency-light Rust rewrite that mirrors fastfetch's
 behavior: fastfetch's logo database (534 distro logos with per-distro color
 tables), fastfetch-style `$N` logo color placeholders, per-distro key colors,
 and all 76 fastfetch modules ported — from `os` and `gpu` to `wifi`
@@ -53,7 +53,7 @@ tty.
 
 hyperfine, default module set, same machine (Arch Linux, ghostty):
 
-| | fastfetch 2.71.0 | rustfetch 0.1.0 |
+| | fastfetch 2.71.0 | rustfetch 0.2.1 |
 |---|---|---|
 | wall time | 10.8 ms ± 1.4 ms | **5.8 ms ± 0.7 ms** |
 | peak memory | 12.2 MiB | **10.7 MiB** |
@@ -62,6 +62,8 @@ hyperfine, default module set, same machine (Arch Linux, ghostty):
 
 - [fastfetch](https://github.com/fastfetch-cli/fastfetch) — logo database,
   color tables and module behavior this port follows (MIT).
+- [hyfetch](https://github.com/hykilpikonna/hyfetch) — inspiration for the
+  per-line gradient logo coloring (MIT).
 - [ahaoboy/neofetch](https://github.com/ahaoboy/neofetch) and
   [Macchina-CLI/macchina](https://github.com/Macchina-CLI/macchina) — design
   reference points (both MIT).
