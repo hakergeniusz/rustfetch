@@ -864,41 +864,6 @@ pub fn list_modules(pretty: bool) {
     }
 }
 
-/// ffPercentAppendNum: the number is formatted like the global
-/// percentNdigits=0 default and colored by the module's own green/yellow
-/// thresholds, compared before rounding. Modules where a high value is good
-/// (battery, physicaldisk) set green > yellow, which inverts the bands.
-/// ffTempsAppendNum with the display defaults: 1 digit, no space before
-/// °C, threshold colors (dark-terminal light-yellow/light-red variants).
-pub(crate) fn temps_num(celsius: f64, green: u8, yellow: u8, color: bool) -> String {
-    use std::fmt::Write;
-    let mut out = String::new();
-    if color {
-        let (yellow_code, red_code) = if terminal_light() { ("33", "31") } else { ("93", "91") };
-        let code = if green <= yellow {
-            if celsius > yellow as f64 {
-                red_code
-            } else if celsius > green as f64 {
-                yellow_code
-            } else {
-                "32"
-            }
-        } else if celsius < yellow as f64 {
-            red_code
-        } else if celsius < green as f64 {
-            yellow_code
-        } else {
-            "32"
-        };
-        let _ = write!(out, "\x1b[{code}m");
-    }
-    let _ = write!(out, "{celsius:.1}°C");
-    if color {
-        out.push_str("\x1b[m");
-    }
-    out
-}
-
 /// FFColorRangeConfig: the green/yellow temperature thresholds. Every
 /// temps module defaults to {60, 80}; physicaldisk overrides to {50, 70}.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -950,38 +915,6 @@ pub(crate) fn parse_temp(value: &crate::jsonc::Value, range: &mut TempRange) -> 
         *field = num as u8;
     }
     true
-}
-
-/// terminalLightTheme: the env-only terminal theme detection's background
-/// darkness (upstream forces the env path at display init for speed).
-pub(crate) fn terminal_light() -> bool {
-    use std::sync::OnceLock;
-    static LIGHT: OnceLock<bool> = OnceLock::new();
-    *LIGHT.get_or_init(crate::modules::terminaltheme::terminal_is_light_by_env)
-}
-
-pub fn colorize_percent(pct: f64, green: u8, yellow: u8, color: bool) -> String {
-    let text = format!("{pct:.0}");
-    let code = if green <= yellow {
-        if pct > yellow as f64 {
-            "91"
-        } else if pct > green as f64 {
-            "93"
-        } else {
-            "32"
-        }
-    } else if pct < yellow as f64 {
-        "91"
-    } else if pct < green as f64 {
-        "93"
-    } else {
-        "32"
-    };
-    if color {
-        format!("\x1b[{code}m{text}%\x1b[m")
-    } else {
-        format!("{text}%")
-    }
 }
 
 /// The module list both output formats dispatch on: the fastfetch config's
@@ -1148,6 +1081,65 @@ pub(crate) fn parse_common_args(opts: Option<&crate::jsonc::Value>, instance: &I
         }
     }
     args
+}
+
+/// The PrintCtx the percent/temps formatters read: the pipe gate and
+/// appendOutputColor's resolved tail color. The percent/temps modules
+/// build their value strings before collect() stamps Row.common, so the
+/// entry's outputColor resolves here (the module's when set, else
+/// display.colorOutput).
+pub(crate) fn print_ctx(instance: &Instance) -> crate::format::PrintCtx {
+    let module = parse_common_args(instance.entry, instance)
+        .output_color
+        .unwrap_or_default();
+    let output_color = if module.is_empty() { instance.display.color_output.clone() } else { module };
+    crate::format::PrintCtx { pipe: instance.pipe, output_color }
+}
+
+/// ffPercentParseJsonObject against the module entry: the "percent" object
+/// over the module's own defaults. green/yellow read through yyjson_get_int
+/// (sint/uint truncate through i32, everything else reads 0); the range
+/// and type errors exit 480 like upstream's module parse.
+pub(crate) fn percent_config(entry: Option<&crate::jsonc::Value>, default: crate::format::PercentModuleConfig) -> crate::format::PercentModuleConfig {
+    let mut config = default;
+    let Some(value) = entry.and_then(|opts| opts.get("percent")) else {
+        return config;
+    };
+    if !value.is_object() {
+        eprintln!("Error: usage: percent must be an object");
+        std::process::exit(480);
+    }
+    let get_int = |value: &crate::jsonc::Value| match value {
+        crate::jsonc::Value::Int(num) => *num as i32,
+        crate::jsonc::Value::UInt(num) => *num as i32,
+        _ => 0,
+    };
+    if let Some(green) = value.get("green") {
+        let num = get_int(green);
+        if !(0..=100).contains(&num) {
+            eprintln!("Error: usage: percent.green must be between 0 and 100");
+            std::process::exit(480);
+        }
+        config.green = num as u8;
+    }
+    if let Some(yellow) = value.get("yellow") {
+        let num = get_int(yellow);
+        if !(0..=100).contains(&num) {
+            eprintln!("Error: usage: percent.yellow must be between 0 and 100");
+            std::process::exit(480);
+        }
+        config.yellow = num as u8;
+    }
+    if let Some(kind) = value.get("type") {
+        match crate::config::percent_type_flags(kind) {
+            Ok(flags) => config.type_flags = flags,
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(480);
+            },
+        }
+    }
+    config
 }
 
 /// The key-path arg lists: ffPrintLogoAndKey's DEFAULT sites expand the

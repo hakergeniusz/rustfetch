@@ -12,7 +12,7 @@ use std::ffi::c_void;
 use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
-    modules::{Row, colorize_percent},
+    modules::Row,
     util,
 };
 
@@ -1498,22 +1498,42 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     }
 
+    let percent = super::percent_config(
+        instance.entry,
+        crate::format::PercentModuleConfig { green: 80, yellow: 90, type_flags: 0 },
+    );
+    let ctx = super::print_ctx(instance);
+    let df = &instance.display_format;
+    let percent_type_flags =
+        if percent.type_flags == 0 { df.percent_type } else { percent.type_flags };
     let single = devices.len() == 1;
     devices
         .into_iter()
         .enumerate()
         .map(|(index, device)| {
-            let mut value = device.name.clone();
-            if device.volume != VOLUME_UNKNOWN {
-                if !value.is_empty() {
-                    value.push(' ');
-                }
-                let colored = colorize_percent(f64::from(device.volume), 80, 90, instance.color);
-                value.push('(');
-                value.push_str(&colored);
-                value.push(')');
+            let mut value = String::new();
+            if percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0 {
+                value.push_str(&device.name);
             }
-            if device.is_main && !single {
+            if device.volume != VOLUME_UNKNOWN {
+                if percent_type_flags & crate::format::percent_type::BAR_BIT != 0 {
+                    if !value.is_empty() {
+                        value.push(' ');
+                    }
+                    crate::format::percent_append_bar(&mut value, device.volume as f64, percent, &ctx, df);
+                }
+                if percent_type_flags & crate::format::percent_type::NUM_BIT != 0 {
+                    if !value.is_empty() {
+                        value.push(' ');
+                    }
+                    let parentheses = !value.is_empty();
+                    crate::format::percent_append_num(&mut value, device.volume as f64, percent, parentheses, &ctx, df);
+                }
+            }
+            if percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0
+                && device.is_main
+                && !single
+            {
                 value.push_str(" (*)");
             }
             let key = if single {

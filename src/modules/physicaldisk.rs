@@ -238,6 +238,7 @@ fn detect(options: &PhysicalDiskOptions) -> Result<Vec<Disk>, &'static str> {
 
 pub fn run(instance: &Instance) -> Vec<Row> {
     let options = PhysicalDiskOptions::from_instance(instance);
+    let ctx = super::print_ctx(instance);
     let Ok(mut result) = detect(&options) else {
         return Vec::new();
     };
@@ -284,9 +285,20 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 value.push(']');
             }
 
-            if dev.temperature != TEMP_UNSET && !value.is_empty() {
-                value.push_str(" - ");
-                value.push_str(&super::temps_num(dev.temperature, options.temp_range.green, options.temp_range.yellow, instance.color));
+            if dev.temperature != TEMP_UNSET {
+                if !value.is_empty() {
+                    value.push_str(" - ");
+                }
+                crate::format::temps_append_num(
+                    &mut value,
+                    dev.temperature,
+                    crate::format::ColorRangeConfig {
+                        green: options.temp_range.green,
+                        yellow: options.temp_range.yellow,
+                    },
+                    &ctx,
+                    &instance.display_format,
+                );
             }
             Row::new(&format!("{} ({key_name})", instance.display_name("physicaldisk")), value)
         })

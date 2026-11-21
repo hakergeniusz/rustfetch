@@ -7,7 +7,6 @@ use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
     modules::Row,
-    modules::colorize_percent,
     util,
 };
 
@@ -68,15 +67,41 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         return Vec::new();
     };
 
-    let pct = memory.used as f64 * 100.0 / memory.total as f64;
+    let percent = super::percent_config(instance.entry, crate::format::PercentModuleConfig { green: 50, yellow: 80, type_flags: 0 });
+    let ctx = super::print_ctx(instance);
+    let df = &instance.display_format;
+    let percent_type_flags = if percent.type_flags == 0 { df.percent_type } else { percent.type_flags };
+
     let mut used_pretty = String::new();
-    crate::format::size_append_num(&mut used_pretty, memory.used, &instance.display_format);
+    crate::format::size_append_num(&mut used_pretty, memory.used, df);
     let mut total_pretty = String::new();
-    crate::format::size_append_num(&mut total_pretty, memory.total, &instance.display_format);
-    vec![Row::new(
-        instance.display_name("memory"),
-        format!("{} / {} ({})", used_pretty, total_pretty, colorize_percent(pct, 50, 80, instance.color)),
-    )]
+    crate::format::size_append_num(&mut total_pretty, memory.total, df);
+
+    if memory.total == 0 {
+        return vec![Row::new(instance.display_name("memory"), "Disabled")];
+    }
+    let percentage = memory.used as f64 / memory.total as f64 * 100.0;
+
+    let mut value = String::new();
+    if percent_type_flags & crate::format::percent_type::BAR_BIT != 0 {
+        crate::format::percent_append_bar(&mut value, percentage, percent, &ctx, df);
+        value.push(' ');
+    }
+    if percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0 {
+        value.push_str(&used_pretty);
+        value.push_str(" / ");
+        value.push_str(&total_pretty);
+        value.push(' ');
+    }
+    if percent_type_flags & crate::format::percent_type::NUM_BIT != 0 {
+        let parentheses = !value.is_empty();
+        crate::format::percent_append_num(&mut value, percentage, percent, parentheses, &ctx, df);
+    }
+    // ffStrbufTrimRight(&str, ' ').
+    while value.ends_with(' ') {
+        value.pop();
+    }
+    vec![Row::new(instance.display_name("memory"), value)]
 }
 
 /// ffGenerateMemoryJsonResult: raw byte counts.

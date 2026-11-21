@@ -595,7 +595,17 @@ pub fn detect(options: &GpuOptions) -> Result<Vec<GpuResult>, &'static str> {
 
 /// The text value: "{vendor} {name}", the vendor dropped when the name
 /// already starts with it, plus the temp/memory blocks and the [type] tag.
-fn item_value(gpu: &GpuResult, range: super::TempRange, color: bool, df: &crate::format::DisplayFormat) -> String {
+/// The vmem sizes hide under --percent-type hide-others; the percent num
+/// joins with ", " and the bar with " ".
+fn item_value(
+    gpu: &GpuResult,
+    temp_range: super::TempRange,
+    percent: crate::format::PercentModuleConfig,
+    ctx: &crate::format::PrintCtx,
+    df: &crate::format::DisplayFormat,
+) -> String {
+    let percent_type_flags =
+        if percent.type_flags == 0 { df.percent_type } else { percent.type_flags };
     let mut value = String::new();
     if !gpu.vendor.is_empty() && !gpu.name.to_ascii_lowercase().starts_with(&gpu.vendor.to_ascii_lowercase()) {
         value.push_str(&gpu.vendor);
@@ -611,22 +621,36 @@ fn item_value(gpu: &GpuResult, range: super::TempRange, color: bool, df: &crate:
     }
     if let Some(temperature) = gpu.temperature {
         value.push_str(" - ");
-        value.push_str(&super::temps_num(temperature, range.green, range.yellow, color));
+        crate::format::temps_append_num(
+            &mut value,
+            temperature,
+            crate::format::ColorRangeConfig { green: temp_range.green, yellow: temp_range.yellow },
+            ctx,
+            df,
+        );
     }
     // The dedicated memory block: percent thresholds {50, 80}.
     if let Some(total) = gpu.dedicated_total
         && total != 0
     {
         value.push_str(" (");
-        if let Some(used) = gpu.dedicated_used {
-            crate::format::size_append_num(&mut value, used, df);
-            value.push_str(" / ");
+        if percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0 {
+            if let Some(used) = gpu.dedicated_used {
+                crate::format::size_append_num(&mut value, used, df);
+                value.push_str(" / ");
+            }
+            crate::format::size_append_num(&mut value, total, df);
         }
-        crate::format::size_append_num(&mut value, total, df);
         if let Some(used) = gpu.dedicated_used {
-            let percent = used as f64 / total as f64 * 100.0;
-            value.push_str(", ");
-            value.push_str(&super::colorize_percent(percent, 50, 80, color));
+            let used_percent = used as f64 / total as f64 * 100.0;
+            if percent_type_flags & crate::format::percent_type::NUM_BIT != 0 {
+                value.push_str(", ");
+                crate::format::percent_append_num(&mut value, used_percent, percent, false, ctx, df);
+            }
+            if percent_type_flags & crate::format::percent_type::BAR_BIT != 0 {
+                value.push(' ');
+                crate::format::percent_append_bar(&mut value, used_percent, percent, ctx, df);
+            }
         }
         value.push(')');
     }
@@ -640,6 +664,11 @@ fn item_value(gpu: &GpuResult, range: super::TempRange, color: bool, df: &crate:
 
 pub fn run(instance: &Instance) -> Vec<Row> {
     let options = GpuOptions::from_instance(instance);
+    let percent = super::percent_config(
+        instance.entry,
+        crate::format::PercentModuleConfig { green: 50, yellow: 80, type_flags: 0 },
+    );
+    let ctx = super::print_ctx(instance);
     let Ok(gpus) = detect(&options) else {
         return Vec::new();
     };
@@ -653,7 +682,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             } else {
                 format!("{} {index}", instance.display_name("gpu"))
             };
-            Row::new(&key, item_value(gpu, options.temp_range, instance.color, &instance.display_format))
+            Row::new(&key, item_value(gpu, options.temp_range, percent, &ctx, &instance.display_format))
                 .with_index(index as u32)
         })
         .collect()

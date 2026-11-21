@@ -385,6 +385,14 @@ fn append_progress(out: &mut String, media: &Media) {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
+    let percent = super::percent_config(
+        instance.entry,
+        crate::format::PercentModuleConfig { green: 100, yellow: 100, type_flags: 0 },
+    );
+    let ctx = super::print_ctx(instance);
+    let df = &instance.display_format;
+    let percent_type_flags =
+        if percent.type_flags == 0 { df.percent_type } else { percent.type_flags };
     let Ok(media) = detect(&instance.player_name) else {
         // Both upstream errors ("Failed to load/connect to DBus", "No media
         // found") are error rows, hidden by default.
@@ -415,19 +423,21 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     value.push_str(&song_pretty);
 
     if media.length_ms > 0 {
-        value.push_str(" - ");
-        append_progress(&mut value, &media);
-
         // The media module hardcodes green=100/yellow=100 in its percent
         // config: the number is green, red only once the position runs past
         // the length (compared before rounding, like ffPercentAppendNum).
         let pct = media.position_ms as f64 * 100.0 / media.length_ms as f64;
-        let pct_text = format!("{pct:.0}");
-        if instance.color {
-            let code = if pct > 100.0 { "91" } else { "32" };
-            let _ = write!(value, " (\x1b[{code}m{pct_text}%\x1b[m)");
-        } else {
-            let _ = write!(value, " ({pct_text}%)");
+        if percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0 {
+            value.push_str(" - ");
+            append_progress(&mut value, &media);
+        }
+        if percent_type_flags & crate::format::percent_type::NUM_BIT != 0 {
+            value.push(' ');
+            crate::format::percent_append_num(&mut value, pct, percent, true, &ctx, df);
+        }
+        if percent_type_flags & crate::format::percent_type::BAR_BIT != 0 {
+            value.push(' ');
+            crate::format::percent_append_bar(&mut value, pct, percent, &ctx, df);
         }
     }
 

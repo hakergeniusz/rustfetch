@@ -208,6 +208,14 @@ fn top_processes() -> Vec<TopProcess> {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
+    let percent = super::percent_config(
+        instance.entry,
+        crate::format::PercentModuleConfig { green: 50, yellow: 80, type_flags: 0 },
+    );
+    let ctx = super::print_ctx(instance);
+    let df = &instance.display_format;
+    let percent_type_flags =
+        if percent.type_flags == 0 { df.percent_type } else { percent.type_flags };
     let results = top_processes();
     if results.is_empty() {
         // "No processes found" is an error row, hidden by default.
@@ -232,15 +240,19 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 process.name.clone()
             };
             let mut value = format!("{name} ({})", process.pid);
-            value.push_str(" - CPU ");
-            value.push_str(&super::colorize_percent(top.cpu_percent, 50, 80, instance.color));
-            value.push_str(" - MEM ");
-            crate::format::size_append_num(&mut value, process.mem_bytes, &instance.display_format);
-            value.push_str(" - DSK ");
-            crate::format::size_append_num(&mut value, top.bytes_read, &instance.display_format);
-            value.push_str("/s / ");
-            crate::format::size_append_num(&mut value, top.bytes_written, &instance.display_format);
-            value.push_str("/s");
+            if percent_type_flags & crate::format::percent_type::NUM_BIT != 0 {
+                value.push_str(" - CPU ");
+                crate::format::percent_append_num(&mut value, top.cpu_percent, percent, false, &ctx, df);
+            }
+            if percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0 {
+                value.push_str(" - MEM ");
+                crate::format::size_append_num(&mut value, process.mem_bytes, df);
+                value.push_str(" - DSK ");
+                crate::format::size_append_num(&mut value, top.bytes_read, df);
+                value.push_str("/s / ");
+                crate::format::size_append_num(&mut value, top.bytes_written, df);
+                value.push_str("/s");
+            }
             Row::new(&key, value).with_index(key_index)
         })
         .collect()

@@ -381,7 +381,12 @@ fn detect_cpu_temp(options: &CpuOptions) -> Option<f64> {
 }
 
 /// The module's text value: "name (coreTypes|cores) @ freq - temp".
-fn format_value(cpu: &CpuResult, options: &CpuOptions, color: bool, df: &crate::format::DisplayFormat) -> String {
+fn format_value(
+    cpu: &CpuResult,
+    options: &CpuOptions,
+    ctx: &crate::format::PrintCtx,
+    df: &crate::format::DisplayFormat,
+) -> String {
     let mut value = String::new();
     if !cpu.name.is_empty() {
         value.push_str(&cpu.name);
@@ -416,13 +421,23 @@ fn format_value(cpu: &CpuResult, options: &CpuOptions, color: bool, df: &crate::
 
     if let Some(temperature) = cpu.temperature {
         value.push_str(" - ");
-        value.push_str(&super::temps_num(temperature, options.temp_range.green, options.temp_range.yellow, color));
+        crate::format::temps_append_num(
+            &mut value,
+            temperature,
+            crate::format::ColorRangeConfig {
+                green: options.temp_range.green,
+                yellow: options.temp_range.yellow,
+            },
+            ctx,
+            df,
+        );
     }
     value
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
     let options = CpuOptions::from_instance(instance);
+    let ctx = super::print_ctx(instance);
     let mut cpu = match detect() {
         Ok(cpu) => cpu,
         Err(_) => return Vec::new(),
@@ -433,7 +448,10 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     if cpu.vendor.is_empty() && cpu.name.is_empty() && cpu.cores_online <= 1 {
         return Vec::new();
     }
-    vec![Row::new(instance.display_name("cpu"), format_value(&cpu, &options, instance.color, &instance.display_format))]
+    vec![Row::new(
+        instance.display_name("cpu"),
+        format_value(&cpu, &options, &ctx, &instance.display_format),
+    )]
 }
 
 /// ffGenerateCPUJsonResult.

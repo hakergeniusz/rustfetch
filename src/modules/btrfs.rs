@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
-    modules::{Row, colorize_percent},
+    modules::Row,
     util,
 };
 
@@ -168,6 +168,9 @@ fn detect() -> Result<Vec<Volume>, &'static str> {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
+    let percent = super::percent_config(instance.entry, crate::format::PercentModuleConfig { green: 50, yellow: 80, type_flags: 0 });
+    let ctx = super::print_ctx(instance);
+    let df = &instance.display_format;
     let Ok(volumes) = detect() else {
         // "opendir(\"/sys/fs/btrfs\") == nullptr" is an error row, hidden
         // by default.
@@ -204,19 +207,20 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 0.0
             };
             let mut used_pretty = String::new();
-            crate::format::size_append_num(&mut used_pretty, used, &instance.display_format);
+            crate::format::size_append_num(&mut used_pretty, used, df);
             let mut total_pretty = String::new();
-            crate::format::size_append_num(&mut total_pretty, total, &instance.display_format);
-            Row::new(
-                &key,
-                format!(
-                    "{} / {} ({}, {} allocated)",
-                    used_pretty,
-                    total_pretty,
-                    colorize_percent(used_pct, 50, 80, instance.color),
-                    colorize_percent(allocated_pct, 50, 80, instance.color),
-                ),
-            )
+            crate::format::size_append_num(&mut total_pretty, total, df);
+            let mut value = used_pretty;
+            value.push_str(" / ");
+            value.push_str(&total_pretty);
+            value.push_str(" (");
+            // The default branch ignores the percent type bits: both
+            // numbers print unparenthesized whatever the flags say.
+            crate::format::percent_append_num(&mut value, used_pct, percent, false, &ctx, df);
+            value.push_str(", ");
+            crate::format::percent_append_num(&mut value, allocated_pct, percent, false, &ctx, df);
+            value.push_str(" allocated)");
+            Row::new(&key, value)
         })
         .collect()
 }

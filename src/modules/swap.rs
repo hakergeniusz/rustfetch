@@ -8,7 +8,6 @@ use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
     modules::Row,
-    modules::colorize_percent,
     util,
 };
 
@@ -85,18 +84,52 @@ pub fn detect() -> Result<Vec<SwapResult>, String> {
     }
 }
 
-/// The default text row for one aggregate: "{used} / {total} ({pct})" or
-/// the Unused/Disabled markers when there is no space to report.
-fn aggregate_value(storage: &SwapResult, total_count: usize, color: bool, df: &crate::format::DisplayFormat) -> String {
+/// The default text row for one aggregate: bar + "used / total (pct)" per
+/// the percent type, or the Unused/Disabled markers when there is no space
+/// to report (the bar still draws at 0%).
+fn aggregate_value(storage: &SwapResult, total_count: usize, percent: crate::format::PercentModuleConfig, ctx: &crate::format::PrintCtx, df: &crate::format::DisplayFormat) -> String {
+    let percent_type_flags = if percent.type_flags == 0 { df.percent_type } else { percent.type_flags };
+    let mut value = String::new();
+
     if storage.total == 0 {
-        return if total_count > 0 { "Unused".to_string() } else { "Disabled".to_string() };
+        if percent_type_flags & crate::format::percent_type::BAR_BIT != 0 {
+            crate::format::percent_append_bar(&mut value, 0.0, percent, ctx, df);
+            value.push(' ');
+        }
+        if percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0 {
+            value.push_str(if total_count > 0 { "Unused" } else { "Disabled" });
+        } else {
+            let parentheses = !value.is_empty();
+            crate::format::percent_append_num(&mut value, 0.0, percent, parentheses, ctx, df);
+        }
+    } else {
+        let percentage = storage.used as f64 / storage.total as f64 * 100.0;
+        let mut used_pretty = String::new();
+        crate::format::size_append_num(&mut used_pretty, storage.used, df);
+        let mut total_pretty = String::new();
+        crate::format::size_append_num(&mut total_pretty, storage.total, df);
+
+        if percent_type_flags & crate::format::percent_type::BAR_BIT != 0 {
+            crate::format::percent_append_bar(&mut value, percentage, percent, ctx, df);
+            value.push(' ');
+        }
+        if percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0 {
+            value.push_str(&used_pretty);
+            value.push_str(" / ");
+            value.push_str(&total_pretty);
+            value.push(' ');
+        }
+        if percent_type_flags & crate::format::percent_type::NUM_BIT != 0 {
+            let parentheses = !value.is_empty();
+            crate::format::percent_append_num(&mut value, percentage, percent, parentheses, ctx, df);
+        }
     }
-    let pct = storage.used as f64 / storage.total as f64 * 100.0;
-    let mut used_pretty = String::new();
-    crate::format::size_append_num(&mut used_pretty, storage.used, df);
-    let mut total_pretty = String::new();
-    crate::format::size_append_num(&mut total_pretty, storage.total, df);
-    format!("{} / {} ({})", used_pretty, total_pretty, colorize_percent(pct, 50, 80, color))
+
+    // ffStrbufTrimRight(&str, ' ').
+    while value.ends_with(' ') {
+        value.pop();
+    }
+    value
 }
 
 /// Module options: separate off (ffInitSwapOptions).
@@ -118,6 +151,8 @@ impl SwapOptions {
 
 pub fn run(instance: &Instance) -> Vec<Row> {
     let options = SwapOptions::from_instance(instance);
+    let percent = super::percent_config(instance.entry, crate::format::PercentModuleConfig { green: 50, yellow: 80, type_flags: 0 });
+    let ctx = super::print_ctx(instance);
     let Ok(items) = detect() else {
         // Detection errors are hidden rows by default.
         return Vec::new();
@@ -133,7 +168,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 } else {
                     format!("{} ({})", instance.display_name("swap"), item.name)
                 };
-                Row::new(&key, aggregate_value(item, items.len(), instance.color, &instance.display_format))
+                Row::new(&key, aggregate_value(item, items.len(), percent, &ctx, &instance.display_format))
             })
             .collect();
     }
@@ -144,7 +179,10 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         total.used = total.used.saturating_add(item.used);
         total.total = total.total.saturating_add(item.total);
     }
-    vec![Row::new(instance.display_name("swap"), aggregate_value(&total, items.len(), instance.color, &instance.display_format))]
+    vec![Row::new(
+        instance.display_name("swap"),
+        aggregate_value(&total, items.len(), percent, &ctx, &instance.display_format),
+    )]
 }
 
 /// ffGenerateSwapJsonResult: one object per device, empty array when none.
@@ -178,7 +216,9 @@ mod tests {
 
     #[test]
     fn aggregate_marks_unused_and_disabled() {
-        assert_eq!(aggregate_value(&SwapResult { name: String::new(), used: 0, total: 0 }, 0, false, &Default::default()), "Disabled");
-        assert_eq!(aggregate_value(&SwapResult { name: String::new(), used: 0, total: 0 }, 2, false, &Default::default()), "Unused");
+        let percent = crate::format::PercentModuleConfig { green: 50, yellow: 80, type_flags: 0 };
+        let ctx = crate::format::PrintCtx { pipe: true, output_color: String::new() };
+        assert_eq!(aggregate_value(&SwapResult { name: String::new(), used: 0, total: 0 }, 0, percent, &ctx, &Default::default()), "Disabled");
+        assert_eq!(aggregate_value(&SwapResult { name: String::new(), used: 0, total: 0 }, 2, percent, &ctx, &Default::default()), "Unused");
     }
 }

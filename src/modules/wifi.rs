@@ -13,7 +13,7 @@ use std::ffi::{CStr, c_char, c_int, c_void};
 use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
-    modules::{Row, colorize_percent},
+    modules::Row,
     util,
 };
 
@@ -1389,37 +1389,68 @@ fn band_str(frequency: u16) -> &'static str {
     }
 }
 
-/// The default-format value for one interface.
-fn item_value(item: &WifiItem, color: bool) -> String {
+/// The default-format value for one interface. The bar prints before the
+/// ssid; the number's parentheses open only when the buffer is non-empty
+/// (hidden by --percent-type hide-others with no bar, upstream prints a
+/// bare number).
+fn item_value(
+    item: &WifiItem,
+    percent: crate::format::PercentModuleConfig,
+    ctx: &crate::format::PrintCtx,
+    df: &crate::format::DisplayFormat,
+) -> String {
     if !item.ssid.is_empty() {
+        let percent_type_flags =
+            if percent.type_flags == 0 { df.percent_type } else { percent.type_flags };
         let mut buffer = String::new();
-        buffer.push_str(&item.ssid);
-        if !item.protocol.is_empty() {
-            buffer.push_str(" - ");
-            buffer.push_str(&item.protocol);
+        if let Some(quality) = item.signal_quality
+            && percent_type_flags & crate::format::percent_type::BAR_BIT != 0
+        {
+            crate::format::percent_append_bar(&mut buffer, quality, percent, ctx, df);
+            buffer.push(' ');
         }
-        let band = band_str(item.frequency);
-        if !band.is_empty() {
-            buffer.push_str(&format!(" - {band} GHz"));
+        if percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0 {
+            buffer.push_str(&item.ssid);
+            if !item.protocol.is_empty() {
+                buffer.push_str(" - ");
+                buffer.push_str(&item.protocol);
+            }
+            let band = band_str(item.frequency);
+            if !band.is_empty() {
+                buffer.push_str(" - ");
+                buffer.push_str(band);
+                if df.freq_space_before_unit != crate::format::SpaceBeforeUnit::Never {
+                    buffer.push(' ');
+                }
+                buffer.push_str("GHz");
+            }
+            if !item.security.is_empty() {
+                buffer.push_str(" - ");
+                buffer.push_str(&item.security);
+            }
+            buffer.push(' ');
         }
-        if !item.security.is_empty() {
-            buffer.push_str(" - ");
-            buffer.push_str(&item.security);
+        if let Some(quality) = item.signal_quality
+            && percent_type_flags & crate::format::percent_type::NUM_BIT != 0
+        {
+            let parentheses = !buffer.is_empty();
+            crate::format::percent_append_num(&mut buffer, quality, percent, parentheses, ctx, df);
         }
-        buffer.push(' ');
-        if let Some(quality) = item.signal_quality {
-            let colored = colorize_percent(quality, 75, 50, color);
-            buffer.push('(');
-            buffer.push_str(&colored);
-            buffer.push(')');
+        while buffer.ends_with(' ') {
+            buffer.pop();
         }
-        buffer.trim_end().to_string()
+        buffer
     } else {
         item.inf_status.clone()
     }
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
+    let percent = super::percent_config(
+        instance.entry,
+        crate::format::PercentModuleConfig { green: 75, yellow: 50, type_flags: 0 },
+    );
+    let ctx = super::print_ctx(instance);
     let items = detect();
     if items.is_empty() {
         // "No Wifi interfaces found" is an error row, hidden by default.
@@ -1435,7 +1466,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             } else {
                 format!("{} {}", instance.display_name("wifi"), index + 1)
             };
-            Row::new(&key, item_value(&item, instance.color))
+            Row::new(&key, item_value(&item, percent, &ctx, &instance.display_format))
                 .with_index(if single { 0 } else { index as u32 + 1 })
         })
         .collect()
@@ -1608,19 +1639,24 @@ mod tests {
             frequency: 5180,
             ..Default::default()
         };
-        assert_eq!(item_value(&item, false), "home - 802.11ac (Wi-Fi 5) - 5 GHz - WPA2 (52%)");
+        let percent = crate::format::PercentModuleConfig { green: 75, yellow: 50, type_flags: 0 };
+        let ctx = crate::format::PrintCtx { pipe: true, output_color: String::new() };
+        assert_eq!(
+            item_value(&item, percent, &ctx, &Default::default()),
+            "home - 802.11ac (Wi-Fi 5) - 5 GHz - WPA2 (52%)"
+        );
         let disconnected = WifiItem {
             inf_status: "down".into(),
             ..Default::default()
         };
-        assert_eq!(item_value(&disconnected, false), "down");
+        assert_eq!(item_value(&disconnected, percent, &ctx, &Default::default()), "down");
         // No security: no trailing separator.
         let open = WifiItem {
             ssid: "cafe".into(),
             signal_quality: Some(100.0),
             ..Default::default()
         };
-        assert_eq!(item_value(&open, false), "cafe (100%)");
+        assert_eq!(item_value(&open, percent, &ctx, &Default::default()), "cafe (100%)");
     }
 
     #[test]

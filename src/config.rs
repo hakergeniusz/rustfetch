@@ -908,6 +908,215 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
                         &format!("display.{key} must be an object"),
                     );
                 }
+                // Upstream probes the sub-keys with yyjson_obj_get in a
+                // fixed order, mutating the one FFOptionsDisplay struct.
+                let format = config.display_format.get_or_insert_with(Default::default);
+                match key.as_str() {
+                    "temp" => {
+                        if let Some(unit) = value.get("unit") {
+                            format.temp_unit = match json_config_enum(
+                                unit,
+                                key,
+                                &[("DEFAULT", 0), ("D", 0), ("CELSIUS", 1), ("C", 1), ("FAHRENHEIT", 2), ("F", 2), ("KELVIN", 3), ("K", 3)],
+                            ) {
+                                1 => crate::format::TemperatureUnit::Celsius,
+                                2 => crate::format::TemperatureUnit::Fahrenheit,
+                                3 => crate::format::TemperatureUnit::Kelvin,
+                                _ => crate::format::TemperatureUnit::Default,
+                            };
+                        }
+                        if let Some(ndigits) = value.get("ndigits") {
+                            let raw = json_get_uint(ndigits, "display.temp.ndigits must be an unsigned integer", key);
+                            if raw > 9 {
+                                section_error("display", Some(key), "display.temp.ndigits must be between 0 and 9");
+                            }
+                            format.temp_ndigits = raw as u8;
+                        }
+                        if let Some(color) = value.get("color") {
+                            if !color.is_object() {
+                                section_error("display", Some(key), "display.temp.color must be an object");
+                            }
+                            // Only the sub-keys present are written; absent
+                            // ones keep their defaults.
+                            if let Some(green) = color.get("green") {
+                                format.temp_color_green = json_color(Some(green));
+                            }
+                            if let Some(yellow) = color.get("yellow") {
+                                format.temp_color_yellow = json_color(Some(yellow));
+                            }
+                            if let Some(red) = color.get("red") {
+                                format.temp_color_red = json_color(Some(red));
+                            }
+                        }
+                        if let Some(space) = value.get("spaceBeforeUnit") {
+                            format.temp_space_before_unit = space_before_unit_enum(space, key);
+                        }
+                    },
+                    "percent" => {
+                        if let Some(kind) = value.get("type") {
+                            match percent_type_flags(kind) {
+                                Ok(flags) => format.percent_type = flags,
+                                Err(error) => section_error("display", Some(key), error),
+                            }
+                        }
+                        if let Some(ndigits) = value.get("ndigits") {
+                            let raw = json_get_uint(ndigits, "display.percent.ndigits must be an unsigned integer", key);
+                            if raw > 9 {
+                                section_error("display", Some(key), "display.percent.ndigits must be between 0 and 9");
+                            }
+                            format.percent_ndigits = raw as u8;
+                        }
+                        if let Some(color) = value.get("color") {
+                            if !color.is_object() {
+                                section_error("display", Some(key), "display.percent.color must be an object");
+                            }
+                            // Only the sub-keys present are written; absent
+                            // ones keep their defaults.
+                            if let Some(green) = color.get("green") {
+                                format.percent_color_green = json_color(Some(green));
+                            }
+                            if let Some(yellow) = color.get("yellow") {
+                                format.percent_color_yellow = json_color(Some(yellow));
+                            }
+                            if let Some(red) = color.get("red") {
+                                format.percent_color_red = json_color(Some(red));
+                            }
+                        }
+                        if let Some(space) = value.get("spaceBeforeUnit") {
+                            format.percent_space_before_unit = space_before_unit_enum(space, key);
+                        }
+                        if let Some(width) = value.get("width") {
+                            // (uint8_t) yyjson_get_uint: the raw cast, no
+                            // range check.
+                            format.percent_width = json_get_uint16(width) as u8;
+                        }
+                    },
+                    "bar" => {
+                        // char.elapsed/char.total or the renamed keys'
+                        // usage errors; ffStrbufSetJsonVal clears on
+                        // non-strings.
+                        if let Some(chars) = value.get("char") {
+                            if !chars.is_object() {
+                                section_error("display", Some(key), "display.bar.char must be an object");
+                            }
+                            if let Some(elapsed) = chars.get("elapsed") {
+                                format.bar_char_elapsed = elapsed.as_str().map_or_else(String::new, str::to_owned);
+                            }
+                            if let Some(total) = chars.get("total") {
+                                format.bar_char_total = total.as_str().map_or_else(String::new, str::to_owned);
+                            }
+                        } else if value.get("charElapsed").is_some() {
+                            section_error("display", Some(key), "display.bar.charElapsed has been renamed to display.bar.char.elapsed.");
+                        } else if value.get("charTotal").is_some() {
+                            section_error("display", Some(key), "display.bar.charTotal has been renamed to display.bar.char.total.");
+                        }
+                        if let Some(border) = value.get("border") {
+                            if matches!(border, jsonc::Value::Null) {
+                                format.bar_border_left = String::new();
+                                format.bar_border_right = String::new();
+                                format.bar_border_left_elapsed = String::new();
+                                format.bar_border_right_elapsed = String::new();
+                            } else {
+                                if !border.is_object() {
+                                    section_error("display", Some(key), "display.bar.border must be an object");
+                                }
+                                if let Some(left) = border.get("left") {
+                                    format.bar_border_left = left.as_str().map_or_else(String::new, str::to_owned);
+                                }
+                                if let Some(right) = border.get("right") {
+                                    format.bar_border_right = right.as_str().map_or_else(String::new, str::to_owned);
+                                }
+                                if let Some(left) = border.get("leftElapsed") {
+                                    format.bar_border_left_elapsed = left.as_str().map_or_else(String::new, str::to_owned);
+                                }
+                                if let Some(right) = border.get("rightElapsed") {
+                                    format.bar_border_right_elapsed = right.as_str().map_or_else(String::new, str::to_owned);
+                                }
+                            }
+                        } else if value.get("borderLeft").is_some() {
+                            section_error("display", Some(key), "display.bar.borderLeft has been renamed to display.bar.border.left.");
+                        } else if value.get("borderRight").is_some() {
+                            section_error("display", Some(key), "display.bar.borderRight has been renamed to display.bar.border.right.");
+                        }
+                        if let Some(color) = value.get("color") {
+                            if matches!(color, jsonc::Value::Null) {
+                                format.bar_color_elapsed = String::new();
+                                format.bar_color_total = String::new();
+                                format.bar_color_border = String::new();
+                            } else {
+                                if !color.is_object() {
+                                    section_error("display", Some(key), "display.bar.color must be an object");
+                                }
+                                if let Some(elapsed) = color.get("elapsed") {
+                                    match elapsed.as_str() {
+                                        // A non-string elapsed clears it;
+                                        // "auto" re-enters band selection.
+                                        None => format.bar_color_elapsed = String::new(),
+                                        Some(text) if text.eq_ignore_ascii_case("auto") => {
+                                            format.bar_color_elapsed = "auto".to_string();
+                                        },
+                                        Some(_) => format.bar_color_elapsed = json_color(Some(elapsed)),
+                                    }
+                                }
+                                if let Some(total) = color.get("total") {
+                                    format.bar_color_total = json_color(Some(total));
+                                }
+                                if let Some(border_color) = color.get("border") {
+                                    format.bar_color_border = json_color(Some(border_color));
+                                }
+                            }
+                        }
+                        if let Some(width) = value.get("width") {
+                            format.bar_width = json_get_uint16(width) as u8;
+                        }
+                    },
+                    "fraction" => {
+                        // The fraction formatter joins with the format-args
+                        // engine; the usage errors are validated now so the
+                        // config reject paths match, the values drop.
+                        if let Some(ndigits) = value.get("ndigits")
+                            && !matches!(ndigits, jsonc::Value::Null)
+                        {
+                            let raw = json_get_int(ndigits, "display.fraction.ndigits must be an integer", key);
+                            if !(-1..=9).contains(&raw) {
+                                section_error("display", Some(key), "display.fraction.ndigits must be between -1 and 9");
+                            }
+                        }
+                        if let Some(zeros) = value.get("trailingZeros")
+                            && !matches!(zeros, jsonc::Value::Null)
+                        {
+                            json_config_enum(
+                                zeros,
+                                key,
+                                &[("default", 0), ("always", 1), ("never", 2)],
+                            );
+                        }
+                    },
+                    _ => {
+                        // display.common: one ndigits write fans out to
+                        // every formatter (fraction included upstream; its
+                        // field drops with the fraction parse above), one
+                        // spaceBeforeUnit to all five.
+                        if let Some(ndigits) = value.get("ndigits") {
+                            let raw = json_get_uint(ndigits, "display.common.ndigits must be an unsigned integer", key);
+                            if raw > 9 {
+                                section_error("display", Some(key), "display.common.ndigits must be between 0 and 9");
+                            }
+                            format.freq_ndigits = raw as i8;
+                            format.percent_ndigits = raw as u8;
+                            format.size_ndigits = raw as u8;
+                            format.temp_ndigits = raw as u8;
+                        }
+                        if let Some(space) = value.get("spaceBeforeUnit") {
+                            let kind = space_before_unit_enum(space, key);
+                            format.duration_space_before_unit = kind;
+                            format.freq_space_before_unit = kind;
+                            format.percent_space_before_unit = kind;
+                            format.size_space_before_unit = kind;
+                            format.temp_space_before_unit = kind;
+                        }
+                    },
+                }
             },
             _ => section_error("display", Some(key), "Unknown display property"),
         }
@@ -989,6 +1198,42 @@ fn json_get_int(value: &jsonc::Value, message: &str, section_key: &str) -> i64 {
         jsonc::Value::UInt(amount) => *amount as i64,
         jsonc::Value::Int(amount) => *amount,
         _ => section_error("display", Some(section_key), message),
+    }
+}
+
+/// ffOptionParseColor on a JSON string value: strings parse (exit 479 on
+/// a bad one), anything else leaves the target cleared.
+fn json_color(value: Option<&jsonc::Value>) -> String {
+    value.and_then(|v| v.as_str()).map_or_else(String::new, |text| crate::cli::ColorState::fresh().parse_color(text))
+}
+
+/// ffPercentParseTypeJsonConfig: a non-negative integer is the bit set
+/// verbatim (the uint8_t cast truncates); an array of flag names
+/// accumulates the bits; anything else is the typed usage error the
+/// caller reports (section_error at display level, fputs+exit(480) at
+/// module level).
+pub(crate) fn percent_type_flags(value: &jsonc::Value) -> Result<u8, &'static str> {
+    match value {
+        jsonc::Value::UInt(bits) => Ok(*bits as u8),
+        jsonc::Value::Int(bits) if *bits >= 0 => Ok(*bits as u8),
+        jsonc::Value::Array(items) => {
+            let mut flags = 0u8;
+            for item in items {
+                let Some(flag) = item.as_str() else {
+                    return Err("Error: percent.type: invalid flag string");
+                };
+                flags |= match flag.to_ascii_lowercase().as_str() {
+                    "num" => crate::format::percent_type::NUM_BIT,
+                    "bar" => crate::format::percent_type::BAR_BIT,
+                    "hide-others" => crate::format::percent_type::HIDE_OTHERS_BIT,
+                    "num-color" => crate::format::percent_type::NUM_COLOR_BIT,
+                    "bar-monochrome" => crate::format::percent_type::BAR_MONOCHROME_BIT,
+                    _ => return Err("Error: percent.type: unknown flag string"),
+                };
+            }
+            Ok(flags)
+        },
+        _ => Err("Error: usage: percent.type must be a number or an array of strings"),
     }
 }
 

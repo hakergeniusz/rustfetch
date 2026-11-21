@@ -12,7 +12,7 @@ use std::ffi::{c_char, c_int, c_void};
 use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
-    modules::{Row, colorize_percent},
+    modules::Row,
     util,
 };
 
@@ -216,8 +216,9 @@ fn detect() -> Result<Vec<ZpoolItem>, &'static str> {
 }
 
 /// The default-format value for one pool: the used/total percents, the
-/// fragmentation (or "-" when the pool reports none) and the state.
-fn item_value(item: &ZpoolItem, color: bool, df: &crate::format::DisplayFormat) -> String {
+/// fragmentation (the unset UINT64_MAX maps onto the -DBL_MAX sentinel,
+/// whose number prints "-") and the state.
+fn item_value(item: &ZpoolItem, percent: crate::format::PercentModuleConfig, ctx: &crate::format::PrintCtx, df: &crate::format::DisplayFormat) -> String {
     let used_percent = if item.total > 0 {
         item.used as f64 / item.total as f64 * 100.0
     } else {
@@ -233,14 +234,12 @@ fn item_value(item: &ZpoolItem, color: bool, df: &crate::format::DisplayFormat) 
     let mut total_pretty = String::new();
     crate::format::size_append_num(&mut total_pretty, item.total, df);
     let mut value = format!("{} / {} (", used_pretty, total_pretty);
-    value.push_str(&colorize_percent(used_percent, 50, 80, color));
+    crate::format::percent_append_num(&mut value, used_percent, percent, false, ctx, df);
     value.push_str(", ");
-    value.push_str(&colorize_percent(allocated_percent, 50, 80, color));
+    crate::format::percent_append_num(&mut value, allocated_percent, percent, false, ctx, df);
     value.push_str(" allocated, ");
-    match item.fragmentation {
-        Some(frag) => value.push_str(&colorize_percent(frag, 50, 80, color)),
-        None => value.push('-'),
-    }
+    let frag = item.fragmentation.unwrap_or(f64::MIN);
+    crate::format::percent_append_num(&mut value, frag, percent, false, ctx, df);
     value.push_str(" frag) - ");
     value.push_str(&item.state);
     if item.read_only {
@@ -250,6 +249,8 @@ fn item_value(item: &ZpoolItem, color: bool, df: &crate::format::DisplayFormat) 
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
+    let percent = super::percent_config(instance.entry, crate::format::PercentModuleConfig { green: 50, yellow: 80, type_flags: 0 });
+    let ctx = super::print_ctx(instance);
     let Ok(items) = detect() else {
         // The detection error string is an error row, hidden by default.
         return Vec::new();
@@ -271,7 +272,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             if !single {
                 key.push_str(&format!(" {}", index + 1));
             }
-            Row::new(&key, item_value(&item, instance.color, &instance.display_format))
+            Row::new(&key, item_value(&item, percent, &ctx, &instance.display_format))
         })
         .collect()
 }
@@ -330,7 +331,7 @@ mod tests {
             read_only: false,
         };
         assert_eq!(
-            item_value(&item, false, &Default::default()),
+            item_value(&item, crate::format::PercentModuleConfig { green: 50, yellow: 80, type_flags: 0 }, &crate::format::PrintCtx { pipe: true, output_color: String::new() }, &Default::default()),
             "500.00 GiB / 1000.00 GiB (50%, 45% allocated, 12% frag) - ONLINE"
         );
         let read_only = ZpoolItem {
@@ -340,7 +341,7 @@ mod tests {
             ..item
         };
         assert_eq!(
-            item_value(&read_only, false, &Default::default()),
+            item_value(&read_only, crate::format::PercentModuleConfig { green: 50, yellow: 80, type_flags: 0 }, &crate::format::PrintCtx { pipe: true, output_color: String::new() }, &Default::default()),
             "500.00 GiB / 1000.00 GiB (50%, 45% allocated, - frag) - DEGRADED [Read-only]"
         );
     }

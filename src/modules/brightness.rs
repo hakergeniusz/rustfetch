@@ -10,7 +10,6 @@ use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
     modules::Row,
-    modules::colorize_percent,
     util,
 };
 
@@ -366,6 +365,10 @@ fn detect() -> Vec<Brightness> {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
+    let percent = super::percent_config(instance.entry, crate::format::PercentModuleConfig { green: 100, yellow: 100, type_flags: 0 });
+    let ctx = super::print_ctx(instance);
+    let df = &instance.display_format;
+    let percent_type_flags = if percent.type_flags == 0 { df.percent_type } else { percent.type_flags };
     let result = detect();
 
     if result.is_empty() {
@@ -376,19 +379,24 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     result
         .iter()
         .map(|display| {
+            // Brightness hardcodes green=100/yellow=100: the number is
+            // green (red only past 100, impossible here).
             let pct = display.current / display.max * 100.0;
-            // Brightness hardcodes green=100/yellow=100: the number is green.
+            let mut value = String::new();
+            if percent_type_flags & crate::format::percent_type::BAR_BIT != 0 {
+                crate::format::percent_append_bar(&mut value, pct, percent, &ctx, df);
+            }
+            if percent_type_flags & crate::format::percent_type::NUM_BIT != 0 {
+                if !value.is_empty() {
+                    value.push(' ');
+                }
+                let parentheses = !value.is_empty();
+                crate::format::percent_append_num(&mut value, pct, percent, parentheses, &ctx, df);
+            }
+            value.push_str(if display.builtin { " [Built-in]" } else { " [External]" });
             Row::new(
                 &format!("{} ({})", instance.display_name("brightness"), display.name),
-                format!(
-                    "{} [{}]",
-                    colorize_percent(pct, 100, 100, instance.color),
-                    if display.builtin {
-                        "Built-in"
-                    } else {
-                        "External"
-                    }
-                ),
+                value,
             )
         })
         .collect()

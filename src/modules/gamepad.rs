@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
-    modules::{colorize_percent, Row},
+    modules::Row,
     util,
 };
 
@@ -73,6 +73,10 @@ fn detect() -> Vec<GamepadDevice> {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
+    let percent = super::percent_config(instance.entry, crate::format::PercentModuleConfig { green: 50, yellow: 20, type_flags: 0 });
+    let ctx = super::print_ctx(instance);
+    let df = &instance.display_format;
+    let percent_type_flags = if percent.type_flags == 0 { df.percent_type } else { percent.type_flags };
     let devices = detect();
     if devices.is_empty() {
         // "No gamepad found" is an error row, hidden by default.
@@ -90,15 +94,22 @@ pub fn run(instance: &Instance) -> Vec<Row> {
                 format!("{} {index}", instance.display_name("gamepad"))
             };
 
-            let mut value = device.name.clone();
-            // The gamepad percent config is the inverted {50, 20}.
-            if device.battery > 0 && device.battery <= 100 {
-                let pct = colorize_percent(device.battery as f64, 50, 20, instance.color);
-                if value.is_empty() {
-                    value = pct;
-                } else {
-                    value.push_str(&format!(" ({pct})"));
+            // showBatteryLevel: the uint8_t battery's 0 means unknown.
+            let show_battery = device.battery > 0 && device.battery <= 100;
+            let mut value = String::new();
+            if show_battery && percent_type_flags & crate::format::percent_type::BAR_BIT != 0 {
+                crate::format::percent_append_bar(&mut value, device.battery as f64, percent, &ctx, df);
+                value.push(' ');
+            }
+            if percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0 {
+                value.push_str(&device.name);
+            }
+            if show_battery && percent_type_flags & crate::format::percent_type::NUM_BIT != 0 {
+                if !value.is_empty() {
+                    value.push(' ');
                 }
+                let parentheses = !value.is_empty();
+                crate::format::percent_append_num(&mut value, device.battery as f64, percent, parentheses, &ctx, df);
             }
             Row::new(&key, value).with_index(index as u32)
         })

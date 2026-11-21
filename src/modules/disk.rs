@@ -9,7 +9,7 @@ use std::os::unix::fs::MetadataExt;
 use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
-    modules::{colorize_percent, Row},
+    modules::Row,
     util,
 };
 
@@ -336,37 +336,60 @@ fn show_types_match(volume_type: u8) -> bool {
 }
 
 /// printDisk's default format for one disk.
-fn item_value(disk: &DiskResult, color: bool, df: &crate::format::DisplayFormat) -> String {
+fn item_value(disk: &DiskResult, percent: crate::format::PercentModuleConfig, ctx: &crate::format::PrintCtx, df: &crate::format::DisplayFormat) -> String {
     let bytes_used = disk.bytes_total.saturating_sub(disk.bytes_free);
-    let pct = if disk.bytes_total > 0 {
-        bytes_used as f64 * 100.0 / disk.bytes_total as f64
+    let percentage = if disk.bytes_total > 0 {
+        bytes_used as f64 / disk.bytes_total as f64 * 100.0
     } else {
         0.0
     };
+    let percent_type_flags = if percent.type_flags == 0 { df.percent_type } else { percent.type_flags };
 
-    let mut value = if disk.bytes_total > 0 {
-        // "used / total " then the percentage then a separator space
-        let mut used_pretty = String::new();
-        crate::format::size_append_num(&mut used_pretty, bytes_used, df);
-        let mut total_pretty = String::new();
-        crate::format::size_append_num(&mut total_pretty, disk.bytes_total, df);
-        format!("{} / {} ({}) ", used_pretty, total_pretty, colorize_percent(pct, 50, 80, color))
+    let mut value = String::new();
+    if disk.bytes_total > 0 {
+        if percent_type_flags & crate::format::percent_type::BAR_BIT != 0 {
+            crate::format::percent_append_bar(&mut value, percentage, percent, ctx, df);
+            value.push(' ');
+        }
+        if percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0 {
+            let mut used_pretty = String::new();
+            crate::format::size_append_num(&mut used_pretty, bytes_used, df);
+            let mut total_pretty = String::new();
+            crate::format::size_append_num(&mut total_pretty, disk.bytes_total, df);
+            value.push_str(&used_pretty);
+            value.push_str(" / ");
+            value.push_str(&total_pretty);
+            value.push(' ');
+        }
+        if percent_type_flags & crate::format::percent_type::NUM_BIT != 0 {
+            let parentheses = !value.is_empty();
+            crate::format::percent_append_num(&mut value, percentage, percent, parentheses, ctx, df);
+            value.push(' ');
+        }
     } else {
-        "Unknown ".to_string()
-    };
-
-    if !disk.filesystem.is_empty() {
-        value.push_str(&format!("- {} ", disk.filesystem));
+        value.push_str("Unknown ");
     }
 
-    let names = type_names(disk.volume_type);
-    if !names.is_empty() {
-        value.push_str(&format!("[{}]", names.join(", ")));
+    if percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0 {
+        if !disk.filesystem.is_empty() {
+            value.push_str(&format!("- {} ", disk.filesystem));
+        }
+        let names = type_names(disk.volume_type);
+        if !names.is_empty() {
+            value.push_str(&format!("[{}]", names.join(", ")));
+        }
     }
-    value.trim_end().to_string()
+
+    // ffStrbufTrimRight(&str, ' ').
+    while value.ends_with(' ') {
+        value.pop();
+    }
+    value
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
+    let percent = super::percent_config(instance.entry, crate::format::PercentModuleConfig { green: 50, yellow: 80, type_flags: 0 });
+    let ctx = super::print_ctx(instance);
     let Ok(disks) = detect() else {
         return Vec::new();
     };
@@ -376,7 +399,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
         .map(|disk| {
             Row::new(
                 &format!("{} ({})", instance.display_name("disk"), disk.mountpoint),
-                item_value(disk, instance.color, &instance.display_format),
+                item_value(disk, percent, &ctx, &instance.display_format),
             )
         })
         .collect()

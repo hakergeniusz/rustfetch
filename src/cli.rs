@@ -165,6 +165,38 @@ pub struct Cli {
     /// / `--freq-space-before-unit`.
     pub freq_ndigits: Option<i32>,
     pub freq_space_before_unit: Option<crate::format::SpaceBeforeUnit>,
+    /// `--temp-unit` / `--temp-ndigits` / the `--temp-color-*` trio /
+    /// `--temp-space-before-unit`: the ffTempsAppendNum knobs (the
+    /// ndigits cast truncates to uint8_t, no range check).
+    pub temp_unit: Option<crate::format::TemperatureUnit>,
+    pub temp_ndigits: Option<u32>,
+    pub temp_color_green: Option<String>,
+    pub temp_color_yellow: Option<String>,
+    pub temp_color_red: Option<String>,
+    pub temp_space_before_unit: Option<crate::format::SpaceBeforeUnit>,
+    /// `--percent-type` (uint8 truncating cast) / `--percent-ndigits` /
+    /// the `--percent-color-*` trio / `--percent-space-before-unit` /
+    /// `--percent-width`: the ffPercentAppendNum knobs.
+    pub percent_type: Option<u32>,
+    pub percent_ndigits: Option<u32>,
+    pub percent_color_green: Option<String>,
+    pub percent_color_yellow: Option<String>,
+    pub percent_color_red: Option<String>,
+    pub percent_space_before_unit: Option<crate::format::SpaceBeforeUnit>,
+    pub percent_width: Option<u32>,
+    /// The `--bar-*` strings, width and colors of ffPercentAppendBar;
+    /// `--bar-color-elapsed` keeps the literal "auto" (the band-selection
+    /// mode) verbatim.
+    pub bar_char_elapsed: Option<String>,
+    pub bar_char_total: Option<String>,
+    pub bar_border_left: Option<String>,
+    pub bar_border_right: Option<String>,
+    pub bar_border_left_elapsed: Option<String>,
+    pub bar_border_right_elapsed: Option<String>,
+    pub bar_color_elapsed: Option<String>,
+    pub bar_color_total: Option<String>,
+    pub bar_color_border: Option<String>,
+    pub bar_width: Option<u32>,
     /// `--bright-color <?bool>`: the bolt ahead of the key/title colors.
     pub bright_color: Option<bool>,
     /// The config document loaded during the command pass: upstream
@@ -231,6 +263,29 @@ impl Cli {
             size_space_before_unit: None,
             freq_ndigits: None,
             freq_space_before_unit: None,
+            temp_unit: None,
+            temp_ndigits: None,
+            temp_color_green: None,
+            temp_color_yellow: None,
+            temp_color_red: None,
+            temp_space_before_unit: None,
+            percent_type: None,
+            percent_ndigits: None,
+            percent_color_green: None,
+            percent_color_yellow: None,
+            percent_color_red: None,
+            percent_space_before_unit: None,
+            percent_width: None,
+            bar_char_elapsed: None,
+            bar_char_total: None,
+            bar_border_left: None,
+            bar_border_right: None,
+            bar_border_left_elapsed: None,
+            bar_border_right_elapsed: None,
+            bar_color_elapsed: None,
+            bar_color_total: None,
+            bar_color_border: None,
+            bar_width: None,
             bright_color: None,
             pipe: None,
             watch_interval: 0,
@@ -722,6 +777,90 @@ impl Cli {
                         },
                     }
                 },
+                key if key.to_ascii_lowercase().starts_with("--temp-") => {
+                    let subkey = &key.to_ascii_lowercase()["--temp-".len()..];
+                    match subkey {
+                        "unit" => cli.temp_unit = Some(temp_unit_enum(key, value)),
+                        "ndigits" => cli.temp_ndigits = Some(parse_uint32(key, value)),
+                        "color-green" => {
+                            cli.temp_color_green = Some(value.map_or_else(String::new, |v| state.parse_color(v)));
+                        },
+                        "color-yellow" => {
+                            cli.temp_color_yellow = Some(value.map_or_else(String::new, |v| state.parse_color(v)));
+                        },
+                        "color-red" => {
+                            cli.temp_color_red = Some(value.map_or_else(String::new, |v| state.parse_color(v)));
+                        },
+                        "space-before-unit" => {
+                            cli.temp_space_before_unit = Some(space_before_unit_enum(key, value));
+                        },
+                        _ => {
+                            if !parse_module_options(key, value) {
+                                eprintln!("Error: unknown option: {key}");
+                                std::process::exit(400);
+                            }
+                        },
+                    }
+                },
+                key if key.to_ascii_lowercase().starts_with("--percent-") => {
+                    let subkey = &key.to_ascii_lowercase()["--percent-".len()..];
+                    match subkey {
+                        "type" => cli.percent_type = Some(parse_uint32(key, value)),
+                        "ndigits" => cli.percent_ndigits = Some(parse_uint32(key, value)),
+                        "color-green" => {
+                            cli.percent_color_green = Some(value.map_or_else(String::new, |v| state.parse_color(v)));
+                        },
+                        "color-yellow" => {
+                            cli.percent_color_yellow = Some(value.map_or_else(String::new, |v| state.parse_color(v)));
+                        },
+                        "color-red" => {
+                            cli.percent_color_red = Some(value.map_or_else(String::new, |v| state.parse_color(v)));
+                        },
+                        "space-before-unit" => {
+                            cli.percent_space_before_unit = Some(space_before_unit_enum(key, value));
+                        },
+                        "width" => cli.percent_width = Some(parse_uint32(key, value)),
+                        _ => {
+                            if !parse_module_options(key, value) {
+                                eprintln!("Error: unknown option: {key}");
+                                std::process::exit(400);
+                            }
+                        },
+                    }
+                },
+                key if key.to_ascii_lowercase().starts_with("--bar-") => {
+                    let subkey = &key.to_ascii_lowercase()["--bar-".len()..];
+                    match subkey {
+                        "char-elapsed" => cli.bar_char_elapsed = Some(parse_string(key, value)),
+                        "char-total" => cli.bar_char_total = Some(parse_string(key, value)),
+                        "width" => cli.bar_width = Some(parse_uint32(key, value)),
+                        "border-left" => cli.bar_border_left = Some(parse_string(key, value)),
+                        "border-right" => cli.bar_border_right = Some(parse_string(key, value)),
+                        "border-left-elapsed" => cli.bar_border_left_elapsed = Some(parse_string(key, value)),
+                        "border-right-elapsed" => cli.bar_border_right_elapsed = Some(parse_string(key, value)),
+                        // A missing value clears; "auto" re-enters the
+                        // band-selection mode; anything else parses.
+                        "color-elapsed" => {
+                            cli.bar_color_elapsed = Some(match value {
+                                None => String::new(),
+                                Some(v) if v.eq_ignore_ascii_case("auto") => "auto".to_string(),
+                                Some(v) => state.parse_color(v),
+                            });
+                        },
+                        "color-total" => {
+                            cli.bar_color_total = Some(value.map_or_else(String::new, |v| state.parse_color(v)));
+                        },
+                        "color-border" => {
+                            cli.bar_color_border = Some(value.map_or_else(String::new, |v| state.parse_color(v)));
+                        },
+                        _ => {
+                            if !parse_module_options(key, value) {
+                                eprintln!("Error: unknown option: {key}");
+                                std::process::exit(400);
+                            }
+                        },
+                    }
+                },
                 "--stat" => {
                     // A truthy value or a full strtoul number times the
                     // modules and implies showErrors; anything else (bare
@@ -975,6 +1114,25 @@ fn size_binary_prefix_enum(key: &str, value: Option<&str>) -> crate::format::Siz
         1 => crate::format::SizeBinaryPrefix::Si,
         2 => crate::format::SizeBinaryPrefix::Jedec,
         _ => crate::format::SizeBinaryPrefix::Iec,
+    }
+}
+
+fn temp_unit_enum(key: &str, value: Option<&str>) -> crate::format::TemperatureUnit {
+    const PAIRS: &[(&str, i32)] = &[
+        ("DEFAULT", 0),
+        ("D", 0),
+        ("CELSIUS", 1),
+        ("C", 1),
+        ("FAHRENHEIT", 2),
+        ("F", 2),
+        ("KELVIN", 3),
+        ("K", 3),
+    ];
+    match parse_enum(key, value, PAIRS) {
+        1 => crate::format::TemperatureUnit::Celsius,
+        2 => crate::format::TemperatureUnit::Fahrenheit,
+        3 => crate::format::TemperatureUnit::Kelvin,
+        _ => crate::format::TemperatureUnit::Default,
     }
 }
 

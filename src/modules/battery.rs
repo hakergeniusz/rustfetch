@@ -244,32 +244,53 @@ fn status_texts(status: u8) -> Vec<&'static str> {
 }
 
 /// printBattery's default format for one battery; the USB and wireless
-/// bits are unreachable on Linux detection but kept for parity.
-fn item_value(battery: &BatteryResult, options: &BatteryOptions, color: bool, df: &crate::format::DisplayFormat) -> String {
+/// bits are unreachable on Linux detection but kept for parity. The status
+/// block hides under --percent-type hide-others; the duration's closing
+/// " remaining)" prints even when the opening "(" was skipped (upstream
+/// appends the pair around the number, paren only when the buffer is
+/// non-empty).
+fn item_value(
+    battery: &BatteryResult,
+    options: &BatteryOptions,
+    percent: crate::format::PercentModuleConfig,
+    ctx: &crate::format::PrintCtx,
+    df: &crate::format::DisplayFormat,
+) -> String {
+    let percent_type_flags =
+        if percent.type_flags == 0 { df.percent_type } else { percent.type_flags };
     let mut value = String::new();
+    let show_status =
+        percent_type_flags & crate::format::percent_type::HIDE_OTHERS_BIT == 0 && battery.status != 0;
     if battery.capacity >= 0.0 {
-        // ffPercentAppendNum with the battery's { green: 50, yellow: 20 }
-        // thresholds (a high value is good) and the default NUM_COLOR bit.
-        value.push_str(&super::colorize_percent(battery.capacity, 50, 20, color));
+        // The battery's { green: 50, yellow: 20 } thresholds: a high value
+        // is good, so the color bands invert.
+        if percent_type_flags & crate::format::percent_type::BAR_BIT != 0 {
+            crate::format::percent_append_bar(&mut value, battery.capacity, percent, ctx, df);
+        }
+        if percent_type_flags & crate::format::percent_type::NUM_BIT != 0 {
+            if !value.is_empty() {
+                value.push(' ');
+            }
+            let parentheses = !value.is_empty();
+            crate::format::percent_append_num(&mut value, battery.capacity, percent, parentheses, ctx, df);
+        }
         if battery.time_remaining > 0 {
-            value.push_str(" (");
-            crate::format::duration_append_num(
-                &mut value,
-                battery.time_remaining as u32 as u64,
-                df,
-            );
+            if !value.is_empty() {
+                value.push_str(" (");
+            }
+            crate::format::duration_append_num(&mut value, battery.time_remaining as u32 as u64, df);
             value.push_str(" remaining)");
         }
     }
 
-    if battery.status != 0 {
-        let statuses = status_texts(battery.status).join(", ");
-        if !value.is_empty() {
+    if show_status {
+        let has_other_info = !value.is_empty();
+        if has_other_info {
             value.push_str(" [");
-            value.push_str(&statuses);
+        }
+        value.push_str(&status_texts(battery.status).join(", "));
+        if has_other_info {
             value.push(']');
-        } else {
-            value.push_str(&statuses);
         }
     }
 
@@ -277,12 +298,16 @@ fn item_value(battery: &BatteryResult, options: &BatteryOptions, color: bool, df
         if !value.is_empty() {
             value.push_str(" - ");
         }
-        value.push_str(&super::temps_num(
+        crate::format::temps_append_num(
+            &mut value,
             battery.temperature,
-            options.temp_range.green,
-            options.temp_range.yellow,
-            color,
-        ));
+            crate::format::ColorRangeConfig {
+                green: options.temp_range.green,
+                yellow: options.temp_range.yellow,
+            },
+            ctx,
+            df,
+        );
     }
 
     value
@@ -290,6 +315,11 @@ fn item_value(battery: &BatteryResult, options: &BatteryOptions, color: bool, df
 
 pub fn run(instance: &Instance) -> Vec<Row> {
     let options = BatteryOptions::from_instance(instance);
+    let percent = super::percent_config(
+        instance.entry,
+        crate::format::PercentModuleConfig { green: 50, yellow: 20, type_flags: 0 },
+    );
+    let ctx = super::print_ctx(instance);
     let Ok(results) = detect(&options) else {
         // "opendir(...) == nullptr" is an error row, hidden by default.
         return Vec::new();
@@ -306,7 +336,7 @@ pub fn run(instance: &Instance) -> Vec<Row> {
             } else {
                 format!("{} ({})", instance.display_name("battery"), battery.model_name)
             };
-            Row::new(&key, item_value(battery, &options, instance.color, &instance.display_format))
+            Row::new(&key, item_value(battery, &options, percent, &ctx, &instance.display_format))
         })
         .collect()
 }
@@ -391,18 +421,20 @@ mod tests {
     #[test]
     fn temperature_prints_after_the_statuses() {
         let options = super::BatteryOptions { temp: true, temp_range: super::super::TempRange::default() };
+        let percent = crate::format::PercentModuleConfig { green: 50, yellow: 20, type_flags: 0 };
+        let ctx = crate::format::PrintCtx { pipe: true, output_color: String::new() };
         let mut hot = battery(STATUS_DISCHARGING, 85.0, -1);
         hot.temperature = 95.5;
-        assert_eq!(item_value(&hot, &options, false, &Default::default()), "85% [Discharging] - 95.5°C");
+        assert_eq!(item_value(&hot, &options, percent, &ctx, &Default::default()), "85% [Discharging] - 95.5°C");
         // The capacity block prints even when no status bit is recognized.
         hot.status = 0;
-        assert_eq!(item_value(&hot, &options, false, &Default::default()), "85% - 95.5°C");
+        assert_eq!(item_value(&hot, &options, percent, &ctx, &Default::default()), "85% - 95.5°C");
         // A battery with no other info prints the bare temperature.
         hot.capacity = -1.0;
-        assert_eq!(item_value(&hot, &options, false, &Default::default()), "95.5°C");
+        assert_eq!(item_value(&hot, &options, percent, &ctx, &Default::default()), "95.5°C");
         // The unset sentinel prints nothing, even with temp enabled.
         let cold = battery(0, 50.0, -1);
-        assert_eq!(item_value(&cold, &options, false, &Default::default()), "50%");
+        assert_eq!(item_value(&cold, &options, percent, &ctx, &Default::default()), "50%");
     }
 
     #[test]
@@ -419,17 +451,19 @@ mod tests {
     #[test]
     fn value_matches_the_default_format() {
         let options = super::BatteryOptions { temp: false, temp_range: super::super::TempRange::default() };
+        let percent = crate::format::PercentModuleConfig { green: 50, yellow: 20, type_flags: 0 };
+        let ctx = crate::format::PrintCtx { pipe: true, output_color: String::new() };
         // A discharging battery with a known time remaining.
         assert_eq!(
-            item_value(&battery(STATUS_DISCHARGING, 85.0, 95_400), &options, false, &Default::default()),
+            item_value(&battery(STATUS_DISCHARGING, 85.0, 95_400), &options, percent, &ctx, &Default::default()),
             "85% (1 day, 2 hours, 30 mins remaining) [Discharging]"
         );
         // A full battery has no status bits, so no brackets print.
-        assert_eq!(item_value(&battery(0, 100.0, -1), &options, false, &Default::default()), "100%");
+        assert_eq!(item_value(&battery(0, 100.0, -1), &options, percent, &ctx, &Default::default()), "100%");
         // The status text alone still prints, without brackets (capacity 0
         // still passes the capacity >= 0 gate).
         assert_eq!(
-            item_value(&battery(STATUS_AC_CONNECTED, 0.0, -1), &options, false, &Default::default()),
+            item_value(&battery(STATUS_AC_CONNECTED, 0.0, -1), &options, percent, &ctx, &Default::default()),
             "0% [AC Connected]"
         );
     }

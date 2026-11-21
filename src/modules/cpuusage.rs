@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use crate::{
     instance::Instance,
     json::{Json, JsonOutcome},
-    modules::{colorize_percent, Row},
+    modules::Row,
     util,
 };
 
@@ -127,6 +127,10 @@ fn detect() -> Result<Vec<f64>, &'static str> {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
+    let percent = super::percent_config(instance.entry, crate::format::PercentModuleConfig { green: 50, yellow: 80, type_flags: 0 });
+    let ctx = super::print_ctx(instance);
+    let df = &instance.display_format;
+    let percent_type_flags = if percent.type_flags == 0 { df.percent_type } else { percent.type_flags };
     let Ok(percentages) = detect() else {
         return Vec::new();
     };
@@ -135,10 +139,18 @@ pub fn run(instance: &Instance) -> Vec<Row> {
     }
 
     let avg = percentages.iter().sum::<f64>() / percentages.len() as f64;
-    vec![Row::new(
-        instance.display_name("cpuusage"),
-        colorize_percent(avg, 50, 80, instance.color),
-    )]
+    let mut value = String::new();
+    if percent_type_flags & crate::format::percent_type::BAR_BIT != 0 {
+        crate::format::percent_append_bar(&mut value, avg, percent, &ctx, df);
+    }
+    if percent_type_flags & crate::format::percent_type::NUM_BIT != 0 {
+        if !value.is_empty() {
+            value.push(' ');
+        }
+        let parentheses = !value.is_empty();
+        crate::format::percent_append_num(&mut value, avg, percent, parentheses, &ctx, df);
+    }
+    vec![Row::new(instance.display_name("cpuusage"), value)]
 }
 
 /// ffGenerateCPUUsageJsonResult: one percentage per core.

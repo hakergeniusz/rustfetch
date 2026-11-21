@@ -250,6 +250,76 @@ fn main() {
     if let Some(space) = cli.freq_space_before_unit {
         display_format.freq_space_before_unit = space;
     }
+    if let Some(unit) = cli.temp_unit {
+        display_format.temp_unit = unit;
+    }
+    if let Some(ndigits) = cli.temp_ndigits {
+        // The uint8_t cast truncates, upstream has no range check here.
+        display_format.temp_ndigits = ndigits as u8;
+    }
+    if let Some(color) = &cli.temp_color_green {
+        display_format.temp_color_green = color.clone();
+    }
+    if let Some(color) = &cli.temp_color_yellow {
+        display_format.temp_color_yellow = color.clone();
+    }
+    if let Some(color) = &cli.temp_color_red {
+        display_format.temp_color_red = color.clone();
+    }
+    if let Some(space) = cli.temp_space_before_unit {
+        display_format.temp_space_before_unit = space;
+    }
+    if let Some(kind) = cli.percent_type {
+        display_format.percent_type = kind as u8;
+    }
+    if let Some(ndigits) = cli.percent_ndigits {
+        display_format.percent_ndigits = ndigits as u8;
+    }
+    if let Some(color) = &cli.percent_color_green {
+        display_format.percent_color_green = color.clone();
+    }
+    if let Some(color) = &cli.percent_color_yellow {
+        display_format.percent_color_yellow = color.clone();
+    }
+    if let Some(color) = &cli.percent_color_red {
+        display_format.percent_color_red = color.clone();
+    }
+    if let Some(space) = cli.percent_space_before_unit {
+        display_format.percent_space_before_unit = space;
+    }
+    if let Some(width) = cli.percent_width {
+        display_format.percent_width = width as u8;
+    }
+    if let Some(chars) = &cli.bar_char_elapsed {
+        display_format.bar_char_elapsed = chars.clone();
+    }
+    if let Some(chars) = &cli.bar_char_total {
+        display_format.bar_char_total = chars.clone();
+    }
+    if let Some(border) = &cli.bar_border_left {
+        display_format.bar_border_left = border.clone();
+    }
+    if let Some(border) = &cli.bar_border_right {
+        display_format.bar_border_right = border.clone();
+    }
+    if let Some(border) = &cli.bar_border_left_elapsed {
+        display_format.bar_border_left_elapsed = border.clone();
+    }
+    if let Some(border) = &cli.bar_border_right_elapsed {
+        display_format.bar_border_right_elapsed = border.clone();
+    }
+    if let Some(color) = &cli.bar_color_elapsed {
+        display_format.bar_color_elapsed = color.clone();
+    }
+    if let Some(color) = &cli.bar_color_total {
+        display_format.bar_color_total = color.clone();
+    }
+    if let Some(color) = &cli.bar_color_border {
+        display_format.bar_color_border = color.clone();
+    }
+    if let Some(width) = cli.bar_width {
+        display_format.bar_width = width as u8;
+    }
     let instance = instance::Instance::new(
         &cli,
         config.as_ref().is_some_and(|config| config.pipe),
