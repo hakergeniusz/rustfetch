@@ -135,8 +135,11 @@ When the script is read from stdin (pipe or `sh -c "$(curl ...)"`) it does not
 look for a local repository. It queries
 `https://api.github.com/repos/hakergeniusz/rustfetch/releases/latest` (or
 `/releases/tags/<tag>` with `--version <tag>`), downloads the `.tar.zst` asset,
-verifies/falls back as described above, and installs it. `--prefix`, `--user`,
-`--yes`, `--force` and `--uninstall` all work in remote mode too.
+verifies/falls back as described above, and installs it. An existing binary is
+**replaced by default** in remote mode (a one-liner cannot prompt), with a
+notice; `--force` also skips the "already up to date" shortcut. Local mode
+still prompts before overwriting unless `--yes`/`--force` is given. `--prefix`,
+`--user` and `--uninstall` work in remote mode too.
 
 Environment overrides (useful for mirrors and offline testing):
 

@@ -92,13 +92,15 @@ Options:
                    \$HOME/.local as a normal user).
   --user           Force a user install (\$HOME/.local), even when root.
   --uninstall      Remove the installed 'rustfetch' executable.
-  --yes, -y        Do not prompt before overwriting an existing binary.
+  --yes, -y        Do not prompt before overwriting an existing binary
+                   (remote mode already replaces by default).
   --no-build       Skip 'cargo build --release' and install an existing
                    target/release/rustfetch (or \$CARGO_TARGET_DIR/release/rustfetch).
   --version <tag>  Pin a release tag in remote mode (e.g. --version v0.1.0).
                    Without it, the latest release is used.
   --no-verify      Remote mode: skip SHA256 verification of the release asset.
-  --force          Always replace an existing binary, without prompting.
+  --force          Always replace an existing binary, without prompting
+                   (also skips the "already up to date" shortcut).
   --print-plan     Dry run: print the detected mode, URLs and install path,
                    then exit. No network access and no files are changed.
   -h, --help       Show this help.
@@ -244,11 +246,15 @@ install_binary() {
   else
     if [[ -e "$DEST" ]] && ! $YES && ! $FORCE; then
       if [[ "$MODE" == remote ]]; then
-        die "$DEST exists and differs; re-run with --yes or --force to replace it"
+        # A one-liner install cannot prompt (stdin is the script), and the
+        # user already asked to install by running it. Replace by default
+        # with a clear notice; --force/--yes remain explicit overrides.
+        warn "$DEST exists and differs; replacing it with the release binary"
+      else
+        warn "$DEST exists and differs from the source binary."
+        read -r -p "Overwrite it? [y/N] " answer
+        [[ "$answer" == [yY]* ]] || die "Aborted by user"
       fi
-      warn "$DEST exists and differs from the source binary."
-      read -r -p "Overwrite it? [y/N] " answer
-      [[ "$answer" == [yY]* ]] || die "Aborted by user"
     fi
     install -m 0755 -- "$src" "$DEST"
     ok "Installed $DEST (mode 0755)"
