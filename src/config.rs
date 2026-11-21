@@ -60,6 +60,10 @@ pub struct Config {
     pub spin_angle: Option<f32>,
     /// `display.showErrors`, implied by a truthy `display.stat`.
     pub show_errors: bool,
+    /// `display.stat`: the per-module timing threshold — 0 plain, a
+    /// positive number colored green/yellow/red, -1 unset. None when the
+    /// key is absent.
+    pub stat: Option<i32>,
     /// `display.pipe` (applies unless `--pipe` was given on the command
     /// line, which is parsed after the config).
     pub pipe: bool,
@@ -96,6 +100,7 @@ impl Config {
             spin_tilt: None,
             spin_angle: None,
             show_errors: false,
+            stat: None,
             pipe: false,
             player_name: String::new(),
             entries: Vec::new(),
@@ -642,13 +647,23 @@ fn apply_display(root: &jsonc::Value, config: &mut Config) {
     for (key, value) in entries {
         match key.as_str() {
             "stat" => match value {
-                // The stat display itself is not ported yet; its showErrors
-                // implication is (a null errors like upstream's is_bool/
+                // true = plain timing, false = unset; a non-negative
+                // number is the color-change threshold and implies
+                // showErrors (a null errors like upstream's is_bool/
                 // is_uint chain).
-                jsonc::Value::Bool(true) => config.show_errors = true,
-                jsonc::Value::Bool(false) => {},
-                jsonc::Value::UInt(_) => config.show_errors = true,
-                jsonc::Value::Int(i) if *i >= 0 => config.show_errors = true,
+                jsonc::Value::Bool(true) => {
+                    config.stat = Some(0);
+                    config.show_errors = true;
+                },
+                jsonc::Value::Bool(false) => config.stat = Some(-1),
+                jsonc::Value::UInt(u) => {
+                    config.stat = Some(*u as i32);
+                    config.show_errors = true;
+                },
+                jsonc::Value::Int(i) if *i >= 0 => {
+                    config.stat = Some(*i as i32);
+                    config.show_errors = true;
+                },
                 _ => section_error(
                     "display",
                     Some(key),

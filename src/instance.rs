@@ -52,6 +52,10 @@ pub struct Instance {
     /// display.showErrors: gates error messages that are hidden by
     /// default (--show-errors, config display.showErrors, --stat).
     pub show_errors: bool,
+    /// display.stat: the per-module timing (0 plain, >0 the color-change
+    /// threshold in ms, -1 off). collect/collect_json emit one stat line
+    /// or "stat" field per module when it is on.
+    pub stat: i32,
     /// instance.state.logoSpin: the spin logo's per-process state, filled
     /// by the logo load and turned by the watch loop's redraw.
     pub spin: std::cell::RefCell<Option<crate::spin::SpinState>>,
@@ -78,6 +82,7 @@ impl Clone for Instance {
             logo_options: self.logo_options,
             logo_color_overrides: self.logo_color_overrides,
             show_errors: self.show_errors,
+            stat: self.stat,
             // The spin state belongs to the render loop; module jobs get
             // none.
             spin: std::cell::RefCell::new(None),
@@ -92,6 +97,7 @@ impl Instance {
         cli: &Cli,
         config_pipe: bool,
         show_errors: bool,
+        stat: i32,
         logo_options: crate::logo::LogoOptions,
         logo_color_overrides: &'static [(usize, &'static str)],
     ) -> Self {
@@ -135,6 +141,7 @@ impl Instance {
             logo_options,
             logo_color_overrides,
             show_errors,
+            stat,
             spin: std::cell::RefCell::new(None),
             entry: None,
             gnome_settings: Mutex::new(HashMap::new()),

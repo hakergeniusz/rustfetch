@@ -148,10 +148,12 @@ fn main() {
     let show_errors = cli
         .show_errors
         .unwrap_or(cfg.is_some_and(|config| config.show_errors));
+    let stat = cli.stat.or(cfg.and_then(|config| config.stat)).unwrap_or(-1);
     let instance = instance::Instance::new(
         &cli,
         config.as_ref().is_some_and(|config| config.pipe),
         show_errors,
+        stat,
         logo_options,
         logo_color_overrides.leak(),
     );
@@ -168,6 +170,10 @@ fn main() {
     // rows, which re-reads the print-time detections (uptime, load, usage,
     // temperatures); the once-per-process results stay cached, like
     // upstream's instance.state results surviving ffCacheInvalidateAll.
-    let mut next_round = || modules::collect(&structure_modules, structure_given, config.as_ref(), &instance);
+    let mut next_round = || {
+        let mut stats = Vec::new();
+        let rows = modules::collect(&structure_modules, structure_given, config.as_ref(), &instance, &mut stats);
+        (rows, stats)
+    };
     render::print(&logo, &instance, watch_interval, &mut next_round);
 }

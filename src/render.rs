@@ -125,6 +125,22 @@ fn row_line(row: &Row, key_color: Option<&str>, color: bool) -> String {
                 format!("{key}: {}", row.value)
             }
         },
+        // ffPrintError's message: bold red outside pipe mode, plain in it.
+        (_, Kind::Error) => {
+            if color {
+                format!("{}: \x1b[1;31m{}\x1b[m", {
+                    let mut out = String::from("\x1b[m\x1b[1m");
+                    if let Some(code) = key_color {
+                        out.push_str(&format!("\x1b[{code}m"));
+                    }
+                    out.push_str(row.key.as_deref().unwrap_or(""));
+                    out.push_str("\x1b[m: \x1b[m");
+                    out
+                }, row.value)
+            } else {
+                format!("{}: {}", row.key.as_deref().unwrap_or(""), row.value)
+            }
+        },
         // Keyless styled rows (title, colors): the module owns the value's
         // escapes; the renderer only adds ffPrintLogoAndKey's trailing reset.
         (None, Kind::Value) => {
@@ -219,11 +235,50 @@ fn watch_pause(out: &mut BufWriter<std::io::StdoutLock<'_>>, interval_ms: u32) {
     crate::modules::netio::invalidate_route_cache();
 }
 
+/// ffPrintCommandOption's display.stat tail: save, up one line, right
+/// edge, left len-1, print "N.NNNms" (green/yellow/red above a positive
+/// threshold), restore. The left-count uses the plain string's length
+/// even when the colored variant prints — upstream's quirk, kept.
+fn stat_line(stat: i32, ms: f64) -> String {
+    let plain = format!("{:.3}ms", ms);
+    let body = if stat > 0 {
+        let color = if ms <= stat as f64 {
+            "32"
+        } else if ms <= 2.0 * stat as f64 {
+            "33"
+        } else {
+            "31"
+        };
+        format!("\x1b[{color}m{plain}\x1b[m")
+    } else {
+        plain.clone()
+    };
+    format!("\x1b7\x1b[1A\x1b[9999999C\x1b[{}D{}\x1b8", plain.len() - 1, body)
+}
+
+/// Walks the stat boundaries (row counts when each module finished),
+/// emitting the timing line as the row printer catches up with them.
+struct StatCursor<'a> {
+    entries: &'a [(usize, f64)],
+    next: usize,
+    stat: i32,
+}
+
+impl StatCursor<'_> {
+    fn flush(&mut self, out: &mut BufWriter<std::io::StdoutLock<'_>>, printed: usize) {
+        while self.next < self.entries.len() && self.entries[self.next].0 <= printed {
+            let (_, ms) = self.entries[self.next];
+            let _ = write!(out, "{}", stat_line(self.stat, ms));
+            self.next += 1;
+        }
+    }
+}
+
 pub fn print(
     logo: &Option<Logo>,
     instance: &Instance,
     watch: Option<u32>,
-    next_round: &mut dyn FnMut() -> Vec<Row>,
+    next_round: &mut dyn FnMut() -> (Vec<Row>, Vec<(usize, f64)>),
 ) {
     // Pipe mode keeps the two-column layout; it only drops the colors,
     // which every writer below gates on instance.color.
@@ -329,8 +384,11 @@ pub fn print(
             }
             let mut keys_height;
             loop {
-                let rows = next_round();
+                let (rows, stats) = next_round();
+                let mut cursor = StatCursor { entries: &stats, next: 0, stat: instance.stat };
                 keys_height = 0;
+                let mut printed = 0usize;
+                cursor.flush(&mut out, printed);
                 for row in &rows {
                     if let Kind::Late(late) = row.kind {
                         let _ = out.flush();
@@ -344,6 +402,8 @@ pub fn print(
                             }
                             let _ = writeln!(out, "{}", row_line(&produced, key_color, color));
                         }
+                        printed += 1;
+                        cursor.flush(&mut out, printed);
                         continue;
                     }
                     keys_height += 1;
@@ -356,7 +416,10 @@ pub fn print(
                         let _ = write!(out, "\x1b[K");
                     }
                     let _ = writeln!(out, "{}", row_line(row, key_color, color));
+                    printed += 1;
+                    cursor.flush(&mut out, printed);
                 }
+                cursor.flush(&mut out, printed);
                 // ffLogoPrintRemaining's empty-cache tail: one newline per
                 // remaining logo height, re-run every watch round against
                 // the reset keysHeight.
@@ -439,8 +502,11 @@ pub fn print(
                             libc::write(libc::STDOUT_FILENO, dump.as_ptr().cast(), dump.len());
                         }
                     }
-                    let rows = next_round();
+                    let (rows, stats) = next_round();
+                    let mut cursor = StatCursor { entries: &stats, next: 0, stat: instance.stat };
                     keys_height = 0;
+                    let mut printed = 0usize;
+                    cursor.flush(&mut out, printed);
                     for row in &rows {
                         if let Kind::Late(late) = row.kind {
                             let _ = out.flush();
@@ -448,11 +514,16 @@ pub fn print(
                                 keys_height += 1;
                                 let _ = writeln!(out, "{}", row_line(&produced, key_color, color));
                             }
+                            printed += 1;
+                            cursor.flush(&mut out, printed);
                             continue;
                         }
                         keys_height += 1;
                         let _ = writeln!(out, "{}", row_line(row, key_color, color));
+                        printed += 1;
+                        cursor.flush(&mut out, printed);
                     }
+                    cursor.flush(&mut out, printed);
                     // ffLogoPrintRemaining's cleared-cache tail: keysHeight <=
                     // logoHeight (0) closes with one newline when the round
                     // printed nothing.
@@ -505,8 +576,11 @@ pub fn print(
                     logo_height = logo_lines.len().saturating_sub(1);
                     logo_index = 0;
                 }
-                let rows = next_round();
+                let (rows, stats) = next_round();
+                let mut cursor = StatCursor { entries: &stats, next: 0, stat: instance.stat };
                 keys_height = 0;
+                let mut printed = 0usize;
+                cursor.flush(&mut out, printed);
                 for row in &rows {
                     if let Kind::Late(late) = row.kind {
                         // Deferred detection runs at the row's position: flush
@@ -518,11 +592,16 @@ pub fn print(
                             keys_height += 1;
                             emit_chars_row(&mut out, &logo_lines, &mut logo_index, &layout, &produced, watch.is_some());
                         }
+                        printed += 1;
+                        cursor.flush(&mut out, printed);
                         continue;
                     }
                     keys_height += 1;
                     emit_chars_row(&mut out, &logo_lines, &mut logo_index, &layout, row, watch.is_some());
+                    printed += 1;
+                    cursor.flush(&mut out, printed);
                 }
+                cursor.flush(&mut out, printed);
                 // ffLogoPrintRemaining: lines past the last info row print
                 // bare (LEFT: plain; RIGHT: from the right edge) and the
                 // cache clears, so later watch rounds move the cursor past
@@ -585,6 +664,9 @@ pub fn print_json(items: &[JsonItem]) {
             JsonOutcome::Result(value) => object.push("result", value.clone()),
             JsonOutcome::Error(message) => object.push("error", message.as_str()),
             JsonOutcome::Unsupported => object.push("error", "Unsupported for JSON format"),
+        }
+        if let Some(ms) = item.stat {
+            object.push("stat", ms);
         }
         root.push_value(object);
     }

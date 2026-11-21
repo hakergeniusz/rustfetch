@@ -138,6 +138,7 @@ mod tests {
                 logo_spin_tilt: None,
                 logo_spin_angle: None,
                 show_errors: None,
+                stat: None,
                 pipe: None,
                 watch_interval: 0,
                 format_json: false,
@@ -146,6 +147,7 @@ mod tests {
             },
             false,
             false,
+            -1,
             crate::logo::LogoOptions::default(),
             &[],
         )

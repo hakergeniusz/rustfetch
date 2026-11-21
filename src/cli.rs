@@ -104,6 +104,11 @@ pub struct Cli {
     /// `--show-errors <?bool>`: unhides the load errors that are silent
     /// by default. `--stat true|<number>` implies it.
     pub show_errors: Option<bool>,
+    /// `--stat <?bool|ms>`: per-module timing. `true` or a number (0 =
+    /// plain, a positive number = the color-change threshold in ms) times
+    /// every module; anything else resets it to unset (-1). The config's
+    /// display.stat merges the same way, CLI last.
+    pub stat: Option<i32>,
     /// `--pipe <?bool>`: Some when the flag was given, with upstream's
     /// boolean parsing (empty/true/yes/on/1 → true, anything else false).
     pub pipe: Option<bool>,
@@ -157,6 +162,7 @@ impl Cli {
             logo_spin_tilt: None,
             logo_spin_angle: None,
             show_errors: None,
+            stat: None,
             pipe: None,
             watch_interval: 0,
             format_json: false,
@@ -492,15 +498,17 @@ impl Cli {
                     cli.show_errors = Some(parse_boolean(value));
                 },
                 "--stat" => {
-                    // The stat timing itself is not ported yet; the boolean
-                    // and numeric forms imply showErrors, anything else does
-                    // not (options/display.c's strtoul path).
+                    // A truthy value or a full strtoul number times the
+                    // modules and implies showErrors; anything else (bare
+                    // flag, "false", garbage) resets the timing to unset.
                     if parse_boolean(value) {
+                        cli.stat = Some(0);
                         cli.show_errors = Some(true);
-                    } else if let Some(v) = value
-                        && strtoul_full(v).is_some()
-                    {
+                    } else if let Some(num) = value.and_then(strtoul_full) {
+                        cli.stat = Some(num as i32);
                         cli.show_errors = Some(true);
+                    } else {
+                        cli.stat = Some(-1);
                     }
                 },
                 _ => {

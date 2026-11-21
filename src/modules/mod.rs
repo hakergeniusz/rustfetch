@@ -90,6 +90,9 @@ use crate::{
 pub enum Kind {
     /// Styled by the renderer: `key: value` or accent-colored title.
     Value,
+    /// ffPrintError's row: the standard key, the message wrapped in the
+    /// bold-red error modifier outside pipe mode.
+    Error,
     /// Printed verbatim; the module owns any escape sequences.
     Raw,
     /// A placeholder whose detection (and its /dev/tty queries, like
@@ -112,6 +115,16 @@ impl Row {
             key: Some(key.to_string()),
             value: value.into(),
             kind: Kind::Value,
+        }
+    }
+
+    /// ffPrintError's row: the standard key writer plus the bold-red
+    /// wrapped message.
+    pub fn error(key: &str, value: impl Into<String>) -> Self {
+        Self {
+            key: Some(key.to_string()),
+            value: value.into(),
+            kind: Kind::Error,
         }
     }
 
@@ -586,9 +599,10 @@ pub enum PresetJob {
         def: &'static ModuleDef,
         opts: &'static crate::jsonc::Value,
     },
-    /// A structure/config token that selects no module. Text mode hides it
-    /// (the hidden "<no implementation provided>" error row); JSON mode
-    /// emits {"type": <token as written>, "error": "Unknown module type"}.
+    /// A structure/config token that selects no module. Text mode prints
+    /// ffPrintError's showErrors-gated "<no implementation provided>" row
+    /// under the verbatim token; JSON mode emits
+    /// {"type": <token as written>, "error": "Unknown module type"}.
     Unknown(String),
     Custom(String),
     Command {
@@ -929,10 +943,13 @@ fn canonical_type(name: &str) -> &'static str {
         .unwrap_or("")
 }
 
-/// One `{type, result|error}` entry of --format json output.
+/// One `{type, result|error}` entry of --format json output. `stat` is
+/// the per-module timing appended as the third key when display.stat is
+/// on (yyjson_mut_obj_add_real on the array's last module).
 pub struct JsonItem {
     pub type_name: String,
     pub outcome: JsonOutcome,
+    pub stat: Option<f64>,
 }
 
 fn prepare_rate_modules(jobs: &[PresetJob]) {
@@ -994,16 +1011,22 @@ pub fn collect(
     structure_given: bool,
     config: Option<&crate::config::Config>,
     instance: &Instance,
+    stats: &mut Vec<(usize, f64)>,
 ) -> Vec<Row> {
     let jobs = build_jobs(selected, structure_given, config);
     prepare_rate_modules(&jobs);
 
     let mut rows = Vec::new();
+    // display.stat: one boundary/ms entry per module, the boundary being
+    // the row count when the module finished. The printer emits the
+    // timing line when it reaches the boundary.
+    let stat_on = instance.stat >= 0;
     // Structure order wins: `-s b:os:a` prints rows in exactly that
     // order, like fastfetch's structure loop. Duplicates allowed.
     // Unknown tokens are the hidden "<no implementation provided>"
     // error rows and never print.
     for job in &jobs {
+        let started = if stat_on { crate::spin::time_get_tick() } else { 0.0 };
         match job {
             PresetJob::Module(module) => rows.extend((module.run)(instance)),
             PresetJob::ModuleOpts { def, opts } => {
@@ -1013,8 +1036,14 @@ pub fn collect(
                 instance.entry = Some(opts);
                 rows.extend((def.run)(&instance));
             },
-            // The hidden "<no implementation provided>" error row.
-            PresetJob::Unknown(_) => {},
+            // ffPrintError(line, 0, nullptr, FF_PRINT_TYPE_NO_CUSTOM_KEY,
+            // "<no implementation provided>"): visible only with
+            // display.showErrors.
+            PresetJob::Unknown(token) => {
+                if instance.show_errors {
+                    rows.push(Row::error(token, "<no implementation provided>"));
+                }
+            },
             PresetJob::Custom(text) => rows.extend(custom::render_rows(text, instance)),
             PresetJob::Command {
                 text,
@@ -1030,6 +1059,9 @@ pub fn collect(
                     instance,
                 ));
             },
+        }
+        if stat_on {
+            stats.push((rows.len(), crate::spin::time_get_tick() - started));
         }
     }
     rows
@@ -1047,40 +1079,51 @@ pub fn collect_json(
     prepare_rate_modules(&jobs);
 
     let mut items = Vec::new();
+    let stat_on = instance.stat >= 0;
     for job in &jobs {
-        match job {
-            PresetJob::Module(module) => items.push(JsonItem {
+        let started = if stat_on { crate::spin::time_get_tick() } else { 0.0 };
+        let mut item = match job {
+            PresetJob::Module(module) => JsonItem {
                 type_name: canonical_type(module.name).to_string(),
                 // A module without a ported generator still prints the
                 // fixed upstream error for generator-less modules.
                 outcome: module.json.map_or(JsonOutcome::Unsupported, |json| (json)(instance)),
-            }),
+                stat: None,
+            },
             PresetJob::ModuleOpts { def, opts } => {
                 let mut instance = instance.clone();
                 instance.entry = Some(opts);
-                items.push(JsonItem {
+                JsonItem {
                     type_name: canonical_type(def.name).to_string(),
                     outcome: def.json.map_or(JsonOutcome::Unsupported, |json| (json)(&instance)),
-                });
+                    stat: None,
+                }
             },
-            PresetJob::Unknown(token) => items.push(JsonItem {
+            PresetJob::Unknown(token) => JsonItem {
                 type_name: token.clone(),
                 outcome: JsonOutcome::Error("Unknown module type".to_string()),
-            }),
-            PresetJob::Custom(text) => items.push(JsonItem {
+                stat: None,
+            },
+            PresetJob::Custom(text) => JsonItem {
                 type_name: "Custom".to_string(),
                 outcome: custom::json(text, instance),
-            }),
+                stat: None,
+            },
             PresetJob::Command {
                 text,
                 shell,
                 param,
                 split_lines,
-            } => items.push(JsonItem {
+            } => JsonItem {
                 type_name: "Command".to_string(),
                 outcome: command::json(text, shell, param.as_deref(), *split_lines, instance),
-            }),
+                stat: None,
+            },
+        };
+        if stat_on {
+            item.stat = Some(crate::spin::time_get_tick() - started);
         }
+        items.push(item);
     }
     items
 }
