@@ -7,6 +7,7 @@ mod cpu_x86;
 mod ffont;
 mod dbus;
 mod format;
+mod format_args;
 mod instance;
 mod json;
 mod jsonc;
