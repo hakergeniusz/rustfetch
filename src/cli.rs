@@ -120,6 +120,8 @@ pub struct Cli {
     /// monotonically (upstream's enableJsonOutput); nothing disables it,
     /// so `--format json -j false` still prints JSON.
     pub format_json: bool,
+    /// `--player-name <str>`: the media module's explicit MPRIS bus.
+    pub player_name: Option<String>,
     /// The config document loaded during the command pass: upstream
     /// processes `-c` before the option pass, so its errors (413/414)
     /// fire in argv order ahead of unknown-option errors.
@@ -163,6 +165,7 @@ impl Cli {
             logo_spin_angle: None,
             show_errors: None,
             stat: None,
+            player_name: None,
             pipe: None,
             watch_interval: 0,
             format_json: false,
@@ -496,6 +499,9 @@ impl Cli {
                 },
                 "--show-errors" => {
                     cli.show_errors = Some(parse_boolean(value));
+                },
+                "--player-name" => {
+                    cli.player_name = Some(parse_string(key, value));
                 },
                 "--stat" => {
                     // A truthy value or a full strtoul number times the

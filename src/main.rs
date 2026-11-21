@@ -150,11 +150,17 @@ fn main() {
         .show_errors
         .unwrap_or(cfg.is_some_and(|config| config.show_errors));
     let stat = cli.stat.or(cfg.and_then(|config| config.stat)).unwrap_or(-1);
+    let player_name = cli
+        .player_name
+        .clone()
+        .or_else(|| cfg.map(|config| config.player_name.clone()))
+        .unwrap_or_default();
     let instance = instance::Instance::new(
         &cli,
         config.as_ref().is_some_and(|config| config.pipe),
         show_errors,
         stat,
+        player_name,
         logo_options,
         logo_color_overrides.leak(),
     );

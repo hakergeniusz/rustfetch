@@ -9,8 +9,8 @@ use crate::{
     modules::{Row, media},
 };
 
-pub fn run(_instance: &Instance) -> Vec<Row> {
-    let Ok(media) = media::detect() else {
+pub fn run(instance: &Instance) -> Vec<Row> {
+    let Ok(media) = media::detect(&instance.player_name) else {
         // The shared media detection errors ("No media found", DBus
         // failures) are error rows, hidden by default.
         return Vec::new();

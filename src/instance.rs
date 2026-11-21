@@ -66,6 +66,9 @@ pub struct Instance {
     /// instance.state.titleFqdn: set when the title module parses the
     /// `fqdn` option; the separator's default length reads it.
     pub title_fqdn: Cell<bool>,
+    /// general.playerName: the media module's explicit MPRIS bus, CLI
+    /// `--player-name` over the config value.
+    pub player_name: String,
     /// Memoized GSettings/dconf reads per (schema, key), filled lazily by the
     /// GTK modules. A Mutex because modules run in parallel threads.
     pub gnome_settings: Mutex<HashMap<String, Option<String>>>,
@@ -91,6 +94,7 @@ impl Clone for Instance {
             // none.
             spin: std::cell::RefCell::new(None),
             entry: self.entry,
+            player_name: self.player_name.clone(),
             title_fqdn: Cell::new(self.title_fqdn.get()),
             gnome_settings: Mutex::new(self.gnome_settings.lock().unwrap_or_else(|e| e.into_inner()).clone()),
         }
@@ -103,6 +107,7 @@ impl Instance {
         config_pipe: bool,
         show_errors: bool,
         stat: i32,
+        player_name: String,
         logo_options: crate::logo::LogoOptions,
         logo_color_overrides: &'static [(usize, &'static str)],
     ) -> Self {
@@ -150,6 +155,7 @@ impl Instance {
             spin: std::cell::RefCell::new(None),
             entry: None,
             title_fqdn: Cell::new(false),
+            player_name,
             gnome_settings: Mutex::new(HashMap::new()),
             logo_colors: OnceLock::new(),
         }

@@ -247,9 +247,18 @@ fn get_best_bus() -> Option<Media> {
 /// ffDetectMedia: DBus load/connect failures map to upstream's error
 /// strings; a run without a matching bus — or with no song — is upstream's
 /// "No media found" error. On success the text fields are space-trimmed.
-pub(crate) fn detect() -> Result<Media, &'static str> {
+pub(crate) fn detect(player_name: &str) -> Result<Media, &'static str> {
     dbus::load(dbus::DBUS_BUS_SESSION)?;
-    let Some(mut media) = get_best_bus() else {
+    // general.playerName: one explicit bus, prefixed with the MPRIS name
+    // unless it already carries it (getCustomBus).
+    let Some(mut media) = (if player_name.is_empty() {
+        get_best_bus()
+    } else if let Some(rest) = player_name.strip_prefix(MPRIS_PREFIX) {
+        let _ = rest;
+        get_bus_properties(player_name)
+    } else {
+        get_bus_properties(&format!("{MPRIS_PREFIX}{player_name}"))
+    }) else {
         return Err("No media found");
     };
     if media.song.is_empty() {
@@ -376,7 +385,7 @@ fn append_progress(out: &mut String, media: &Media) {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
-    let Ok(media) = detect() else {
+    let Ok(media) = detect(&instance.player_name) else {
         // Both upstream errors ("Failed to load/connect to DBus", "No media
         // found") are error rows, hidden by default.
         return Vec::new();
@@ -430,8 +439,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 }
 
 /// ffGenerateMediaJsonResult.
-pub fn json(_instance: &Instance) -> JsonOutcome {
-    let media = match detect() {
+pub fn json(instance: &Instance) -> JsonOutcome {
+    let media = match detect(&instance.player_name) {
         Ok(media) => media,
         Err(error) => return JsonOutcome::Error(error.to_string()),
     };
