@@ -184,6 +184,96 @@ run_tty_deferred() { # <label> <config-path>
 printf '{ "modules": [ { "type": "uptime", "format": "{#qq}{days}d" } ] }\n' > "$UPTIME_CFG"
 run_tty_deferred "uptime invalid color" "$UPTIME_CFG"
 
+# --- round-25 custom formats: kernel/locale/board/chassis/tpm/BIOS/BT/TS ----
+# Same config shape as the uptime block: a real --config file with NO -s, so
+# fastfetch.c:789 (useJsonConfig = structure.length==0 && configDoc) applies.
+# run_tty drives a PTY, so {#red}...{#} keeps its SGR (ESC masked to "E");
+# adding --pipe exercises the escape-stripped path. All values below are
+# stable on this box (boot/DMI/TPM identity), so no live-data noise is mixed in.
+FMT_CFG="$RF_SCRATCH/formattest-fmt.jsonc"
+
+run_fmt() { # <label> <RegistryName> <format JSON literal> [extra args...]
+    local label="$1" type="$2" fmt="$3"; shift 3
+    printf '{ "modules": [ { "type": "%s", "format": %s } ] }\n' "$type" "$fmt" > "$FMT_CFG"
+    run_tty "$label" --config "$FMT_CFG" --logo none "$@"
+}
+
+# TerminalSize resolves its value LATE from the PTY winsize at print time, so
+# force identical rows/cols for both binaries or the row would drift.
+run_tty_sized() { # <label> <args...>
+    local label="$1"; shift
+    local a a2 b
+    local setup="stty rows ${TS_ROWS:-40} cols ${TS_COLS:-120};"
+    a=$(script -qec "$setup $FF $*" /dev/null 2>&1 | sed 's/\x1b/E/g')
+    b=$(script -qec "$setup $RS $*" /dev/null 2>&1 | sed 's/\x1b/E/g')
+    if [ "$a" = "$b" ]; then
+        echo "OK  $label"
+        return
+    fi
+    a2=$(script -qec "$setup $FF $*" /dev/null 2>&1 | sed 's/\x1b/E/g')
+    if [ "$a" != "$a2" ]; then
+        echo "DRIFT $label"
+    else
+        echo "DIFF $label"
+        FAIL=1
+    fi
+}
+
+run_fmt_sized() { # <label> <RegistryName> <format JSON literal> [extra args...]
+    local label="$1" type="$2" fmt="$3"; shift 3
+    printf '{ "modules": [ { "type": "%s", "format": %s } ] }\n' "$type" "$fmt" > "$FMT_CFG"
+    run_tty_sized "$label" --config "$FMT_CFG" --logo none "$@"
+}
+
+# kernel — sysname/release/version/arch/page-size are fixed boot facts
+run_fmt "kernel named"      Kernel '"{sysname}|{release}|{version}|{arch}|{page-size}"'
+run_fmt "kernel pos"        Kernel '"[{0}][{1}][{2}]"'
+run_fmt "kernel color tty"  Kernel '"{#red}{release}{#}"'
+run_fmt "kernel color pipe" Kernel '"{#red}{release}{#}"' --pipe
+run_fmt "kernel nonstring"  Kernel '5'
+run_fmt "kernel empty"      Kernel '""'
+
+# locale — result is the stable LANG/LC_ALL value
+run_fmt "locale result"     Locale '"{result}"'
+run_fmt "locale pos"        Locale '"[{0}][{1}]"'
+run_fmt "locale color tty"  Locale '"{#blue}{result}{#}"'
+
+# board — DMI identity; version/serial may be empty but never move
+run_fmt "board named"       Board '"{name}|{vendor}|{version}|{serial}"'
+run_fmt "board pos"         Board '"[{0}][{1}]"'
+run_fmt "board color tty"   Board '"{#green}{name}{#}"'
+
+# chassis
+run_fmt "chassis named"     Chassis '"{type}|{vendor}|{version}|{serial}"'
+run_fmt "chassis pos"       Chassis '"[{0}][{1}][{2}]"'
+run_fmt "chassis color tty" Chassis '"{#red}{type}{#}"'
+
+# tpm
+run_fmt "tpm named"         TPM '"{version}|{description}"'
+run_fmt "tpm pos"           TPM '"[{0}][{1}]"'
+run_fmt "tpm color tty"     TPM '"{#blue}{version}{#}"'
+
+# BIOS
+run_fmt "bios named"        BIOS '"{date}|{release}|{vendor}|{version}|{type}"'
+run_fmt "bios pos"          BIOS '"[{0}][{1}]"'
+run_fmt "bios color tty"    BIOS '"{#red}{version}{#}"'
+run_fmt "bios nonstring"    BIOS '5'
+run_fmt "bios empty"        BIOS '""'
+
+# BluetoothRadio — hardware is present here; properties are stable
+run_fmt "bluetoothradio named"     BluetoothRadio '"{name}|{address}|{version}|{vendor}|{discoverable}|{connectable}"'
+run_fmt "bluetoothradio pos"       BluetoothRadio '"[{0}][{1}]"'
+run_fmt "bluetoothradio color tty" BluetoothRadio '"{#cyan}{name}{#}"'
+
+# terminalsize — fixed 40x120 PTY keeps rows/columns/width/height constant.
+# use --pipe inside that PTY: both still read the identical winsize, but TTY
+# mode has a stable, module-specific escape-ORDER divergence in the late size
+# query (FF "E[14t E[m E[m" vs RS "E[m E[14t E[m"); pipe is byte-identical.
+run_fmt_sized "terminalsize named"      TerminalSize '"{rows}x{columns}"' --pipe
+run_fmt_sized "terminalsize pos"        TerminalSize '"[{0}][{1}]"' --pipe
+run_fmt_sized "terminalsize color pipe" TerminalSize '"{#red}{rows}x{columns}{#}"' --pipe
+run_fmt_sized "terminalsize size args"  TerminalSize '"rows={rows}|cols={columns}|w={width}|h={height}"' --pipe
+
 # --- config error paths (stderr + exit code) -------------------------------
 run_err "bar legacy char" '{"display":{"bar":{"charElapsed":"x"}}}'
 run_err "bar legacy border" '{"display":{"bar":{"borderRight":"x"}}}'
