@@ -3,6 +3,8 @@
 //! whatever the ioctl left at zero (skipped for the fastOnly logo-layout
 //! probes), then fastfetch's "179 columns x 41 rows (1920x1440px)" format.
 
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::io::IsTerminal;
 
 use crate::{
@@ -10,6 +12,15 @@ use crate::{
     json::{Json, JsonOutcome},
     modules::Row,
 };
+
+// The renderer expands a late row with the top-level instance, whose
+// `entry` is None — only collect()'s per-job clone carries the module
+// entry. Capture the format at run() time into a FIFO: collect() and the
+// renderer walk the structure in the same order, so the deferred print()
+// pops exactly the format of its own row. Detection itself stays late.
+thread_local! {
+    static PENDING_FORMATS: RefCell<VecDeque<Option<String>>> = const { RefCell::new(VecDeque::new()) };
+}
 
 /// ffDetectTerminalSize: returns (columns, rows, width, height).
 fn detect(fast_only: bool) -> Option<(u16, u16, u16, u16)> {
@@ -97,24 +108,46 @@ fn parse_size(text: &[u8], marker: &[u8]) -> Option<(u16, u16)> {
 
 /// The module detects at print time like ffPrintTerminalSize, so the CSI
 /// query escapes reach /dev/tty at the row's position.
-pub fn run(_instance: &Instance) -> Vec<Row> {
+pub fn run(instance: &Instance) -> Vec<Row> {
+    PENDING_FORMATS.with(|formats| {
+        formats.borrow_mut().push_back(crate::modules::entry_format(instance.entry).map(str::to_owned));
+    });
     vec![Row::late(print, "terminalsize")]
 }
 
 /// The deferred ffPrintTerminalSize: detection, then the row or the
 /// hidden error (nothing at all, like ffPrintError with showErrors off).
 fn print(instance: &Instance) -> Vec<Row> {
+    // Consume this late row's captured format even when detection fails, so
+    // one run() always pairs with one pop across watch rounds.
+    let captured = PENDING_FORMATS.with(|formats| formats.borrow_mut().pop_front().flatten());
     let Some((cols, rows, width_px, height_px)) = detect(false) else {
         // The error row is hidden by default, like upstream's ffPrintError.
         return Vec::new();
     };
 
-    let mut value = format!("{cols} columns x {rows} rows");
-    if width_px > 0 && height_px > 0 {
-        value.push_str(&format!(" ({width_px}px x {height_px}px)"));
-    }
+    // Prefer the instance's entry when the renderer carries one; otherwise
+    // use the format captured by run() for this late row.
+    let Some(format) = captured.as_deref().or_else(|| crate::modules::entry_format(instance.entry)) else {
+        let mut value = format!("{cols} columns x {rows} rows");
+        if width_px > 0 && height_px > 0 {
+            value.push_str(&format!(" ({width_px}px x {height_px}px)"));
+        }
+        // collect()'s stamp_icons skips the keyless late placeholder, so
+        // the expanded row stamps its own default key icon.
+        return vec![Row::new(instance.display_name("terminalsize"), value).stamped(crate::module_icons::icon_for("terminalsize"))];
+    };
 
-    vec![Row::new(instance.display_name("terminalsize"), value).stamped(crate::module_icons::icon_for("terminalsize"))]
+    // Upstream FF_PRINT_FORMAT_CHECKED passes rows, columns, width and
+    // height as FF_ARG_TYPE_UINT16 (the detector's uint16_t fields).
+    let args = [
+        crate::format_args::FormatArg { name: "rows", value: crate::format_args::ArgValue::UInt16(rows) },
+        crate::format_args::FormatArg { name: "columns", value: crate::format_args::ArgValue::UInt16(cols) },
+        crate::format_args::FormatArg { name: "width", value: crate::format_args::ArgValue::UInt16(width_px) },
+        crate::format_args::FormatArg { name: "height", value: crate::format_args::ArgValue::UInt16(height_px) },
+    ];
+    let rendered = crate::format_args::parse_format_string(format, &args, args.len() as u32, &crate::format_args::EngineEnv::new(instance));
+    vec![Row::new(instance.display_name("terminalsize"), rendered).stamped(crate::module_icons::icon_for("terminalsize"))]
 }
 
 /// ffGenerateTerminalSizeJsonResult.
