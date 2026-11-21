@@ -1503,6 +1503,44 @@ fn stamp_custom(rows: &mut [Row], args: &CommonArgs, instance: &Instance) {
     }
 }
 
+/// fastfetch.c run(): the JSON-config prepare pass (ffPrintJsonConfig's
+/// prepare=true) parses the options of the modules prepareModuleJsonObject
+/// handles — command, diskio, netio, publicip, top, weather; cpuusage only
+/// primes its counters — BEFORE ffStart, so their common-arg color errors
+/// abort before any output (no reset, no logo, no rows). Every other
+/// module parses lazily in the print pass and keeps the deferred exit.
+pub fn prepare_pass(
+    selected: &[String],
+    structure_given: bool,
+    config: Option<&crate::config::Config>,
+    instance: &Instance,
+) {
+    // `-s` ignores the config's modules entirely, like upstream's
+    // `structure.length == 0 && configDoc` gate.
+    if structure_given {
+        return;
+    }
+    let jobs = build_jobs(selected, structure_given, config);
+    for job in &jobs {
+        let opts = match job {
+            PresetJob::ModuleOpts { def, opts }
+                if matches!(def.name, "command" | "diskio" | "netio" | "publicip" | "top" | "weather") =>
+            {
+                Some(*opts)
+            },
+            PresetJob::Command { opts, .. } => *opts,
+            _ => None,
+        };
+        if let Some(opts) = opts {
+            parse_common_args(Some(opts), instance);
+            if let Some((code, message)) = instance.pending_exit.borrow_mut().take() {
+                eprintln!("{message}");
+                std::process::exit(code);
+            }
+        }
+    }
+}
+
 pub fn collect(
     selected: &[String],
     structure_given: bool,
@@ -1539,8 +1577,16 @@ pub fn collect(
                     parse_common_args(Some(opts), instance)
                 };
                 // A deferred color exit stops the structure loop right
-                // here, before the failing module prints anything.
+                // here, before the failing module prints anything —
+                // except for the prepare-pass modules, whose args parsed
+                // before ffStart upstream, so their errors abort before
+                // any output (no reset, no logo, no rows).
                 if instance.pending_exit.borrow().is_some() {
+                    if matches!(def.name, "command" | "diskio" | "netio" | "publicip" | "top" | "weather") {
+                        let (code, message) = instance.pending_exit.borrow_mut().take().unwrap();
+                        eprintln!("{message}");
+                        std::process::exit(code);
+                    }
                     break;
                 }
                 // Each object entry runs with its own options: the job
@@ -1585,6 +1631,10 @@ pub fn collect(
                 }
                 rows.extend(produced);
             },
+            // The command module parses its args in the prepare pass, so
+            // a color error aborts before any output; a {#color} failure
+            // inside the key template fires in the print pass and keeps
+            // the deferred exit below.
             PresetJob::Command {
                 text,
                 shell,
@@ -1593,8 +1643,9 @@ pub fn collect(
                 opts,
             } => {
                 let args = parse_common_args(*opts, instance);
-                if instance.pending_exit.borrow().is_some() {
-                    break;
+                if let Some((code, message)) = instance.pending_exit.borrow_mut().take() {
+                    eprintln!("{message}");
+                    std::process::exit(code);
                 }
                 let mut produced = command::run_text(
                     text,

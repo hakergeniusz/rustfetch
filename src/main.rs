@@ -235,6 +235,10 @@ fn main() {
     CURSOR_RESTORE.store(instance.hide_cursor, std::sync::atomic::Ordering::Relaxed);
 
     if cli.format_json {
+        // The JSON-config prepare pass parses the prepare-pass modules'
+        // args ahead of ffStart, so their color errors abort before the
+        // reset goes out (fastfetch.c:792 before :801).
+        modules::prepare_pass(&structure_modules, structure_given, config.as_ref(), &instance);
         // ffStart runs ahead of the JSON document too (fastfetch.c:801):
         // the reset and the pipe-disabled toggles go out first, while
         // ffFinish never does (the resultDoc branch skips it).
