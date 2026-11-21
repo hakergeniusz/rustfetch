@@ -213,6 +213,11 @@ pub(crate) fn data_dirs() -> Vec<String> {
     {
         add_dir(&mut dirs, &format!("{}/share/", &exe[..second_slash]));
     }
+    // The system fastfetch is installed in /usr/bin, so the exe-relative
+    // share dir above resolves to /usr/share/ and lands before $HOME. Mirror
+    // that position here so `--list-data-paths` (and preset lookup) keep the
+    // same order when rustfetch is installed somewhere else (e.g. ~/.local/bin).
+    add_dir(&mut dirs, "/usr/share/");
     add_dir(&mut dirs, home);
     if let Some(list) = std::env::var_os("XDG_DATA_DIRS") {
         for dir in list.to_string_lossy().split(':') {
@@ -220,7 +225,6 @@ pub(crate) fn data_dirs() -> Vec<String> {
         }
     }
     add_dir(&mut dirs, "/usr/local/share/");
-    add_dir(&mut dirs, "/usr/share/");
     dirs
 }
 
