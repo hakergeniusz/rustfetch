@@ -167,7 +167,9 @@ brew install rustfetch
 From a checkout you can also install the formula directly:
 `brew install ./installers/rustfetch.rb`.
 
-The formula installs the **prebuilt** `rustfetch-macos-universal` binary (no
+The v0.2.5 release now ships `rustfetch-windows-x86_64.exe` and
+`rustfetch-macos-universal` (plus `.sha256` sidecars). The formula installs
+**prebuilt** `rustfetch-macos-universal` binary (no
 Rust toolchain needed), matching the CI artifact. Its `version`, `url` and
 `sha256` must be updated together for each release; the `sha256` field is a
 placeholder until the macOS release asset is published. Until the tap is
