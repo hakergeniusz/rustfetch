@@ -1,8 +1,8 @@
 # Maintainer: hakergeniusz
 # Prebuilt-binary PKGBUILD: installs the release .tar.zst asset.
-# sha256sums is the checksum of the v0.2.5 release asset; keep it in sync on bumps.
+# sha256sums is the checksum of the v0.2.6 release asset; keep it in sync on bumps.
 pkgname=rustfetch-bin
-pkgver=0.2.5
+pkgver=0.2.6
 pkgrel=1
 pkgdesc='Fastfetch, rewritten in Rust (prebuilt binary)'
 arch=('x86_64')
