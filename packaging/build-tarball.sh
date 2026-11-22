@@ -35,14 +35,16 @@ mkdir -p -- "$STAGE"
 install -m 0755 "$BIN" "$STAGE/rustfetch"
 install -m 0644 "$ROOT/LICENSE" "$STAGE/LICENSE"
 install -m 0644 "$ROOT/README.md" "$STAGE/README.md"
+mkdir -p -- "$STAGE/completions"
+install -m 0644 "$ROOT/completions/_rustfetch" "$STAGE/completions/_rustfetch"
 
 mkdir -p -- "$OUT_DIR"
 if tar --zstd --version >/dev/null 2>&1; then
   info "Creating $OUT with tar --zstd"
-  tar --zstd -cf "$OUT" -C "$STAGE" rustfetch LICENSE README.md
+  tar --zstd -cf "$OUT" -C "$STAGE" rustfetch LICENSE README.md completions/_rustfetch
 elif command -v zstd >/dev/null 2>&1; then
   info "Creating $OUT with tar | zstd"
-  tar -cf - -C "$STAGE" rustfetch LICENSE README.md | zstd -q -o "$OUT"
+  tar -cf - -C "$STAGE" rustfetch LICENSE README.md completions/_rustfetch | zstd -q -o "$OUT"
 else
   die "neither 'tar --zstd' nor 'zstd' is available; install zstd and retry"
 fi

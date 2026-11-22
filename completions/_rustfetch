@@ -1,0 +1,139 @@
+#compdef rustfetch
+# zsh completion for rustfetch — generated from the CLI's own help,
+# src/help_raw.txt enum values and src/hyfetch_presets.rs. Do not edit by hand.
+
+_rustfetch_presets() {
+  local -a presets
+  presets=(rainbow transgender nonbinary xenogender agender queer genderfluid bisexual pansexual polysexual omnisexual omniromantic gay-men lesbian abrosexual asexual aromantic fictosexual aroace1 aroace2 aroace3 demisexual demiromantic demiaroace autosexual intergender greygender akiosexual bigender demigender demiboy demigirl transmasculine transfeminine genderfaun demifaun genderfae demifae neutrois biromantic1 biromantic2 autoromantic boyflux2 girlflux genderflux nullflux hypergender hyperboy hypergirl hyperandrogyne hyperneutrois finsexual unlabeled1 unlabeled2 pangender pangender.contrast gendernonconforming1 gendernonconforming2 femboy tomboy gynesexual androsexual gendervoid voidgirl voidboy nonhuman-unity plural fraysexual bear butch femme leather otter twink adipophilia kenochoric veldian solian lunian polyam sapphic androgyne interprogress progress intersex old-polyam equal-rights drag pronounfluid pronounflux exipronoun neopronoun neofluid genderqueer cisgender baker caninekin libragender librafeminine libramasculine libraandrogyne libranonbinary fluidflux1 fluidflux2 transbian autism cenelian transneutral enbian paragender paraboy paragirl paranonbinary paragenderalt paraboyalt paragirlalt paranonbinaryalt cupiorose cupioromantic cupiosexual cow berrisexual almondsexual beiyang burger throatlozenges band petergriffin rubber haruhi queervillain barlo disability unlabeled random)
+  _describe 'hyfetch preset' presets
+}
+
+_rustfetch_modules() {
+  local -a mods
+  mods=(${(f)"$(rustfetch --list-modules 2>/dev/null | sed -nE 's/^[[:space:]]*[0-9]+\)[[:space:]]+([^: ]+).*/\1/p')"})
+  (( ${#mods} )) && _describe 'module' mods
+}
+
+_rustfetch_logos() {
+  local -a logos
+  logos=(${(f)"$(rustfetch --list-logos 2>/dev/null | grep -oE '"[^"]+"' | tr -d '"' | sort -u)"})
+  (( ${#logos} )) && _describe 'logo' logos
+}
+
+_rustfetch_configs() {
+  _files -g '*.jsonc' -g '*.json'
+}
+
+_arguments -C \
+  '(-h --help)'{-h,--help}'[Show this help message or help for a specific command]:arg:' \
+  '(-v --version)'{-v,--version}'[Show the full Fastfetch version]' \
+  '--version-raw[Show the raw version string (major.minor.patch)]' \
+  '--list-config-paths[List search paths for config files]' \
+  '--list-data-paths[List search paths for presets and logos]' \
+  '--list-logos[List available logos]' \
+  '--list-modules[List available modules]' \
+  '--list-presets[List available presets]' \
+  '--list-features[List the supported features that fastfetch was compiled with]' \
+  '--print-logos[Show available logos]' \
+  '--print-structure[Show the default structure]' \
+  '--format[Set the output format]:arg:(default json)' \
+  '(-j --json)'{-j,--json}'[Enable or disable JSON output]:arg:' \
+  '--dynamic-interval[Keep Fastfetch running and refresh the output every <num> milliseconds]:arg:' \
+  '(-w --watch)'{-w,--watch}'[Alias of dynamic-interval, but the value is in seconds instead of milliseconds. If no value is provided, it defaults to 1 second]:arg:' \
+  '(-c --config)'{-c,--config}'[Specify the config file or preset to load]:arg:_rustfetch_configs' \
+  '--gen-config[Interactively generate a config file at the specified path]:arg:' \
+  '--thread[Use separate threads for HTTP requests]:arg:' \
+  '--wmi-timeout[Set the timeout (ms) for WMI queries]:arg:' \
+  '--processing-timeout[Set the timeout (ms) when waiting for child processes]:arg:' \
+  '--ds-force-drm[Specify whether display detection should use DRM only]:arg:(true sysfs-only false)' \
+  '--detect-version[Specify whether to detect and display versions for terminal, shell, editor, and others]:arg:' \
+  '(-l --logo)'{-l,--logo}'[Set the logo source. Use "none" to disable logo output]:arg:_rustfetch_logos' \
+  '--logo-type[Set the type of logo specified by "--logo"]:arg:(auto builtin small file file-raw data data-raw command-raw sixel kitty kitty-direct kitty-icat iterm chafa raw spin none)' \
+  '--logo-spin-speed-per-frame[Set how far the spin logo turns per drawn frame, in degrees]:arg:' \
+  '--logo-spin-speed-per-round[Set how many seconds one revolution of the spin logo takes]:arg:' \
+  '--logo-spin-tilt[Set the camera tilt of the spin logo, in degrees]:arg:' \
+  '--logo-spin-angle[Set the rotation of the first spin logo frame, in degrees]:arg:' \
+  '--logo-width[Set the width of the logo (in characters) if it is an image]:arg:' \
+  '--logo-height[Set the height of the logo (in characters) if it is an image]:arg:' \
+  '--logo-preserve-aspect-ratio[Specify whether the logo should fill the specified width and height as much as possible without stretching]:arg:' \
+  '--logo-padding[Set the padding on the left and right sides of the logo]:arg:' \
+  '--logo-padding-left[Set the padding on the left side of the logo]:arg:' \
+  '--logo-padding-right[Set the padding on the right side of the logo]:arg:' \
+  '--logo-padding-top[Set the padding at the top of the logo]:arg:' \
+  '--logo-padding-bottom[Set the padding at the bottom of the logo]:arg:' \
+  '--logo-print-remaining[Specify whether to print remaining logo lines when the logo is taller than the module list]:arg:' \
+  '--logo-position[Set the display position of the logo]:arg:(auto left top right)' \
+  '--logo-cache[Specify how the image logo cache is used]:arg:(true false regen)' \
+  '--logo-animation-frame[Select which frame of an animated image logo to render]:arg:' \
+  '--file[Short for --logo-type file --logo <path>]:arg:' \
+  '--file-raw[Short for --logo-type file-raw --logo <path>]:arg:' \
+  '--data[Short for --logo-type data --logo <data>]:arg:' \
+  '--data-raw[Short for --logo-type data-raw --logo <data>]:arg:' \
+  '--raw[Short for --logo-type raw --logo <path>]:arg:' \
+  '--sixel[Short for --logo-type sixel --logo <path>]:arg:' \
+  '--kitty[Short for --logo-type kitty --logo <path>]:arg:' \
+  '--kitty-direct[Short for --logo-type kitty-direct --logo <path>]:arg:' \
+  '--kitty-icat[Short for --logo-type kitty-icat --logo <path>]:arg:' \
+  '--iterm[Short for --logo-type iterm --logo <path>]:arg:' \
+  '--chafa[Short for --logo-type chafa --logo <path>]:arg:' \
+  '--chafa-fg-only[Produce character-cell output using foreground colors only]:arg:' \
+  '--chafa-symbols[Specify character symbols to employ in final output]:arg:' \
+  '--chafa-canvas-mode[Determine how colors are used in the output]:arg:(TRUECOLOR INDEXED_256 INDEXED_240 INDEXED_16 FGBG_BGFG FGBG INDEXED_8 INDEXED_16_8)' \
+  '--chafa-color-space[Set the color space used for quantization]:arg:(RGB DIN99D)' \
+  '--chafa-dither-mode[Set the output dithering mode (no effect with 24-bit color)]:arg:(NONE ORDERED DIFFUSION)' \
+  '(-s --structure)'{-s,--structure}'[Set the structure of the fetch]:arg:_rustfetch_modules' \
+  '--structure-disabled[Disable specific modules in the structure]:arg:_rustfetch_modules' \
+  '--stat[Show execution time (ms) for individual modules]:arg:' \
+  '--pipe[Disable colors]:arg:' \
+  '--color[Set the color of both keys and title]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--color-keys[Set the color of the keys]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--color-title[Set the color of the title]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--color-output[Set the color of module output]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--color-separator[Set the color of the key-value separator]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--duration-abbreviation[Specify whether to abbreviate duration values]:arg:' \
+  '--duration-space-before-unit[Specify whether to put a space before the unit in duration values]:arg:(default always never)' \
+  '--key-width[Align the width of keys to <num> characters]:arg:' \
+  '--key-padding-left[Set the left padding of keys to <num> characters]:arg:' \
+  '--key-type[Specify whether to show an icon before string keys]:arg:(none string icon both both-0 both-1 both-2 both-3 both-4)' \
+  '--key-language[Specify the language used for module keys]:arg:(en ar cs de es fi fr gl he id it ja ko pl pt ru tr uk vi zh_CN zh_TW)' \
+  '--bright-color[Specify whether keys, title, and ASCII logo should be printed in bright color]:arg:' \
+  '--separator[Set the separator between key and value]:arg:' \
+  '--show-errors[Print errors when they occur]:arg:' \
+  '--disable-linewrap[Specify whether to disable line wrap during execution]:arg:' \
+  '--hide-cursor[Specify whether to hide the cursor during execution]:arg:' \
+  '--percent-type[Set the percentage output style]:arg:' \
+  '--percent-ndigits[Set the number of decimal places to use when formatting percentages]:arg:' \
+  '--percent-color-green[Set color used for the green state of percentage bars and numbers]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--percent-color-yellow[Set color used for the yellow state of percentage bars and numbers]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--percent-color-red[Set color used for the red state of percentage bars and numbers]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--percent-space-before-unit[Specify whether to put a space before the percentage symbol]:arg:(default always never)' \
+  '--percent-width[Specify the width of the percentage number, in characters]:arg:' \
+  '--bar-char-elapsed[Set the character used for the elapsed part of percentage bars]:arg:' \
+  '--bar-char-total[Set the character used for the total part of percentage bars]:arg:' \
+  '--bar-border-left[Set the string to use at the left border of percentage bars]:arg:' \
+  '--bar-border-right[Set the string to use at the right border of percentage bars]:arg:' \
+  '--bar-border-left-elapsed[If both bar-border-left-elapsed and bar-border-right-elapsed are set, the border is used as part of the bar content]:arg:' \
+  '--bar-border-right-elapsed[If both bar-border-left-elapsed and bar-border-right-elapsed are set, the border is used as part of the bar content]:arg:' \
+  '--bar-color-elapsed[Set the color used for the elapsed part of percentage bars]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--bar-color-total[Set the color used for the total part of percentage bars]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--bar-color-border[Set the color used for percentage bar borders]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--bar-width[Set the width of percentage bars in characters]:arg:' \
+  '--no-buffer[Specify whether stdout buffering should be disabled]:arg:' \
+  '--size-ndigits[Set the number of decimal places to use when formatting sizes]:arg:' \
+  '--size-binary-prefix[Set the binary prefix to use when formatting sizes]:arg:(IEC SI JEDEC)' \
+  '--size-max-prefix[Set the largest binary prefix to use when formatting sizes]:arg:(B kB MB GB TB PB EB ZB YB)' \
+  '--size-space-before-unit[Specify whether to put a space before the unit]:arg:(default always never)' \
+  '--freq-ndigits[Set the number of decimal places to use when printing CPU/GPU frequency in GHz]:arg:' \
+  '--freq-space-before-unit[Specify whether to put a space before the unit]:arg:(default always never)' \
+  '--fraction-ndigits[Set the number of decimal places to use when printing fractional values]:arg:' \
+  '--fraction-trailing-zeros[Set when to keep trailing zeros]:arg:(default always never)' \
+  '--temp-unit[Set the temperature unit]:arg:(D C F K)' \
+  '--temp-ndigits[Set the number of decimal places to use when printing temperatures]:arg:' \
+  '--temp-color-green[Set color used for the green state of temperature values]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--temp-color-yellow[Set color used for the yellow state of temperature values]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--temp-color-red[Set color used for the red state of temperature values]:arg:(black red green yellow blue magenta cyan white light_black light_red light_green light_yellow light_blue light_magenta light_cyan light_white default)' \
+  '--temp-space-before-unit[Specify whether to put a space before the unit]:arg:(default always never)' \
+  '--hyfetch-preset[HyFetch preset name, custom name, random, or comma-separated list]:preset:_rustfetch_presets' \
+  '--hyfetch-mode[ANSI color mode]:mode:(24bit rgb truecolor 8bit ansi256 256color)' \
+  '--hyfetch-lightness[OKHSL lightness floor 0..1]:lightness:'
+

@@ -262,6 +262,17 @@ install_binary() {
     install -m 0755 -- "$src" "$DEST"
     ok "Installed $DEST (mode 0755)"
   fi
+  local comp_src=""
+  if [[ "$MODE" == remote ]]; then
+    comp_src="$WORKDIR/extract/completions/_rustfetch"
+  else
+    comp_src="$REPO_ROOT/completions/_rustfetch"
+  fi
+  if [[ -f "$comp_src" ]]; then
+    mkdir -p -- "$PREFIX/share/zsh/site-functions"
+    install -m 0644 -- "$comp_src" "$PREFIX/share/zsh/site-functions/_rustfetch"
+    ok "Installed zsh completion: $PREFIX/share/zsh/site-functions/_rustfetch"
+  fi
   if "$DEST" --version >/dev/null 2>&1; then
     ok "Smoke test passed: '$DEST --version'"
   else
@@ -278,6 +289,11 @@ do_uninstall() {
   if [[ -e "$BINDIR/rustfetch" || -L "$BINDIR/rustfetch" ]]; then
     rm -f -- "$BINDIR/rustfetch"
     ok "Removed $BINDIR/rustfetch"
+    local comp="$PREFIX/share/zsh/site-functions/_rustfetch"
+    if [[ -e "$comp" ]]; then
+      rm -f -- "$comp"
+      ok "Removed $comp"
+    fi
   else
     ok "Nothing to remove; rustfetch is already uninstalled"
   fi

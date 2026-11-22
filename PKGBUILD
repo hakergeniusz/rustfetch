@@ -33,4 +33,5 @@ package() {
   install -Dm755 "$_TARGET/release/rustfetch" "$pkgdir/usr/bin/rustfetch"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 completions/_rustfetch "$pkgdir/usr/share/zsh/site-functions/_rustfetch"
 }

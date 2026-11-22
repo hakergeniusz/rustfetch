@@ -236,3 +236,7 @@ is available. It prints the SHA-256 for convenience.
 fastfetch is **not** required at runtime. A user's existing
 `~/.config/fastfetch/config.jsonc` may be read as a compatibility preset, but
 the `fastfetch` executable/package itself is neither required nor called.
+
+## zsh completion
+
+`completions/_rustfetch` completes every flag from `--help`, enum values, `-c` config files, `-s` module names, `--logo` names and `--hyfetch-preset` names (all 134 presets plus `random`). Installers place it in `$PREFIX/share/zsh/site-functions/_rustfetch`.

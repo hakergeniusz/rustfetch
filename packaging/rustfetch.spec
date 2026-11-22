@@ -35,11 +35,13 @@ install -d %{buildroot}%{_licensedir}/%{name}
 install -m 0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 install -d %{buildroot}%{_docdir}/%{name}
 install -m 0644 README.md %{buildroot}%{_docdir}/%{name}/README.md
+install -Dm 0644 completions/_rustfetch %{buildroot}%{_datadir}/zsh/site-functions/_rustfetch
 
 %files
 %{_bindir}/rustfetch
 %license %{_licensedir}/%{name}/LICENSE
 %doc %{_docdir}/%{name}/README.md
+%{_datadir}/zsh/site-functions/_rustfetch
 
 %changelog
 * Sat Nov 21 2026 hakergeniusz <hakergeniusz@users.noreply.github.com> - 0.1.0-1

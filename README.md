@@ -71,3 +71,7 @@ hyperfine, default module set, same machine (Arch Linux, ghostty):
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Shell completion
+
+A zsh completion for all fastfetch-compatible flags, enum values, module names, logo names and the 134 HyFetch presets ships at `completions/_rustfetch`. `install.sh` and the distro packages place it in `share/zsh/site-functions`; add that directory to your `$fpath` if you install manually.
