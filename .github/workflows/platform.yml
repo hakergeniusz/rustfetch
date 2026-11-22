@@ -1,7 +1,9 @@
 name: Platform builds
 
-# Builds the standalone Windows and macOS crates on their native runners.
-# Linux parity is intentionally left to ci.yaml (job `check`) and is not duplicated here.
+# Builds the standalone Windows, macOS and arm64 binaries on their native/cross
+# runners. x86_64 Linux parity is intentionally left to ci.yaml (job `check`) and
+# is not duplicated here; Linux arm64 is added below because ci.yaml only covers
+# x86_64.
 # Branch pushes are covered by `branches: ["**"]`; `tags: ["v*"]` is included so the
 # `attach` job can actually run on version-tag pushes.
 
@@ -79,6 +81,9 @@ jobs:
         continue-on-error: true
         run: cargo --locked test --manifest-path platform/macos/Cargo.toml
 
+      # This universal binary contains BOTH an aarch64-apple-darwin (Apple
+      # Silicon / arm64) slice and an x86_64-apple-darwin slice, so macOS arm64
+      # is already covered by this single asset — no separate arm64 asset needed.
       - name: Stage universal binary
         shell: bash
         run: |
@@ -103,8 +108,75 @@ jobs:
           path: dist/rustfetch-macos-universal
           if-no-files-found: error
 
+  linux-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cross-compile the root (Linux) crate to aarch64. apt's gcc-aarch64-linux-gnu
+      # provides the linker + sysroot; rustup provides the target std. The only
+      # dependency (libc) is a pure-Rust bindings crate, so no extra C libs are
+      # required. Default dynamic glibc linking via the aarch64 sysroot is used;
+      # if a static-ish binary is ever needed, add RUSTFLAGS="-C target-feature=+crt-static"
+      # to the build step (no new crate deps).
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          rustup target add aarch64-unknown-linux-gnu
+
+      # The root crate ships its own Cargo.lock, so --locked is safe here.
+      - name: Build release (aarch64-unknown-linux-gnu)
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo --locked build --release --target aarch64-unknown-linux-gnu
+
+      - name: Stage binary
+        run: |
+          mkdir -p dist
+          cp target/aarch64-unknown-linux-gnu/release/rustfetch dist/rustfetch-linux-aarch64
+
+      - name: Upload Linux arm64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfetch-linux-aarch64
+          path: dist/rustfetch-linux-aarch64
+          if-no-files-found: error
+
+  windows-arm64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Native arm64 Windows runners are scarce, so cross-compile from x86_64.
+      # rustup adds the std target; linking uses link.exe from the Visual Studio
+      # toolchain already present on windows-latest (ARM64 libs ship with MSVC +
+      # the Windows SDK), so no extra toolchain install is needed. The platform
+      # Windows crate is dependency-free, so this cross-build is self-contained.
+      - name: Install Windows arm64 target
+        shell: bash
+        run: rustup target add aarch64-pc-windows-msvc
+
+      # The platform crate ships its own Cargo.lock, so --locked is safe here.
+      - name: Build release (aarch64-pc-windows-msvc)
+        shell: bash
+        run: cargo --locked build --release --target aarch64-pc-windows-msvc --manifest-path platform/windows/Cargo.toml
+
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp platform/windows/target/aarch64-pc-windows-msvc/release/rustfetch.exe dist/rustfetch-windows-aarch64.exe
+
+      - name: Upload Windows arm64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfetch-windows-aarch64.exe
+          path: dist/rustfetch-windows-aarch64.exe
+          if-no-files-found: error
+
   attach:
-    needs: [windows, macos]
+    needs: [windows, macos, linux-arm64, windows-arm64]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -124,7 +196,9 @@ jobs:
         run: |
           cd dist
           sha256sum rustfetch-windows-x86_64.exe > rustfetch-windows-x86_64.exe.sha256
+          sha256sum rustfetch-windows-aarch64.exe > rustfetch-windows-aarch64.exe.sha256
           sha256sum rustfetch-macos-universal > rustfetch-macos-universal.sha256
+          sha256sum rustfetch-linux-aarch64 > rustfetch-linux-aarch64.sha256
 
       # The release for the tag must already exist; --clobber makes re-runs idempotent.
       - name: Attach assets to release
@@ -133,7 +207,11 @@ jobs:
         run: |
           gh release upload "${GITHUB_REF_NAME}" \
             dist/rustfetch-windows-x86_64.exe \
+            dist/rustfetch-windows-aarch64.exe \
             dist/rustfetch-macos-universal \
+            dist/rustfetch-linux-aarch64 \
             dist/rustfetch-windows-x86_64.exe.sha256 \
+            dist/rustfetch-windows-aarch64.exe.sha256 \
             dist/rustfetch-macos-universal.sha256 \
+            dist/rustfetch-linux-aarch64.sha256 \
             --clobber
