@@ -1,0 +1,36 @@
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
+
+  // Showcase preset: fastfetch-style layout with a HyFetch transgender flag.
+  // Use: rustfetch --config examples/showcase.jsonc
+  "logo": {
+    "type": "builtin",
+    "source": "arch",
+    "hyfetch": {
+      "preset": "transgender",
+      "mode": "24bit"
+    }
+  },
+
+  "display": {
+    "separator": "  "
+  },
+
+  "modules": [
+    "title",
+    "separator",
+    "os",
+    "host",
+    "kernel",
+    "uptime",
+    "shell",
+    "display",
+    "de",
+    "wm",
+    "cpu",
+    "gpu",
+    "memory",
+    "swap",
+    "disk"
+  ]
+}
