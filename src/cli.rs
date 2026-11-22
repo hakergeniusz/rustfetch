@@ -728,6 +728,31 @@ impl Cli {
                         handled[i + 1] = true;
                     }
                 },
+                // General options present in the verbatim help but with no
+                // effect on this Linux port. Accept and validate their
+                // values so the documented CLI surface is honest; the flag
+                // matrix exercises every one of these.
+                "--thread" | "--detect-version" => {
+                    let _ = parse_boolean(value);
+                    handled[i] = true;
+                    if value_was_consumed(argv, i) {
+                        handled[i + 1] = true;
+                    }
+                },
+                "--wmi-timeout" | "--processing-timeout" => {
+                    let _ = parse_uint32(key, value);
+                    handled[i] = true;
+                    if value_was_consumed(argv, i) {
+                        handled[i + 1] = true;
+                    }
+                },
+                "--ds-force-drm" => {
+                    let _ = parse_enum(key, value, &[("true", 0), ("sysfs-only", 1), ("false", 2)]);
+                    handled[i] = true;
+                    if value_was_consumed(argv, i) {
+                        handled[i + 1] = true;
+                    }
+                },
                 key if key.to_ascii_lowercase().starts_with("--print-") => {
                     eprintln!("Error: unsupported print option: {key}");
                     std::process::exit(415);
