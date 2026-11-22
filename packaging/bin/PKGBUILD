@@ -14,7 +14,7 @@ provides=('rustfetch')
 conflicts=('rustfetch')
 _TARBALL="rustfetch-${pkgver}-x86_64-unknown-linux-gnu.tar.zst"
 source=("$_TARBALL::https://github.com/hakergeniusz/rustfetch/releases/download/v${pkgver}/${_TARBALL}")
-sha256sums=('0282130e31c369f0b80a3093c7538c58272fd0a53351d16e8042eff439c1d561')
+sha256sums=('3e35e0e3667d8e2ef942cb4eb9dd40a15a2bb137a75886ffca40ce583a4f809a')
 
 package() {
   tar --zstd -xf "$_TARBALL" -C "$srcdir"
