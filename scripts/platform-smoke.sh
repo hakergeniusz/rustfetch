@@ -142,7 +142,13 @@ cat "$OUT" "$ERR" | strip_to_clean
 # "Name : Description" listing so the check is not tied to one exact style.
 numbered=$(grep -Ec '^[[:space:]]*[0-9]+[).][[:space:]]+[[:alnum:]]' "$CLEAN" || true)
 bare=$(grep -Ec '^[[:space:]]*[[:alnum:]][^:]{0,40}[[:space:]]:[[:space:]]' "$CLEAN" || true)
-if [ "$numbered" -ge "$bare" ]; then module_count=$numbered; else module_count=$bare; fi
+# The native ports print bare module IDs (Windows: "title"; macOS:
+# "title        User@Host"), so also accept a line starting with an
+# alphanumeric ID followed by whitespace or end-of-line.
+ids=$(grep -Ec '^[[:space:]]*[[:alnum:]_][[:alnum:]_-]*([[:space:]]|$)' "$CLEAN" || true)
+module_count=$numbered
+[ "$bare" -gt "$module_count" ] && module_count=$bare
+[ "$ids" -gt "$module_count" ] && module_count=$ids
 if [ "$RC" -ne 0 ]; then
     fail "list-modules" "exit code $RC"
 elif [ "$module_count" -lt "$MIN_MODULES" ]; then

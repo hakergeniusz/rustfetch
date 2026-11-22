@@ -120,7 +120,9 @@ class Smoke:
         text = strip_ansi(decode(out) + "\n" + decode(err))
         numbered = len(re.findall(r"^\s*\d+[).]\s+\w", text, re.MULTILINE))
         bare = len(re.findall(r"^\s*\w[^:]{0,40}\s:\s", text, re.MULTILINE))
-        count = max(numbered, bare)
+        # Bare module IDs (Windows "title", macOS "title   User@Host").
+        ids = len(re.findall(r"^\s*\w[\w-]*(?:\s|$)", text, re.MULTILINE))
+        count = max(numbered, bare, ids)
         if rc != 0:
             return self.record("list-modules", False, f"exit code {rc}")
         if count < self.min_modules:
