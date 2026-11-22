@@ -37,6 +37,37 @@ Build from source: `cargo build --release` → `target/release/rustfetch`.
 
 ---
 
+## 🪟 Other platforms
+
+**Linux remains the parity target** — the main crate targets full
+byte-for-byte fastfetch 2.71.0 parity. The native Windows and macOS builds are
+standalone, core-module ports, **not** parity builds. See
+[docs/platform-support.md](docs/platform-support.md) for the support matrix,
+build commands and known limitations.
+
+Windows (x86_64) — PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/installers/install.ps1 | iex
+```
+
+macOS — Homebrew (once the tap is published):
+
+```bash
+brew tap hakergeniusz/rustfetch
+brew install rustfetch
+```
+
+Both ports provide the core modules (`title`, `os`, `host`, `kernel`, `uptime`,
+`shell`, `terminal`, `cpu`, `memory`, `disk`, `localip`) and the `--pipe`,
+`--format json`, `--help`, `--version`, `--list-modules` and
+`--hyfetch-preset` flags. The tap is published with the release that first
+includes the macOS asset; until then, install the formula directly from a
+checkout (`brew install ./installers/rustfetch.rb`) or build from source, as
+described in the platform doc.
+
+---
+
 ## 🎨 Showcase
 
 [`examples/showcase.jsonc`](examples/showcase.jsonc) — a fastfetch-style layout

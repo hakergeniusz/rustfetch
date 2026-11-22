@@ -1,0 +1,19 @@
+[package]
+name = "rustfetch"
+version = "0.2.5"
+edition = "2021"
+description = "A fastfetch- and hyfetch-inspired system information tool written in Rust (native Windows build)"
+license = "MIT"
+
+[[bin]]
+name = "rustfetch"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
