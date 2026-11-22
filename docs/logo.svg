@@ -58,6 +58,6 @@
   <!-- WORDMARK -->
   <text x="120" y="73"
         font-family="Inter, 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif"
-        font-size="45" font-weight="800" letter-spacing="0.5"
+        font-size="54" font-weight="800" letter-spacing="0.5"
         fill="url(#flagText)">rustfetch</text>
 </svg>
