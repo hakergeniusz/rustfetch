@@ -250,3 +250,20 @@ After building or installing on the target platform:
 6. **CI smoke script:** the workflow runs
    `bash scripts/platform-smoke.sh <binary>` on each staged binary when that
    script is present; run the same command locally for an equivalent check.
+
+### arm64 builds
+
+- Linux arm64: CI cross-builds the main crate with
+  `aarch64-unknown-linux-gnu` + `gcc-aarch64-linux-gnu`, publishing
+  `rustfetch-linux-aarch64`.
+- Windows arm64: CI cross-builds `aarch64-pc-windows-msvc` with the
+  MSVC toolchain, publishing `rustfetch-windows-aarch64.exe`.
+- macOS arm64: included in `rustfetch-macos-universal` (arm64 + x86_64).
+
+All assets and their `.sha256` sidecars are attached to version tags.
+
+### Flag matrix testing
+
+`.github/workflows/flags.yml` runs `scripts/flag-matrix.sh` on all three
+platforms: 109 documented flags + 5 error cases, compared byte-for-byte
+with fastfetch on Linux. Latest local result: 114 PASS / 0 FAIL.
