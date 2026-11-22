@@ -14,15 +14,23 @@
 <line x1="770.0" y1="64" x2="770.0" y2="294" stroke="#21262d" stroke-width="1"/>
 <text x="770.0" y="314" fill="#6e7681" font-family="system-ui,sans-serif" font-size="11" text-anchor="middle">20</text>
 <text x="136" y="94" fill="#c9d1d9" font-family="system-ui,sans-serif" font-size="14" text-anchor="end">rustfetch</text>
+<line x1="376.3" y1="103" x2="376.3" y2="294" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.65"/>
+<circle cx="376.3" cy="294" r="3.5" fill="#3fb950"/>
 <rect x="150" y="77" width="226.3" height="26" rx="6" fill="#3fb950"/>
 <text x="386.3" y="95" fill="#e6edf3" font-family="system-ui,sans-serif" font-size="13" font-weight="600" text-anchor="start">7.3 MiB</text>
 <text x="136" y="146" fill="#c9d1d9" font-family="system-ui,sans-serif" font-size="14" text-anchor="end">fastfetch</text>
+<line x1="528.2" y1="155" x2="528.2" y2="294" stroke="#f0883e" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.65"/>
+<circle cx="528.2" cy="294" r="3.5" fill="#f0883e"/>
 <rect x="150" y="129" width="378.2" height="26" rx="6" fill="#f0883e"/>
 <text x="538.2" y="147" fill="#e6edf3" font-family="system-ui,sans-serif" font-size="13" font-weight="600" text-anchor="start">12.2 MiB</text>
 <text x="136" y="198" fill="#c9d1d9" font-family="system-ui,sans-serif" font-size="14" text-anchor="end">hyfetch</text>
+<line x1="382.5" y1="207" x2="382.5" y2="294" stroke="#bc8cff" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.65"/>
+<circle cx="382.5" cy="294" r="3.5" fill="#bc8cff"/>
 <rect x="150" y="181" width="232.5" height="26" rx="6" fill="#bc8cff"/>
 <text x="392.5" y="199" fill="#e6edf3" font-family="system-ui,sans-serif" font-size="13" font-weight="600" text-anchor="start">7.5 MiB</text>
 <text x="136" y="250" fill="#c9d1d9" font-family="system-ui,sans-serif" font-size="14" text-anchor="end">neofetch</text>
+<line x1="748.3" y1="259" x2="748.3" y2="294" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.65"/>
+<circle cx="748.3" cy="294" r="3.5" fill="#f85149"/>
 <rect x="150" y="233" width="598.3" height="26" rx="6" fill="#f85149"/>
 <text x="758.3" y="251" fill="#e6edf3" font-family="system-ui,sans-serif" font-size="13" font-weight="600" text-anchor="start">19.3 MiB</text>
 </svg>
