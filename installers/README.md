@@ -81,6 +81,7 @@ and run:
 
 ```sh
 brew tap hakergeniusz/rustfetch
+brew trust hakergeniusz/rustfetch   # required by newer Homebrew for third-party taps
 brew install rustfetch
 brew upgrade rustfetch   # after updating the formula for a new release
 ```

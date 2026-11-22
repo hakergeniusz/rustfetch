@@ -55,6 +55,7 @@ macOS — Homebrew (once the tap is published):
 
 ```bash
 brew tap hakergeniusz/rustfetch
+brew trust hakergeniusz/rustfetch   # required by newer Homebrew for third-party taps
 brew install rustfetch
 ```
 
