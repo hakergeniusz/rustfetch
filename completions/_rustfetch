@@ -5,19 +5,19 @@
 _rustfetch_presets() {
   local -a presets
   presets=(rainbow transgender nonbinary xenogender agender queer genderfluid bisexual pansexual polysexual omnisexual omniromantic gay-men lesbian abrosexual asexual aromantic fictosexual aroace1 aroace2 aroace3 demisexual demiromantic demiaroace autosexual intergender greygender akiosexual bigender demigender demiboy demigirl transmasculine transfeminine genderfaun demifaun genderfae demifae neutrois biromantic1 biromantic2 autoromantic boyflux2 girlflux genderflux nullflux hypergender hyperboy hypergirl hyperandrogyne hyperneutrois finsexual unlabeled1 unlabeled2 pangender pangender.contrast gendernonconforming1 gendernonconforming2 femboy tomboy gynesexual androsexual gendervoid voidgirl voidboy nonhuman-unity plural fraysexual bear butch femme leather otter twink adipophilia kenochoric veldian solian lunian polyam sapphic androgyne interprogress progress intersex old-polyam equal-rights drag pronounfluid pronounflux exipronoun neopronoun neofluid genderqueer cisgender baker caninekin libragender librafeminine libramasculine libraandrogyne libranonbinary fluidflux1 fluidflux2 transbian autism cenelian transneutral enbian paragender paraboy paragirl paranonbinary paragenderalt paraboyalt paragirlalt paranonbinaryalt cupiorose cupioromantic cupiosexual cow berrisexual almondsexual beiyang burger throatlozenges band petergriffin rubber haruhi queervillain barlo disability unlabeled random)
-  _describe 'hyfetch preset' presets
+  compadd -a presets
 }
 
 _rustfetch_modules() {
   local -a mods
   mods=(${(f)"$(rustfetch --list-modules 2>/dev/null | sed -nE 's/^[[:space:]]*[0-9]+\)[[:space:]]+([^: ]+).*/\1/p')"})
-  (( ${#mods} )) && _describe 'module' mods
+  (( ${#mods} )) && compadd -a mods
 }
 
 _rustfetch_logos() {
   local -a logos
   logos=(${(f)"$(rustfetch --list-logos 2>/dev/null | grep -oE '"[^"]+"' | tr -d '"' | sort -u)"})
-  (( ${#logos} )) && _describe 'logo' logos
+  (( ${#logos} )) && compadd -a logos
 }
 
 _rustfetch_configs() {

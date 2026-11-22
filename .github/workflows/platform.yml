@@ -1,0 +1,113 @@
+name: Platform builds
+
+# Builds the standalone Windows and macOS crates on their native runners.
+# Linux parity is intentionally left to ci.yaml (job `check`) and is not duplicated here.
+# Branch pushes are covered by `branches: ["**"]`; `tags: ["v*"]` is included so the
+# `attach` job can actually run on version-tag pushes.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The platform crates ship their own Cargo.lock, so --locked is safe here.
+      - name: Build release (x86_64 Windows)
+        shell: bash
+        run: cargo --locked build --release --manifest-path platform/windows/Cargo.toml
+
+      # cargo test succeeds with zero tests, but keep this non-fatal in case a
+      # future Windows crate has no test target (or cannot link one on the runner).
+      - name: Test
+        shell: bash
+        continue-on-error: true
+        run: cargo --locked test --manifest-path platform/windows/Cargo.toml
+
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp platform/windows/target/release/rustfetch.exe dist/rustfetch-windows-x86_64.exe
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfetch-windows-x86_64.exe
+          path: dist/rustfetch-windows-x86_64.exe
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both Apple targets are installed with rustup, then lipo'd into one
+      # universal binary. Requires only the Rust std targets (no C toolchain).
+      - name: Install Apple targets
+        shell: bash
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      # The platform crates ship their own Cargo.lock, so --locked is safe here.
+      - name: Build release (aarch64-apple-darwin)
+        shell: bash
+        run: cargo --locked build --release --target aarch64-apple-darwin --manifest-path platform/macos/Cargo.toml
+
+      - name: Build release (x86_64-apple-darwin)
+        shell: bash
+        run: cargo --locked build --release --target x86_64-apple-darwin --manifest-path platform/macos/Cargo.toml
+
+      # Non-fatal, matching the Windows job, for crates that define no tests.
+      - name: Test
+        shell: bash
+        continue-on-error: true
+        run: cargo --locked test --manifest-path platform/macos/Cargo.toml
+
+      - name: Stage universal binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          lipo -create \
+            platform/macos/target/aarch64-apple-darwin/release/rustfetch \
+            platform/macos/target/x86_64-apple-darwin/release/rustfetch \
+            -output dist/rustfetch-macos-universal
+          chmod +x dist/rustfetch-macos-universal
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfetch-macos-universal
+          path: dist/rustfetch-macos-universal
+          if-no-files-found: error
+
+  attach:
+    needs: [windows, macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # The release for the tag must already exist; --clobber makes re-runs idempotent.
+      - name: Attach assets to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            dist/rustfetch-windows-x86_64.exe \
+            dist/rustfetch-macos-universal \
+            --clobber
