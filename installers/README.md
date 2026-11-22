@@ -80,8 +80,8 @@ Or place the file in a tap at
 and run:
 
 ```sh
-brew tap hakergeniusz/rustfetch
-brew install rustfetch
+# From a checkout of this repo:
+brew install --formula ./installers/rustfetch.rb
 brew upgrade rustfetch   # after updating the formula for a new release
 ```
 

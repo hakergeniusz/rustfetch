@@ -160,8 +160,8 @@ The formula lives in [`installers/rustfetch.rb`](../installers/rustfetch.rb).
 Once it is published to the `hakergeniusz/rustfetch` tap:
 
 ```bash
-brew tap hakergeniusz/rustfetch
-brew install rustfetch
+# From a checkout of this repo:
+brew install --formula ./installers/rustfetch.rb
 ```
 
 From a checkout you can also install the formula directly:

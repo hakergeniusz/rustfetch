@@ -54,8 +54,8 @@ irm https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/installers/ins
 macOS — Homebrew (once the tap is published):
 
 ```bash
-brew tap hakergeniusz/rustfetch
-brew install rustfetch
+# From a checkout of this repo:
+brew install --formula ./installers/rustfetch.rb
 ```
 
 Both ports provide the core modules (`title`, `os`, `host`, `kernel`, `uptime`,
