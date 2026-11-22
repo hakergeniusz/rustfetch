@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn document_uses_the_default_template() {
-        let cli = crate::cli::Cli::parse_from(&["rustfetch", "--gen-config", "/tmp/generated.jsonc"]);
+        let cli = crate::cli::Cli::parse_from(&["rustfetch", "--gen-config", "/dev/shm/generated.jsonc"]);
         let expected = "{\n  \"$schema\": \"https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json\",\n  \"modules\": [\n    \"title\",\n    \"separator\",\n    \"os\",\n    \"host\",\n    \"kernel\",\n    \"uptime\",\n    \"packages\",\n    \"shell\",\n    \"display\",\n    \"de\",\n    \"wm\",\n    \"wmtheme\",\n    \"theme\",\n    \"icons\",\n    \"font\",\n    \"cursor\",\n    \"terminal\",\n    \"terminalfont\",\n    \"cpu\",\n    \"gpu\",\n    \"memory\",\n    \"swap\",\n    \"disk\",\n    \"localip\",\n    \"battery\",\n    \"poweradapter\",\n    \"locale\",\n    \"break\",\n    \"colors\"\n  ]\n}\n";
         assert_eq!(build_document(&cli, &crate::cli::gen_config_state()), expected);
     }
@@ -137,7 +137,7 @@ mod tests {
             "--structure-disabled",
             "cpu:colorS",
             "--gen-config",
-            "/tmp/generated.jsonc",
+            "/dev/shm/generated.jsonc",
         ]);
         assert_eq!(
             build_document(&cli, &crate::cli::gen_config_state()),
@@ -152,7 +152,7 @@ mod tests {
             "-s",
             "bogus",
             "--gen-config",
-            "/tmp/generated.jsonc",
+            "/dev/shm/generated.jsonc",
         ]);
         assert_eq!(
             build_document(&cli, &crate::cli::gen_config_state()),

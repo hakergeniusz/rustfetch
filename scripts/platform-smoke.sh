@@ -43,7 +43,12 @@ die() {
 [ -x "$BIN" ] || die "binary is not executable: $BIN"
 
 # Work area. Use TMPDIR when set (the harness may point it at RAM).
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/rustfetch-smoke.XXXXXX")" \
+# Prefer RAM (/dev/shm) over /tmp; fall back only when RAM is unavailable.
+RAM_TMP="${RUSTFETCH_TMPDIR:-/dev/shm}"
+if [[ ! -d "$RAM_TMP" || ! -w "$RAM_TMP" ]]; then
+  RAM_TMP="${TMPDIR:-/tmp}"
+fi
+WORK="$(mktemp -d "$RAM_TMP/rustfetch-smoke.XXXXXX")" \
     || die "cannot create temporary directory"
 cleanup() {
     rm -f "$WORK/out" "$WORK/err" "$WORK/clean" 2>/dev/null

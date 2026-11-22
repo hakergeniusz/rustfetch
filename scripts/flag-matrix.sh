@@ -64,7 +64,12 @@ esac
 NO_COLOR=1
 export NO_COLOR
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/rustfetch-flags.XXXXXX")" || die "cannot create temp dir"
+# Prefer RAM (/dev/shm) over /tmp; fall back only when RAM is unavailable.
+RAM_TMP="${RUSTFETCH_TMPDIR:-/dev/shm}"
+if [[ ! -d "$RAM_TMP" || ! -w "$RAM_TMP" ]]; then
+  RAM_TMP="${TMPDIR:-/tmp}"
+fi
+WORK="$(mktemp -d "$RAM_TMP/rustfetch-flags.XXXXXX")" || die "cannot create temp dir"
 OUT="$WORK/out"
 ERR="$WORK/err"
 REFOUT="$WORK/ref.out"

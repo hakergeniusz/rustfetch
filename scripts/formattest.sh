@@ -10,6 +10,13 @@ set -uo pipefail
 
 FF="${FF:-/usr/sbin/fastfetch}"
 RS="${RS:-$PWD/target/release/rustfetch}"
+
+# Keep scratch configs in RAM, not /tmp (which can fill up on some machines).
+# Override with RUSTFETCH_TMPDIR if your RAM dir lives elsewhere.
+RAM_TMP="${RUSTFETCH_TMPDIR:-/dev/shm}"
+if [[ ! -d "$RAM_TMP" || ! -w "$RAM_TMP" ]]; then
+  RAM_TMP="${TMPDIR:-/tmp}"
+fi
 FAIL=0
 
 run_tty() { # <label> <args...>
@@ -34,10 +41,10 @@ run_tty() { # <label> <args...>
 
 run_err() { # <label> <config-string>
     local label="$1" config="$2"
-    printf '%s' "$config" > /tmp/formattest.jsonc
+    printf '%s' "$config" > $RAM_TMP/formattest.jsonc
     local ao ac bo bc
-    ao=$("$FF" --config /tmp/formattest.jsonc -s memory 2>&1 >/dev/null); ac=$?
-    bo=$("$RS" --config /tmp/formattest.jsonc -s memory 2>&1 >/dev/null); bc=$?
+    ao=$("$FF" --config $RAM_TMP/formattest.jsonc -s memory 2>&1 >/dev/null); ac=$?
+    bo=$("$RS" --config $RAM_TMP/formattest.jsonc -s memory 2>&1 >/dev/null); bc=$?
     if [ "$ao" = "$bo" ] && [ "$ac" = "$bc" ]; then
         echo "OK  err: $label ($ac)"
     else
@@ -69,7 +76,7 @@ run_tty "bar mixed flags" --structure disk --bar-char-elapsed '#' --bar-char-tot
 run_tty "fraction flags" --structure localip --fraction-ndigits 3 --fraction-trailing-zeros always
 
 # --- JSON config: display + module level -----------------------------------
-cat > /tmp/formattest-full.jsonc <<'EOF'
+cat > $RAM_TMP/formattest-full.jsonc <<'EOF'
 {
   "display": {
     "percent": { "type": ["num", "bar", "bar-monochrome"], "green": 30, "yellow": 60, "ndigits": 2, "width": 8, "spaceBeforeUnit": "always" },
@@ -78,11 +85,11 @@ cat > /tmp/formattest-full.jsonc <<'EOF'
   }
 }
 EOF
-run_tty "display config memory" --config /tmp/formattest-full.jsonc -s memory
-run_tty "display config battery" --config /tmp/formattest-full.jsonc -s battery
-run_tty "display config gpu" --config /tmp/formattest-full.jsonc -s gpu
+run_tty "display config memory" --config $RAM_TMP/formattest-full.jsonc -s memory
+run_tty "display config battery" --config $RAM_TMP/formattest-full.jsonc -s battery
+run_tty "display config gpu" --config $RAM_TMP/formattest-full.jsonc -s gpu
 
-cat > /tmp/formattest-modules.jsonc <<'EOF'
+cat > $RAM_TMP/formattest-modules.jsonc <<'EOF'
 {
   "memory": { "percent": { "type": ["bar", "num"], "green": 30, "yellow": 90, "ndigits": 1 } },
   "sound": { "percent": { "type": ["bar", "num", "num-color"] } },
@@ -94,18 +101,18 @@ cat > /tmp/formattest-modules.jsonc <<'EOF'
   "physicaldisk": { "temp": true }
 }
 EOF
-run_tty "module config group1" --config /tmp/formattest-modules.jsonc -s memory,sound,wifi
-run_tty "module config group2" --config /tmp/formattest-modules.jsonc -s gpu,battery,cpu,physicaldisk
+run_tty "module config group1" --config $RAM_TMP/formattest-modules.jsonc -s memory,sound,wifi
+run_tty "module config group2" --config $RAM_TMP/formattest-modules.jsonc -s gpu,battery,cpu,physicaldisk
 
 # localip speed is the only default-format fraction consumer; this box's wlan0
 # reports no speed, so the ≥1000 branches stay unit-test territory.
-cat > /tmp/formattest-fraction.jsonc <<'EOF'
+cat > $RAM_TMP/formattest-fraction.jsonc <<'EOF'
 {
   "localip": { "showSpeed": true },
   "display": { "fraction": { "ndigits": 3, "trailingZeros": "always" } }
 }
 EOF
-run_tty "fraction config localip" --config /tmp/formattest-fraction.jsonc -s localip
+run_tty "fraction config localip" --config $RAM_TMP/formattest-fraction.jsonc -s localip
 
 # --- uptime custom format --------------------------------------------------
 # fastfetch.c:789 sets useJsonConfig = structure.length==0 && configDoc, so
