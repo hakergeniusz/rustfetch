@@ -39,6 +39,13 @@ jobs:
           mkdir -p dist
           cp platform/windows/target/release/rustfetch.exe dist/rustfetch-windows-x86_64.exe
 
+      # Skipped when the smoke script is absent (it is being added separately), so
+      # an in-flight merge cannot fail this build.
+      - name: Smoke test (Windows)
+        if: hashFiles('scripts/platform-smoke.sh') != ''
+        shell: bash
+        run: bash scripts/platform-smoke.sh dist/rustfetch-windows-x86_64.exe
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
@@ -82,6 +89,13 @@ jobs:
             -output dist/rustfetch-macos-universal
           chmod +x dist/rustfetch-macos-universal
 
+      # Skipped when the smoke script is absent (it is being added separately), so
+      # an in-flight merge cannot fail this build.
+      - name: Smoke test (macOS)
+        if: hashFiles('scripts/platform-smoke.sh') != ''
+        shell: bash
+        run: bash scripts/platform-smoke.sh dist/rustfetch-macos-universal
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
@@ -102,6 +116,16 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # Compute SHA-256 sidecars in the same `<hash>  <filename>` format the Linux
+      # installer expects. Run from inside dist so the recorded name is the bare
+      # asset filename rather than a `dist/`-prefixed path.
+      - name: Generate SHA-256 sidecars
+        shell: bash
+        run: |
+          cd dist
+          sha256sum rustfetch-windows-x86_64.exe > rustfetch-windows-x86_64.exe.sha256
+          sha256sum rustfetch-macos-universal > rustfetch-macos-universal.sha256
+
       # The release for the tag must already exist; --clobber makes re-runs idempotent.
       - name: Attach assets to release
         env:
@@ -110,4 +134,6 @@ jobs:
           gh release upload "${GITHUB_REF_NAME}" \
             dist/rustfetch-windows-x86_64.exe \
             dist/rustfetch-macos-universal \
+            dist/rustfetch-windows-x86_64.exe.sha256 \
+            dist/rustfetch-macos-universal.sha256 \
             --clobber
