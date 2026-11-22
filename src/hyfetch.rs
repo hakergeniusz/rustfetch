@@ -48,6 +48,8 @@
 //! - `--hyfetch-mode <24bit|8bit>`
 //! - `--hyfetch-lightness <0.0..1.0>`
 
+use std::sync::OnceLock;
+
 use crate::hyfetch_presets;
 
 /// HyFetch's `Config::default_lightness(TerminalTheme::Dark)`: the OKHSL
@@ -78,6 +80,11 @@ pub struct Config {
     pub lightness: Option<f64>,
     /// User presets, checked before the vendored table by name.
     pub custom: Vec<(String, Vec<u32>)>,
+    /// `resolve()` and `resolve_full()` are called with the same `&self` in
+    /// main.rs; memoize the chosen name so a multi-name/`random` selection
+    /// cannot yield a nine-slot palette from one flag and the full color
+    /// list from another.
+    picked: OnceLock<String>,
 }
 
 /// `parse_hex` on an RGB integer: `#` optional, exactly 3 or 6 hex digits.
@@ -136,49 +143,67 @@ pub fn validate_custom_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Exact port of hyfetch's `ColorProfile::with_length` (8 = the logo has
-/// nine palette slots): weights are expanded first, then each of the
-/// resulting colors gets `9 / orig` copies plus a share of the remainder —
-/// one for the center when it is odd, then one for each outermost pair.
-/// The expanded list is never truncated when it exceeds nine entries.
-pub fn with_length_9(colors: &[(u32, u32)]) -> Vec<u32> {
-    let mut weighted = Vec::new();
-    for (color, weight) in colors {
-        for _ in 0..*weight {
-            weighted.push(*color);
-        }
-    }
-    if weighted.is_empty() {
+/// HyFetch's `ColorProfile::with_length` distribution for `len` colors and
+/// `n` output slots: every color gets `n / len` copies plus a share of the
+/// remainder — one for the center when it is odd, then one for each
+/// outermost pair. Returns the source *indices* in output order, which is
+/// what the logo gradient needs to spread a flag over its line count; the
+/// returned vector has exactly `n` entries when `len` is non-zero.
+pub fn with_length_indices(len: usize, n: usize) -> Vec<usize> {
+    if len == 0 {
         return Vec::new();
     }
-    let orig = weighted.len() as i64;
-    let center = (orig / 2) as usize;
-    let repeats = 9_i64.div_euclid(orig);
-    let mut extras = 9_i64.rem_euclid(orig);
-    let mut weights = vec![repeats as usize; weighted.len()];
+    let center = len / 2;
+    let repeats = n / len;
+    let mut extras = n % len;
+    let mut weights = vec![repeats; len];
     if extras % 2 == 1 {
         if let Some(slot) = weights.get_mut(center) {
             *slot = slot.saturating_add(1);
         }
         extras -= 1;
     }
-    for i in 0..(extras / 2) as usize {
+    for i in 0..(extras / 2) {
         if let Some(slot) = weights.get_mut(i) {
             *slot = slot.saturating_add(1);
         }
-        let opposite = (orig as usize).saturating_sub(1).saturating_sub(i);
+        let opposite = len.saturating_sub(1).saturating_sub(i);
         if let Some(slot) = weights.get_mut(opposite) {
             *slot = slot.saturating_add(1);
         }
     }
-    let mut out = Vec::with_capacity(9);
-    for (index, color) in weighted.iter().enumerate() {
-        let times = weights.get(index).copied().unwrap_or(0);
-        for _ in 0..times {
-            out.push(*color);
+    let mut out = Vec::with_capacity(n);
+    for (index, times) in weights.iter().enumerate() {
+        for _ in 0..*times {
+            out.push(index);
         }
     }
     out
+}
+
+/// Exact port of hyfetch's `ColorProfile::with_length`: weights are expanded
+/// first, then the requested `n` slots are filled by [`with_length_indices`].
+/// The expanded list is never truncated when it exceeds `n` entries — the
+/// port used to ask only for nine slots because the logo had nine palette
+/// markers, but the per-line gradient asks for the logo's line count.
+pub fn with_length(colors: &[(u32, u32)], n: usize) -> Vec<u32> {
+    let mut weighted = Vec::new();
+    for (color, weight) in colors {
+        for _ in 0..*weight {
+            weighted.push(*color);
+        }
+    }
+    let indices = with_length_indices(weighted.len(), n);
+    indices
+        .into_iter()
+        .filter_map(|index| weighted.get(index).copied())
+        .collect()
+}
+
+/// The original nine-slot palette form of [`with_length`], kept for the
+/// fastfetch-compatible `$1`-`$9` path.
+pub fn with_length_9(colors: &[(u32, u32)]) -> Vec<u32> {
+    with_length(colors, 9)
 }
 
 // ── Faithful f32 port of palette 0.7.6's Okhsl ClampMin ──────────────────
@@ -660,15 +685,24 @@ impl Config {
                 return Err(format!("unknown hyfetch preset: {name}"));
             }
         }
-        if self.presets.iter().any(|name| name == "random") {
+        if let Some(name) = self.picked.get() {
+            return Ok(name.clone());
+        }
+        let name = if self.presets.iter().any(|name| name == "random") {
             let names = self.available_names();
-            return names
+            names
                 .get(random_index(names.len()))
                 .cloned()
-                .ok_or_else(|| "unknown hyfetch preset: random".to_owned());
-        }
-        self.presets
-            .get(random_index(self.presets.len()))
+                .ok_or_else(|| "unknown hyfetch preset: random".to_owned())?
+        } else {
+            self.presets
+                .get(random_index(self.presets.len()))
+                .cloned()
+                .ok_or_else(|| "no hyfetch preset selected".to_owned())?
+        };
+        let _ = self.picked.set(name);
+        self.picked
+            .get()
             .cloned()
             .ok_or_else(|| "no hyfetch preset selected".to_owned())
     }
@@ -706,6 +740,31 @@ impl Config {
             .into_iter()
             .map(|color| sgr(color, self.mode))
             .collect())
+    }
+
+    /// Every color of the selected preset after the lightness floor, in
+    /// upstream order — unlike [`Config::resolve`], not folded into nine
+    /// palette slots. Presets such as `progress` have eleven colors, so the
+    /// logo gradient needs one raw SGR escape per color instead of `$N`.
+    /// Weights are expanded (as in `with_length`), so upstream repetitions
+    /// such as transgender's five entries are preserved.
+    pub fn resolve_full(&self) -> Result<Vec<String>, String> {
+        // `pick_name` memoizes the choice, so this is the very same preset
+        // `resolve()` used even when the config named several of them.
+        let name = self.pick_name()?;
+        let colors = self
+            .preset_colors(&name)
+            .ok_or_else(|| format!("unknown hyfetch preset: {name}"))?;
+        let requested = self.lightness.unwrap_or(DEFAULT_LIGHTNESS);
+        let mut out = Vec::new();
+        for (color, weight) in colors {
+            let adjusted = clamp_min_lightness(color, requested);
+            let escape = sgr(adjusted, self.mode);
+            for _ in 0..weight {
+                out.push(escape.clone());
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -790,6 +849,87 @@ mod tests {
         assert_eq!(result.iter().filter(|color| **color == 1).count(), 1);
         assert_eq!(result.iter().filter(|color| **color == 2).count(), 4);
         assert!(with_length_9(&[]).is_empty());
+    }
+
+    #[test]
+    fn with_length_indices_spreads_each_flag_once_over_n_lines() {
+        // 19-line Arch logo, six rainbow colors: 3,3,3,4,3,3.
+        assert_eq!(
+            with_length_indices(6, 19),
+            vec![0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 5]
+        );
+        // Five transgender entries: 4,4,3,4,4 (center gets the odd extra).
+        assert_eq!(
+            with_length_indices(5, 19),
+            vec![0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4]
+        );
+        // Eleven progress colors: 2,2,2,2,1,1,1,2,2,2,2 (four outer pairs).
+        let progress = with_length_indices(11, 19);
+        assert_eq!(progress.len(), 19);
+        assert_eq!(
+            progress,
+            vec![0, 0, 1, 1, 2, 2, 3, 3, 4, 5, 6, 7, 7, 8, 8, 9, 9, 10, 10]
+        );
+        assert!(with_length_indices(0, 19).is_empty());
+        // Fewer lines than colors spread from the outside in, like hyfetch.
+        assert_eq!(with_length_indices(11, 4), vec![0, 1, 9, 10]);
+    }
+
+    #[test]
+    fn resolve_full_keeps_every_preset_color_in_upstream_order() {
+        let progress = Config {
+            presets: split_preset_names("progress"),
+            ..Config::default()
+        };
+        let full = progress.resolve_full();
+        let Ok(full) = full else { panic!("progress resolves") };
+        assert_eq!(full.len(), 11);
+        assert_eq!(
+            full,
+            vec![
+                "38;2;255;255;255", "38;2;255;175;200", "38;2;116;215;238",
+                "38;2;214;138;73", "38;2;158;158;158", "38;2;255;100;83",
+                "38;2;255;141;0", "38;2;255;238;0", "38;2;4;191;53",
+                "38;2;105;154;255", "38;2;229;77;255",
+            ]
+        );
+        // The nine-slot palette still drops gray and orange.
+        let Ok(palette) = progress.resolve() else { panic!("progress palette") };
+        assert_eq!(palette.len(), 9);
+        assert!(!palette.iter().any(|slot| slot == "38;2;158;158;158"));
+        assert!(!palette.iter().any(|slot| slot == "38;2;255;141;0"));
+
+        // Duplicate flag colors keep their upstream multiplicity.
+        let transgender = Config {
+            presets: split_preset_names("transgender"),
+            ..Config::default()
+        };
+        assert_eq!(
+            transgender.resolve_full(),
+            Ok(vec![
+                "38;2;85;205;253".to_owned(),
+                "38;2;246;170;183".to_owned(),
+                "38;2;255;255;255".to_owned(),
+                "38;2;246;170;183".to_owned(),
+                "38;2;85;205;253".to_owned(),
+            ])
+        );
+    }
+
+    #[test]
+    fn resolve_and_resolve_full_share_one_random_pick() {
+        let config = Config {
+            presets: split_preset_names("rainbow,transgender"),
+            ..Config::default()
+        };
+        let Ok(palette) = config.resolve() else { panic!("palette") };
+        let Ok(full) = config.resolve_full() else { panic!("full") };
+        assert_eq!(palette.len(), 9);
+        assert!(full.len() == 5 || full.len() == 6);
+        // Every full color must be present in the nine-slot palette of the
+        // same flag (or be one of the colors folded away by with_length_9).
+        let Some(first) = full.first() else { panic!("at least one color") };
+        assert!(palette.iter().any(|slot| slot == first));
     }
 
     #[test]

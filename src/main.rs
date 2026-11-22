@@ -168,6 +168,7 @@ fn main() {
         spin_tilt: 0.0,
         spin_angle: 0.0,
         hyfetch: false,
+        hyfetch_full: &[],
     };
 
     let mut logo_color_overrides: Vec<(usize, &'static str)> = config
@@ -198,6 +199,15 @@ fn main() {
                 // in the logo parser; without one this stays false and the
                 // fastfetch coloring path is unchanged.
                 logo_options.hyfetch = true;
+                // A preset can have more colors than the nine `$N` slots
+                // (progress has eleven). Keep the complete ordered list so
+                // the logo can assign one raw SGR escape per line. If it
+                // cannot be resolved, fall back to the verified nine-slot
+                // path instead of breaking startup.
+                if let Ok(full) = hyfetch.resolve_full() {
+                    let full: Vec<&'static str> = full.into_iter().map(|sgr| -> &'static str { sgr.leak() }).collect();
+                    logo_options.hyfetch_full = full.leak();
+                }
             },
             Err(message) => {
                 eprintln!("Error: {message}");
