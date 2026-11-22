@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120" viewBox="0 0 400 120"
+     role="img" aria-labelledby="logo-title logo-desc">
+  <title id="logo-title">rustfetch logo</title>
+  <desc id="logo-desc">A stylized crab whose shell is a terminal window showing a greater-than prompt and cursor, framed by two pincers and eyes. The strokes and the bold wordmark rustfetch use the transgender pride flag palette: light blue, pink, white, pink, light blue.</desc>
+
+  <defs>
+    <!-- Transgender pride flag palette, top to bottom (used for the crab mark). -->
+    <linearGradient id="flag" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"    stop-color="#55CDFD"/>
+      <stop offset="0.25" stop-color="#F6AAB7"/>
+      <stop offset="0.5"  stop-color="#FFFFFF"/>
+      <stop offset="0.75" stop-color="#F6AAB7"/>
+      <stop offset="1"    stop-color="#55CDFD"/>
+    </linearGradient>
+
+    <!-- Same palette flowing left to right across the wordmark. -->
+    <linearGradient id="flagText" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"    stop-color="#55CDFD"/>
+      <stop offset="0.25" stop-color="#F6AAB7"/>
+      <stop offset="0.5"  stop-color="#FFFFFF"/>
+      <stop offset="0.75" stop-color="#F6AAB7"/>
+      <stop offset="1"    stop-color="#55CDFD"/>
+    </linearGradient>
+  </defs>
+
+  <!-- MARK: crab / terminal shell. All strokes share the flag gradient. -->
+  <g fill="none" stroke="url(#flag)" stroke-width="4.5"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- pincers -->
+    <path d="M 36 41 C 26 39 16 33 16 23 C 16 16 23 15 27 20 C 29 23 28 27 25 28"/>
+    <path d="M 88 41 C 98 39 108 33 108 23 C 108 16 101 15 97 20 C 95 23 96 27 99 28"/>
+
+    <!-- eye stalks -->
+    <path d="M 49 39 L 49 32"/>
+    <path d="M 75 39 L 75 32"/>
+
+    <!-- shell / terminal window -->
+    <rect x="30" y="39" width="64" height="51" rx="14"/>
+
+    <!-- legs -->
+    <path d="M 30 67 L 18 73"/>
+    <path d="M 30 79 L 21 88"/>
+    <path d="M 94 67 L 106 73"/>
+    <path d="M 94 79 L 103 88"/>
+
+    <!-- terminal prompt: > _ -->
+    <path d="M 52 58 L 62 66 L 52 74"/>
+    <path d="M 70 76 L 82 76"/>
+  </g>
+
+  <!-- eyes -->
+  <g fill="url(#flag)">
+    <circle cx="49" cy="29" r="3.6"/>
+    <circle cx="75" cy="29" r="3.6"/>
+  </g>
+
+  <!-- WORDMARK -->
+  <text x="120" y="73"
+        font-family="Inter, 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif"
+        font-size="45" font-weight="800" letter-spacing="0.5"
+        fill="url(#flagText)">rustfetch</text>
+</svg>

@@ -3,6 +3,9 @@
 
   // Showcase preset: fastfetch-style layout with a HyFetch transgender flag.
   // Use: rustfetch --config examples/showcase.jsonc
+  // NOTE: the values shown in README.md's showcase block are illustrative
+  // dummy data, not live output. Running this config renders your machine's
+  // real values; scripts/showcase.sh captures them with colors preserved.
   "logo": {
     "type": "builtin",
     "source": "arch",

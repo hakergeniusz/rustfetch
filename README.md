@@ -3,21 +3,15 @@
 [![Rust](https://img.shields.io/badge/Rust-2024-orange?logo=rust)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux-yellow?logo=linux)](https://kernel.org/)
-[![Version](https://img.shields.io/badge/version-0.2.5-brightgreen)](https://github.com/hakergeniusz/rustfetch/releases)
+[![Version](https://img.shields.io/badge/version-0.2.6-brightgreen)](https://github.com/hakergeniusz/rustfetch/releases)
 [![fastfetch parity](https://img.shields.io/badge/output-parity%20%F0%9F%92%9E%20fastfetch%202.71.0-purple)](https://github.com/fastfetch-cli/fastfetch)
 
 > A **fastfetch-** and **hyfetch-inspired** system information tool, written in Rust.
 > Fastfetch's output fidelity, HyFetch's pride flags, ~4 ms startup, one static binary.
 
-```
-                  -`
-                 .o+`
-                `ooo/
-               `+oooo:
-              `+oooooo:     rustfetch 0.2.5
-              -+oooooo+:    fastfetch output parity · hyfetch gradients
-            `/:-:++oooo+:`  written in Rust · Linux only
-```
+<p align="center">
+  <img src="docs/logo.svg" alt="rustfetch logo" width="420">
+</p>
 
 ---
 
@@ -78,20 +72,25 @@ with HyFetch's transgender flag gradient:
 rustfetch --config examples/showcase.jsonc
 ```
 
+The block below uses illustrative dummy data (not live output). To render the
+config with colors preserved even when stdout is redirected, use
+[`scripts/showcase.sh`](scripts/showcase.sh); `--out FILE` (or `--png FILE`)
+writes the ANSI-colored capture for a screenshot.
+
 ```
-                  -`                     user@archlinux
+                  -`                     user@localhost
                  .o+`                    ------------------
-                `ooo/                    OS  Arch Linux x86_64
-               `+oooo:                   Host  Nitro N50-640
-              `+oooooo:                  Kernel  Linux 7.3.5-zen1-1-zen
-              -+oooooo+:                 Uptime  1 hour, 55 mins
-            `/:-:++oooo+:                Shell  zsh 5.9.2
-           `/++++/+++++++:               Display  2560x1440 in 27", 180 Hz
-          `/++++++++++++++:              CPU  12th Gen i5-12400F (12) @ 4.40 GHz
-         `/+++ooooooooooooo/`            GPU  NVIDIA GeForce RTX 3050 OEM
-        ./ooosssso++osssssso+`           Memory  6.23 GiB / 15.45 GiB (40%)
-       .oossssso-````/ossssss+`          Swap  4.18 GiB / 58.00 GiB (7%)
-      -osssssso.      :ssssssso.         Disk (/)  409 GiB / 476 GiB (86%)
+                `ooo/                    OS  Generic Linux x86_64
+               `+oooo:                   Host  Generic Laptop
+              `+oooooo:                  Kernel  Linux 6.6.0-generic
+              -+oooooo+:                 Uptime  1 min
+            `/:-:++oooo+:                Shell  Dummy Shell 1.0
+           `/++++/+++++++:               Display  Generic Display 1920x1080
+          `/++++++++++++++:              CPU  Dummy CPU @ 3.00 GHz
+         `/+++ooooooooooooo/`            GPU  Dummy GPU
+        ./ooosssso++osssssso+`           Memory  8.00 GiB / 16.00 GiB (50%)
+       .oossssso-````/ossssss+`          Swap  1.00 GiB / 4.00 GiB (25%)
+      -osssssso.      :ssssssso.         Disk (/)  100 GiB / 200 GiB (50%)
      :osssssss/        osssso+++.
     /ossssssss/        +ssssooo/-
   `/ossssso+/:-        -:/+osssso+-
@@ -135,7 +134,7 @@ Lower is better. Full script: [`scripts/compare-tools.sh`](scripts/compare-tools
 
 | Tool | Wall time | Memory | vs rustfetch |
 |---|---:|---:|---|
-| **rustfetch 0.2.5** | **4.7 ms ± 0.3** | **7.3 MiB** | — |
+| **rustfetch 0.2.6** | **4.7 ms ± 0.3** | **7.3 MiB** | — |
 | fastfetch 2.71.0 | 10.6 ms ± 0.5 | 12.2 MiB | 2.2× slower, 1.7× RAM |
 | hyfetch 2.1.1 | 8.7 ms ± 0.5 | 7.5 MiB | 1.8× slower, +3% RAM |
 | neofetch 7.1.0 | 248.4 ms ± 9.8 | 19.3 MiB | 52.5× slower, 2.6× RAM |
