@@ -1,3 +1,10 @@
+rustfetch (0.2.5-1) unstable; urgency=medium
+
+  * Add zsh completion for all CLI flags, enums, modules, logos and
+    HyFetch presets, installed by all installers and packages.
+
+ -- hakergeniusz <hakergeniusz@users.noreply.github.com>  Sun, 22 Nov 2026 12:00:00 +0000
+
 rustfetch (0.2.4-1) unstable; urgency=medium
 
   * Patch release: HyFetch gradient now spreads each flag exactly once
