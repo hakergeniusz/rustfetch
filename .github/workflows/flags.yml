@@ -1,0 +1,71 @@
+name: Flag matrix
+
+# Broad CLI-flag exercise for every platform build. `scripts/flag-matrix.sh`
+# discovers flags from each binary's own --help output, runs each one under a
+# timeout, and does an optional byte-for-byte parity run against a reference
+# binary. FAIL fails the job; DIFF never does (live system data drifts).
+#
+# Branch pushes are covered by `branches: ["**"]`; `tags: ["v*"]` is included
+# so release-tag pushes are checked too.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  FLAG_MATRIX_TIMEOUT: "3"
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The root crate ships its own Cargo.lock, so --locked is safe here.
+      - name: Build release (Linux)
+        run: cargo --locked build --release
+
+      # Skipped if the script is not present yet (in-flight merge), so this
+      # workflow cannot fail a build merely because the file is missing.
+      - name: Flag matrix (Linux, parity vs fastfetch)
+        if: hashFiles('scripts/flag-matrix.sh') != ''
+        env:
+          # ubuntu-latest ships fastfetch at this path; the script skips
+          # parity with a note if the reference is absent or a different arch.
+          REFERENCE: /usr/sbin/fastfetch
+        run: bash scripts/flag-matrix.sh target/release/rustfetch
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The platform crate ships its own Cargo.lock, so --locked is safe here.
+      # `shell: bash` gives us Git Bash, which is what the script targets.
+      - name: Build release (Windows)
+        shell: bash
+        run: cargo --locked build --release --manifest-path platform/windows/Cargo.toml
+
+      - name: Flag matrix (Windows)
+        if: hashFiles('scripts/flag-matrix.sh') != ''
+        shell: bash
+        run: bash scripts/flag-matrix.sh platform/windows/target/release/rustfetch.exe
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Native build of the macOS crate (no cross toolchain needed here).
+      - name: Build release (macOS)
+        shell: bash
+        run: cargo --locked build --release --manifest-path platform/macos/Cargo.toml
+
+      - name: Flag matrix (macOS)
+        if: hashFiles('scripts/flag-matrix.sh') != ''
+        shell: bash
+        run: bash scripts/flag-matrix.sh platform/macos/target/release/rustfetch
