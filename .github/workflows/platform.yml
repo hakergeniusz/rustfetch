@@ -205,6 +205,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # A tag push can start this job before the release notes are
+          # published; create a minimal release first if needed so the
+          # upload never races the manual release step.
+          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" --generate-notes \
+              --title "rustfetch ${GITHUB_REF_NAME}"
+          fi
           gh release upload "${GITHUB_REF_NAME}" \
             dist/rustfetch-windows-x86_64.exe \
             dist/rustfetch-windows-aarch64.exe \
