@@ -97,21 +97,9 @@ line — byte-for-byte identical to HyFetch 2.1.1.
 `hyperfine` (5 warmup / 20 runs), same machine, `--pipe` where supported.
 Lower is better. Full script: [`scripts/compare-tools.sh`](scripts/compare-tools.sh).
 
-```mermaid
-xychart-beta
-    title "Wall time (ms) — lower is better"
-    x-axis ["rustfetch", "fastfetch", "hyfetch", "neofetch"]
-    y-axis "milliseconds" 0 --> 260
-    bar [4.7, 10.6, 8.7, 248.4]
-```
+![Wall time benchmark: rustfetch 4.7 ms, fastfetch 10.6 ms, hyfetch 8.7 ms, neofetch 248.4 ms](docs/bench-walltime.svg)
 
-```mermaid
-xychart-beta
-    title "Peak memory (MiB) — lower is better"
-    x-axis ["rustfetch", "fastfetch", "hyfetch", "neofetch"]
-    y-axis "MiB" 0 --> 20
-    bar [7.3, 12.2, 7.5, 19.3]
-```
+![Peak memory benchmark: rustfetch 7.3 MiB, fastfetch 12.2 MiB, hyfetch 7.5 MiB, neofetch 19.3 MiB](docs/bench-memory.svg)
 
 | Tool | Wall time | Memory | vs rustfetch |
 |---|---:|---:|---|
