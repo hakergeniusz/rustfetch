@@ -14,7 +14,7 @@ class Rustfetch < Formula
   # Use `depends_on "rust" => :build` only if this is switched to a source build.
 
   def install
-    chmod "+x", "rustfetch" # Prebuilt archives do not always preserve the exec bit.
+    chmod "+x", "rustfetch-macos-universal" # Prebuilt assets do not preserve the exec bit.
     bin.install "rustfetch-macos-universal" => "rustfetch"
   end
 
