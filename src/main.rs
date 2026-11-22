@@ -171,17 +171,15 @@ fn main() {
     let mut config = cli.config.take();
     // A config-defined module list goes through build_jobs when no
     // `--structure` was given; drop the same two entries there as well.
-    if local_only {
-        if let Some(config) = config.as_mut() {
-            config.entries.retain(|entry| match entry {
-                crate::config::Entry::Simple(name) => {
-                    !name.eq_ignore_ascii_case("publicip") && !name.eq_ignore_ascii_case("weather")
-                },
-                crate::config::Entry::Object { type_, .. } => {
-                    !type_.eq_ignore_ascii_case("publicip") && !type_.eq_ignore_ascii_case("weather")
-                },
-            });
-        }
+    if local_only && let Some(config) = config.as_mut() {
+        config.entries.retain(|entry| match entry {
+            crate::config::Entry::Simple(name) => {
+                !name.eq_ignore_ascii_case("publicip") && !name.eq_ignore_ascii_case("weather")
+            },
+            crate::config::Entry::Object { type_, .. } => {
+                !type_.eq_ignore_ascii_case("publicip") && !type_.eq_ignore_ascii_case("weather")
+            },
+        });
     }
 
     // The logo options are one upstream struct mutated by the config pass
