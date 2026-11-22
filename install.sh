@@ -269,9 +269,23 @@ install_binary() {
     comp_src="$REPO_ROOT/completions/_rustfetch"
   fi
   if [[ -f "$comp_src" ]]; then
-    mkdir -p -- "$PREFIX/share/zsh/site-functions"
-    install -m 0644 -- "$comp_src" "$PREFIX/share/zsh/site-functions/_rustfetch"
-    ok "Installed zsh completion: $PREFIX/share/zsh/site-functions/_rustfetch"
+    local comp_dir="$PREFIX/share/zsh/site-functions"
+    mkdir -p -- "$comp_dir"
+    install -m 0644 -- "$comp_src" "$comp_dir/_rustfetch"
+    ok "Installed zsh completion: $comp_dir/_rustfetch"
+    # zsh only autoloads completions from $fpath directories seen by
+    # compinit. Many setups do not include ~/.local/share/zsh/site-functions
+    # by default, so tell the user how to enable it instead of leaving Tab
+    # silently doing nothing.
+    if command -v zsh >/dev/null 2>&1; then
+      local fp
+      fp="$(zsh -f -c 'print -l -- $fpath' 2>/dev/null)"
+      if [[ "$fp" != *"$comp_dir"* ]]; then
+        warn "zsh completion installed, but $comp_dir is not in your \$fpath."
+        warn "Add this line BEFORE 'autoload -Uz compinit; compinit' in ~/.zshrc:"
+        warn "  fpath=(\"$comp_dir\" \$fpath)"
+      fi
+    fi
   fi
   if "$DEST" --version >/dev/null 2>&1; then
     ok "Smoke test passed: '$DEST --version'"
