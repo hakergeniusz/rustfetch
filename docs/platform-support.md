@@ -28,7 +28,8 @@ native builds, **not** parity builds — see [Known limitations](#known-limitati
 | HyFetch presets & OKHSL | Exact (134 vendored presets) | Basic preset support, not exact | Basic preset support, not exact |
 | JSON output | fastfetch-compatible schema | Reduced core schema | Reduced core schema |
 | `--pipe` | Yes | Yes | Yes |
-| Config files / `--gen-config` / watch mode / completions | Yes | No | No |
+| Config files (`~/.config/fastfetch/config.jsonc` / `%APPDATA%\fastfetch\config.jsonc`) | Yes | Yes (`--config`) | Yes |
+| `--gen-config` / watch mode / completions | Yes | No | No |
 | Dependencies | `libc` | zero dependencies | `libc` |
 
 ### Supported modules
@@ -37,19 +38,21 @@ native builds, **not** parity builds — see [Known limitations](#known-limitati
 |---|:---:|:---:|:---:|
 | `title` | ✅ | ✅ | ✅ |
 | `os` | ✅ | ✅ | ✅ |
-| `host` | ✅ | ✅ | ✅ |
+| `host` | ✅ | ❌ | ✅ |
 | `kernel` | ✅ | ✅ | ✅ |
 | `uptime` | ✅ | ✅ | ✅ |
 | `shell` | ✅ | ✅ | ✅ |
 | `terminal` | ✅ | ✅ | ✅ |
 | `cpu` | ✅ | ✅ | ✅ |
+| `gpu` | ✅ | ✅ | ❌ |
 | `memory` | ✅ | ✅ | ✅ |
 | `disk` | ✅ | ✅ | ✅ |
 | `localip` | ✅ | ✅ | ✅ |
-| all other fastfetch modules (GPU, display, WM/DE, packages, battery, wifi, media, fonts, themes, …) | ✅ | ❌ | ❌ |
+| all other fastfetch modules (display, WM/DE, packages, battery, wifi, media, fonts, themes, …) | ✅ | ❌ | ❌ |
 
-Run `rustfetch --list-modules` on the target platform for the authoritative
-list.
+Windows also exposes `ip` as an alias for `localip` (12 entries in
+`--list-modules`). macOS uses `hw.model` as its host identity. Run
+`rustfetch --list-modules` on the target platform for the authoritative list.
 
 ### Supported flags
 
