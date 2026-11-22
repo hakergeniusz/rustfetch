@@ -31,7 +31,7 @@ set -euo pipefail
 REPO_OWNER="hakergeniusz"
 REPO_NAME="rustfetch"
 API_BASE="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases"
-ONE_LINER="curl -fsSL https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/rewrite/install.sh | sh"
+ONE_LINER="curl -fsSL https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/install.sh | sh"
 
 # ---------------------------------------------------------------------------
 # Mode detection: local file vs. stdin/pipe.  In remote mode we deliberately
@@ -116,7 +116,7 @@ Environment:
 
 One-liner install:
   ${ONE_LINER}
-  sh -c "\$(curl -fsSL https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/rewrite/install.sh)"
+  sh -c "\$(curl -fsSL https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/install.sh)"
 
 rustfetch is a fastfetch- and hyfetch-inspired system information tool written
 in Rust. It is self-contained at runtime (standard libc/libm/libgcc_s only);

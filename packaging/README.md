@@ -14,11 +14,11 @@ toolchain and no fastfetch needed. The prebuilt release asset is downloaded
 and installed automatically:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/hakergeniusz/rustfetch/rewrite/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/install.sh | sh
 ```
 
 ```sh
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/hakergeniusz/rustfetch/rewrite/install.sh)"
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/install.sh)"
 ```
 
 Both forms are equivalent: the installer detects that it came from stdin,
@@ -31,7 +31,7 @@ path and how to call it.
 Useful flags on the one-liner (pass them after `sh -s --`):
 
 ```sh
-URL=https://raw.githubusercontent.com/hakergeniusz/rustfetch/rewrite/install.sh
+URL=https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/install.sh
 
 # Pin a release (otherwise the latest release is used)
 curl -fsSL "$URL" | sh -s -- --version v0.1.0
