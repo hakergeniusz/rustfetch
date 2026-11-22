@@ -73,8 +73,11 @@ function Get-InstallDirectory {
 
 function Get-ReleaseBaseUrl {
     if (-not [string]::IsNullOrWhiteSpace($Version)) {
-        $tag = $Version.Trim()
-        if ($tag -notmatch '^v') { $tag = "v$tag" }
+        # Accept "v0.2.5", "0.2.5" and "V0.2.5": strip any leading v/V and emit
+        # the canonical lowercase "v" tag. (-match is case-insensitive in
+        # PowerShell, so a bare '^v' test would leave "V0.2.5" unprefixed and
+        # the download would 404.)
+        $tag = 'v' + ($Version.Trim() -replace '^[vV]', '')
         return "https://github.com/$RepoOwner/$RepoName/releases/download/$tag"
     }
     return "https://github.com/$RepoOwner/$RepoName/releases/latest/download"
@@ -87,7 +90,10 @@ function Test-DirectoryInEntries {
     )
     foreach ($entry in $Entries) {
         if ([string]::IsNullOrWhiteSpace($entry)) { continue }
-        $normalized = $entry.Trim().Trim('"').TrimEnd('\', '/')
+        # The registry may hold an unexpanded "%VAR%\..." entry; expand it so a
+        # path we already added is never appended a second time.
+        $trimmed = $entry.Trim().Trim('"')
+        $normalized = [Environment]::ExpandEnvironmentVariables($trimmed).Trim().Trim('"').TrimEnd('\', '/')
         if ([string]::Equals($normalized, $Directory, [StringComparison]::OrdinalIgnoreCase)) {
             return $true
         }
@@ -112,8 +118,14 @@ function Add-UserPathEntry {
 
     # Make the binary usable in this terminal too (the registry change only
     # applies to newly started processes).
-    if (-not (Test-DirectoryInEntries -Entries ($env:Path -split ';') -Directory $Directory)) {
-        $env:Path = $env:Path.TrimEnd(';') + ';' + $Directory
+    $sessionPath = $env:Path
+    if ([string]::IsNullOrEmpty($sessionPath)) { $sessionPath = '' }
+    if (-not (Test-DirectoryInEntries -Entries ($sessionPath -split ';') -Directory $Directory)) {
+        if ($sessionPath.Length -eq 0) {
+            $env:Path = $Directory
+        } else {
+            $env:Path = $sessionPath.TrimEnd(';') + ';' + $Directory
+        }
     }
 }
 
@@ -206,7 +218,9 @@ try {
         }
         Write-Detail "Downloaded $size bytes."
 
-        # SHA-256 sidecar is optional: <asset>.sha256 next to the asset.
+        # SHA-256 sidecar is optional: <asset>.sha256 next to the asset, in
+        # sha256sum format "<64 hex chars>  <filename>". Match any 64-hex token
+        # so a bare-hash sidecar works too; a wrong hash still aborts below.
         $sidecar = Join-Path $tempDir ($AssetName + '.sha256')
         if (Invoke-Download -Url "$assetUrl.sha256" -Destination $sidecar -Optional) {
             $sidecarContent = Get-Content -LiteralPath $sidecar -Raw

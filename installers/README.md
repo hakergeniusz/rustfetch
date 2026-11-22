@@ -15,6 +15,12 @@ Release assets used here:
 
 ## Windows — PowerShell installer
 
+The Windows asset `rustfetch-windows-x86_64.exe` and its `.sha256` sidecar are
+built and **smoke-tested on native Windows CI** (the `windows` job of
+`.github/workflows/platform.yml`) before being attached to a release. For a
+full end-user walkthrough — install, verification, supported modules, limits,
+uninstall and troubleshooting — see the [Windows guide](../docs/windows-guide.md).
+
 `install.ps1` downloads via `Invoke-WebRequest`, verifies SHA-256 when a
 `<asset>.sha256` sidecar is published, installs the binary and updates the
 **user** PATH (never the system PATH). No administrator rights are required.
@@ -62,6 +68,8 @@ Where things land:
   prints the downloaded file's SHA-256 for transparency.
 - Uninstall leaves the (now empty) install directory in place so unrelated
   files you put there are never deleted.
+- The zsh completion shipped for Linux does not apply to Windows and is not
+  installed here.
 
 ## macOS — Homebrew formula
 
@@ -103,6 +111,7 @@ The macOS asset name is assumed to be
 `rustfetch-macos-universal`. If CI uploads a `.zip` instead, change the
 extension in the `url` and the checksum accordingly — Homebrew unpacks both
 formats. If CI only builds Apple Silicon, point the formula at that asset (and
-its checksum). The Windows asset name `rustfetch-windows-x86_64.exe` is taken
-from the task specification. The formula assumes the macOS archive contains
-`rustfetch` at its root plus `completions/_rustfetch`.
+its checksum). The Windows asset name `rustfetch-windows-x86_64.exe` is
+confirmed by the native Windows CI job that stages and smoke-tests it. The
+formula assumes the macOS archive contains `rustfetch` at its root plus
+`completions/_rustfetch`.
