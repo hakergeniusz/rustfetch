@@ -304,7 +304,9 @@ unsafe fn default_route_ifname_impl() -> Option<String> {
     if min_metric == u32::MAX || best_ifindex == 0 {
         return None;
     }
-    let mut name_buf = [0i8; libc::IF_NAMESIZE];
+    // libc::c_char is i8 on x86_64 but u8 on aarch64; use the alias so the
+    // buffer matches if_indextoname's *mut c_char on every target.
+    let mut name_buf = [0 as libc::c_char; libc::IF_NAMESIZE];
     let name = unsafe { libc::if_indextoname(best_ifindex, name_buf.as_mut_ptr()) };
     if name.is_null() {
         return None;
