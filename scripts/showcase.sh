@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# showcase.sh — render examples/showcase.jsonc with colors into the terminal.
+# showcase.sh — render examples/showcase-dummy.jsonc with colors into the terminal.
 # When stdout is redirected, a pseudo-TTY is allocated via script(1) so the
 # binary still emits ANSI escapes, and the pty's trailing CRs are stripped.
 
@@ -9,7 +9,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/showcase.sh [OPTIONS]
 
-Render rustfetch with examples/showcase.jsonc into the current terminal,
+Render rustfetch with examples/showcase-dummy.jsonc into the current terminal,
 preserving ANSI colors. If stdout is a TTY the binary is exec'd directly;
 if stdout is redirected a pseudo-TTY is used so colors are not stripped.
 
@@ -61,7 +61,7 @@ else
   exit 127
 fi
 
-config=examples/showcase.jsonc
+config=examples/showcase-dummy.jsonc
 cmd=("$bin" --config "$config")
 
 # --- helpers ---------------------------------------------------------------

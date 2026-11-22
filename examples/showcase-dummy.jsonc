@@ -1,0 +1,25 @@
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
+
+  // Dummy showcase data for README screenshots. Render with scripts/showcase.sh.
+  "logo": {
+    "type": "builtin",
+    "source": "arch",
+    "hyfetch": { "preset": "transgender", "mode": "24bit" }
+  },
+  "modules": [
+    { "type": "custom", "format": "{#cyan}user@localhost{#}" },
+    { "type": "custom", "format": "{#cyan}------------------{#}" },
+    { "type": "custom", "format": "{#cyan}OS{#}:  Generic Linux x86_64" },
+    { "type": "custom", "format": "{#cyan}Host{#}:  Generic Laptop" },
+    { "type": "custom", "format": "{#cyan}Kernel{#}:  Linux 6.6.0-generic" },
+    { "type": "custom", "format": "{#cyan}Uptime{#}:  1 min" },
+    { "type": "custom", "format": "{#cyan}Shell{#}:  Dummy Shell 1.0" },
+    { "type": "custom", "format": "{#cyan}Display{#}:  Generic Display 1920x1080" },
+    { "type": "custom", "format": "{#cyan}CPU{#}:  Dummy CPU @ 3.00 GHz" },
+    { "type": "custom", "format": "{#cyan}GPU{#}:  Dummy GPU" },
+    { "type": "custom", "format": "{#cyan}Memory{#}:  8.00 GiB / 16.00 GiB (50%)" },
+    { "type": "custom", "format": "{#cyan}Swap{#}:  1.00 GiB / 4.00 GiB (25%)" },
+    { "type": "custom", "format": "{#cyan}Disk (/){#}:  100 GiB / 200 GiB (50%)" }
+  ]
+}
