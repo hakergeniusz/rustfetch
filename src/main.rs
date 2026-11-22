@@ -70,8 +70,24 @@ extern "C" fn exit_signal_handler(_signal: libc::c_int) {
     }
 }
 
+/// rustfetch-only `--local-only`: a machine-local build can drop the two
+/// network-dependent modules so it never waits on DNS/HTTP. Stripped from
+/// argv before the upstream two-pass parser (which would reject it as an
+/// unknown option), so the flag absent path is exactly `Cli::parse()`.
 fn main() {
-    let mut cli = cli::Cli::parse();
+    let argv: Vec<String> = std::env::args().collect();
+    let local_only = argv.iter().any(|arg| arg == "--local-only");
+    let refs: Vec<&str> = argv
+        .iter()
+        .map(String::as_str)
+        .filter(|arg| *arg != "--local-only")
+        .collect();
+    // With the flag absent, take the original path verbatim.
+    let mut cli = if local_only {
+        cli::Cli::parse_from(&refs)
+    } else {
+        cli::Cli::parse()
+    };
     let gen_state = cli::gen_config_state();
 
     // main()'s guard before the config files load: the watch loop cannot
@@ -127,6 +143,13 @@ fn main() {
             !disabled.split(':').any(|name| name.eq_ignore_ascii_case(module))
         });
     }
+    // rustfetch-only: keep the network modules out of the structure before
+    // prepare_pass/collect see it. Both text and JSON paths share this list.
+    if local_only {
+        structure_modules.retain(|module| {
+            !module.eq_ignore_ascii_case("publicip") && !module.eq_ignore_ascii_case("weather")
+        });
+    }
 
     // The command module's text only exists in the JSON config, which the
     // structure selection bypasses; fastfetch refuses it up front (481).
@@ -145,7 +168,21 @@ fn main() {
     // one, the automatic configDirs search ran between the two argv passes
     // in cli.rs. (logo: null set the NONE type during the walk, before any
     // -l flag could.)
-    let config = cli.config.take();
+    let mut config = cli.config.take();
+    // A config-defined module list goes through build_jobs when no
+    // `--structure` was given; drop the same two entries there as well.
+    if local_only {
+        if let Some(config) = config.as_mut() {
+            config.entries.retain(|entry| match entry {
+                crate::config::Entry::Simple(name) => {
+                    !name.eq_ignore_ascii_case("publicip") && !name.eq_ignore_ascii_case("weather")
+                },
+                crate::config::Entry::Object { type_, .. } => {
+                    !type_.eq_ignore_ascii_case("publicip") && !type_.eq_ignore_ascii_case("weather")
+                },
+            });
+        }
+    }
 
     // The logo options are one upstream struct mutated by the config pass
     // and then the command line, so the CLI wins per-field. Defaults:
