@@ -72,25 +72,25 @@ with HyFetch's transgender flag gradient:
 rustfetch --config examples/showcase.jsonc
 ```
 
-The block below uses illustrative dummy data (not live output). To render the
+The block below uses illustrative popular-spec data (not live output). To render the
 config with colors preserved even when stdout is redirected, use
 [`scripts/showcase.sh`](scripts/showcase.sh); `--out FILE` (or `--png FILE`)
 writes the ANSI-colored capture for a screenshot.
 
 ```
-                  -`                     user@localhost
+                  -`                     user@ryzen-box
                  .o+`                    ------------------
-                `ooo/                    OS  Generic Linux x86_64
-               `+oooo:                   Host  Generic Laptop
-              `+oooooo:                  Kernel  Linux 6.6.0-generic
-              -+oooooo+:                 Uptime  1 min
-            `/:-:++oooo+:                Shell  Dummy Shell 1.0
-           `/++++/+++++++:               Display  Generic Display 1920x1080
-          `/++++++++++++++:              CPU  Dummy CPU @ 3.00 GHz
-         `/+++ooooooooooooo/`            GPU  Dummy GPU
-        ./ooosssso++osssssso+`           Memory  8.00 GiB / 16.00 GiB (50%)
-       .oossssso-````/ossssss+`          Swap  1.00 GiB / 4.00 GiB (25%)
-      -osssssso.      :ssssssso.         Disk (/)  100 GiB / 200 GiB (50%)
+                `ooo/                    OS  Arch Linux x86_64
+               `+oooo:                   Host  MSI MAG B650 TOMAHAWK WIFI
+              `+oooooo:                  Kernel  Linux 6.8.4-arch1-1
+              -+oooooo+:                 Uptime  3 hours, 12 mins
+            `/:-:++oooo+:                Shell  zsh 5.9
+           `/++++/+++++++:               Display  LG UltraGear 27" 2560x1440 @ 165 Hz
+          `/++++++++++++++:              CPU  AMD Ryzen 7 7800X3D (8) @ 4.20 GHz
+         `/+++ooooooooooooo/`            GPU  NVIDIA GeForce RTX 4070 SUPER [Discrete]
+        ./ooosssso++osssssso+`           Memory  18.42 GiB / 31.34 GiB (58%)
+       .oossssso-````/ossssss+`          Swap  2.10 GiB / 8.00 GiB (26%)
+      -osssssso.      :ssssssso.         Disk (/)  612 GiB / 1.82 TiB (34%) - btrfs
      :osssssss/        osssso+++.
     /ossssssss/        +ssssooo/-
   `/ossssso+/:-        -:/+osssso+-
