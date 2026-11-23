@@ -16,3 +16,15 @@ jobs:
       - run: cargo --locked build --all-targets
       - run: cargo --locked clippy --all-targets -- -D warnings
       - run: cargo --locked test
+
+  generated-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo --locked build --release
+      # Rebuild the generated CLI-flag tests from the binary's own --help and
+      # fail if the committed file is stale (a flag was added/removed/renamed).
+      - name: Verify generated CLI tests are up to date
+        run: |
+          python3 scripts/gen-cli-tests.py target/release/rustfetch
+          git diff --exit-code -- tests/cli_flags_generated.rs
