@@ -8,7 +8,7 @@ class Rustfetch < Formula
   # rustfetch-macos-universal at the release tag. Replace the placeholder
   # sha256 below with `sha256sum` of that asset after the release is published.
   url "https://github.com/hakergeniusz/rustfetch/releases/download/v#{version}/rustfetch-macos-universal"
-  sha256 "6a71e7fd0d2c2c19290d55dc962a4e9c0998a00103012b2a2ab1f906b70729c0"
+  sha256 "783a577bd04dd0dd8d49f0113a0bafb10106b013d6ec8c3056fda6469e8520e7"
 
   # No Rust dependency: the release archive ships a prebuilt binary.
   # Use `depends_on "rust" => :build` only if this is switched to a source build.
