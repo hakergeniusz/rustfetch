@@ -1,7 +1,7 @@
 class Rustfetch < Formula
   desc "fastfetch- and hyfetch-inspired system information tool written in Rust"
   homepage "https://github.com/hakergeniusz/rustfetch"
-  version "0.2.6" # Keep in sync with the release tag used in the URL below.
+  version "0.2.7" # Keep in sync with the release tag used in the URL below.
   license "MIT"
 
   # CI publishes a raw universal macOS binary (arm64 + x86_64) named

@@ -31,6 +31,14 @@ mod wcwidth;
 mod tty;
 mod util;
 
+/// fastfetch documents --disable-linewrap as default true (--help), so
+/// overlong lines are cut at the terminal edge instead of wrapping their
+/// tail onto the next line. The flag or config can opt out explicitly; CLI
+/// wins over config.
+fn resolve_disable_linewrap(cli: Option<bool>, config: Option<bool>) -> bool {
+    cli.or(config).unwrap_or(true)
+}
+
 /// init.c's resetConsole through the exitSignalHandler: SIGINT/SIGTERM/
 /// SIGQUIT restore the console and exit(0) — the linewrap/cursor toggles
 /// and the alternate screen buffer are the only state to undo. The flags
@@ -272,10 +280,8 @@ fn main() {
         .clone()
         .or_else(|| cfg.map(|config| config.player_name.clone()))
         .unwrap_or_default();
-    let disable_linewrap = cli
-        .disable_linewrap
-        .or(cfg.and_then(|config| config.disable_linewrap))
-        .unwrap_or(false);
+    let disable_linewrap =
+        resolve_disable_linewrap(cli.disable_linewrap, cfg.and_then(|config| config.disable_linewrap));
     let hide_cursor = cli
         .hide_cursor
         .or(cfg.and_then(|config| config.hide_cursor))
@@ -470,4 +476,26 @@ fn main() {
         (rows, stats)
     };
     render::print(&logo, &instance, watch_interval, &mut next_round);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disable_linewrap_defaults_to_true() {
+        assert!(resolve_disable_linewrap(None, None));
+    }
+
+    #[test]
+    fn disable_linewrap_explicit_false_wins() {
+        assert!(!resolve_disable_linewrap(Some(false), None));
+        assert!(!resolve_disable_linewrap(None, Some(false)));
+    }
+
+    #[test]
+    fn disable_linewrap_cli_overrides_config() {
+        assert!(resolve_disable_linewrap(Some(true), Some(false)));
+        assert!(!resolve_disable_linewrap(Some(false), Some(true)));
+    }
 }

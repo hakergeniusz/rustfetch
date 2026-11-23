@@ -1,7 +1,7 @@
 # Maintainer: hakergeniusz
 # Source-build PKGBUILD: build rustfetch from an upstream release tarball.
 pkgname=rustfetch
-pkgver=0.2.6
+pkgver=0.2.7
 pkgrel=1
 pkgdesc='A fastfetch- and hyfetch-inspired system information tool written in Rust'
 arch=('x86_64' 'aarch64' 'armv7h' 'riscv64')

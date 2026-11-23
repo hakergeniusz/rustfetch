@@ -1,9 +1,11 @@
-rustfetch (0.2.6-1) unstable; urgency=medium
+rustfetch (0.2.7-1) unstable; urgency=medium
 
-  * Accept five documented general flags, fix Linux arm64 builds, keep
-    scratch files in RAM instead of /tmp.
+  * Default --disable-linewrap to true so overlong lines are cut at the
+    terminal edge instead of wrapping their tail onto the next line.
+  * Android/Termux portability: gate glibc-only APIs and portably cast
+    ioctl requests; report the real architecture in --version.
 
- -- hakergeniusz <hakergeniusz@users.noreply.github.com>  Sun, 22 Nov 2026 14:00:00 +0000
+ -- hakergeniusz <hakergeniusz@users.noreply.github.com>  Mon, 23 Nov 2026 12:00:00 +0000
 
 rustfetch (0.2.5-1) unstable; urgency=medium
 
