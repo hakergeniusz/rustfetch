@@ -719,30 +719,79 @@ fn resolve_logo_path(source: &str, _instance: &Instance) -> Option<String> {
 /// The first wordexp expansion of the source, like ffPathExpandEnv's
 /// wordexp(in, &exp, 0) without upstream's random pick among matches.
 fn wordexp_first(source: &str) -> Option<String> {
-    #[repr(C)]
-    struct Wordexp {
-        we_wordc: usize,
-        we_wordv: *mut *mut libc::c_char,
-        we_offs: usize,
-    }
-    unsafe extern "C" {
-        fn wordexp(in_: *const libc::c_char, out: *mut Wordexp, flags: libc::c_int) -> libc::c_int;
-        fn wordfree(out: *mut Wordexp);
-    }
-    let text = std::ffi::CString::new(source).ok()?;
-    unsafe {
-        let mut exp: Wordexp = std::mem::zeroed();
-        if wordexp(text.as_ptr(), &mut exp, 0) != 0 {
-            return None;
-        }
-        let result = if exp.we_wordc >= 1 {
-            Some(std::ffi::CStr::from_ptr(*exp.we_wordv).to_string_lossy().into_owned())
-        } else {
+    #[cfg(target_os = "android")]
+    {
+        // Bionic has no wordexp/wordfree. Do a minimal $VAR expansion and
+        // take the first whitespace-delimited token, matching the common
+        // fastfetch use case without an unresolved linker symbol.
+        let expanded = expand_first_env(source);
+        if expanded.is_empty() {
             None
-        };
-        wordfree(&mut exp);
-        result
+        } else {
+            Some(expanded)
+        }
     }
+    #[cfg(not(target_os = "android"))]
+    {
+        #[repr(C)]
+        struct Wordexp {
+            we_wordc: usize,
+            we_wordv: *mut *mut libc::c_char,
+            we_offs: usize,
+        }
+        unsafe extern "C" {
+            fn wordexp(in_: *const libc::c_char, out: *mut Wordexp, flags: libc::c_int) -> libc::c_int;
+            fn wordfree(out: *mut Wordexp);
+        }
+        let text = std::ffi::CString::new(source).ok()?;
+        unsafe {
+            let mut exp: Wordexp = std::mem::zeroed();
+            if wordexp(text.as_ptr(), &mut exp, 0) != 0 {
+                return None;
+            }
+            let result = if exp.we_wordc >= 1 {
+                Some(std::ffi::CStr::from_ptr(*exp.we_wordv).to_string_lossy().into_owned())
+            } else {
+                None
+            };
+            wordfree(&mut exp);
+            result
+        }
+    }
+}
+
+/// Android fallback for wordexp_first: expand leading `$NAME`/`${NAME}`
+/// environment variables and return the first whitespace-separated token.
+#[cfg(target_os = "android")]
+fn expand_first_env(source: &str) -> String {
+    let mut out = String::new();
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'$' {
+            let (name, next) = if i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+                let rest = &source[i + 2..];
+                match rest.find('}') {
+                    Some(end) => (&source[i + 2..i + 2 + end], i + 3 + end),
+                    None => ("", i + 1),
+                }
+            } else {
+                let rest = &source[i + 1..];
+                let end = rest.find(|c: char| !c.is_ascii_alphanumeric() && c != '_').unwrap_or(rest.len());
+                (&source[i + 1..i + 1 + end], i + 1 + end)
+            };
+            if !name.is_empty() {
+                if let Ok(value) = std::env::var(name) {
+                    out.push_str(&value);
+                }
+                i = next;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out.split_whitespace().next().unwrap_or("").to_string()
 }
 
 /// Resolves the logo to display, porting ffLogoPrint: the NONE type
