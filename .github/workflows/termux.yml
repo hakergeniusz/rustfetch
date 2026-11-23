@@ -1,0 +1,37 @@
+name: Termux / Android check
+
+# Reproducibility guard for the Termux build (see docs/termux.md and
+# scripts/build-termux.sh). This only type-checks the root crate for the
+# aarch64-linux-android std target. It does NOT link, so it needs neither the
+# Android NDK nor clang, and introduces no new Cargo dependencies: the only
+# dependency (libc) is a pure-Rust bindings crate.
+#
+# The real build, install, smoke test and fastfetch --pipe diff run on the
+# device via scripts/build-termux.sh.
+#
+# This check is expected to go green once the Android gating of glibc-only APIs
+# (gnu_get_libc_version, utmpx, netlink rtattr, ioctl request types) lands.
+# Until then a failure here is the intended signal that the root crate still
+# assumes desktop glibc.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  android-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Android std target
+        run: rustup target add aarch64-linux-android
+
+      # Pure type-check: no C toolchain / NDK linker is needed.
+      - name: cargo check (aarch64-linux-android)
+        run: cargo --locked check --target aarch64-linux-android
