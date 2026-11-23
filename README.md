@@ -78,25 +78,21 @@ config with colors preserved even when stdout is redirected, use
 writes the ANSI-colored capture for a screenshot.
 
 ```
-                  -`                     user@ryzen-box
-                 .o+`                    ------------------
-                `ooo/                    OS  Arch Linux x86_64
-               `+oooo:                   Host  MSI MAG B650 TOMAHAWK WIFI
-              `+oooooo:                  Kernel  Linux 6.8.4-arch1-1
-              -+oooooo+:                 Uptime  3 hours, 12 mins
-            `/:-:++oooo+:                Shell  zsh 5.9
-           `/++++/+++++++:               Display  LG UltraGear 27" 2560x1440 @ 165 Hz
-          `/++++++++++++++:              CPU  AMD Ryzen 7 7800X3D (8) @ 4.20 GHz
-         `/+++ooooooooooooo/`            GPU  NVIDIA GeForce RTX 4070 SUPER [Discrete]
-        ./ooosssso++osssssso+`           Memory  18.42 GiB / 31.34 GiB (58%)
-       .oossssso-````/ossssss+`          Swap  2.10 GiB / 8.00 GiB (26%)
-      -osssssso.      :ssssssso.         Disk (/)  612 GiB / 1.82 TiB (34%) - btrfs
-     :osssssss/        osssso+++.
-    /ossssssss/        +ssssooo/-
-  `/ossssso+/:-        -:/+osssso+-
- `+sso+:-`                 `.-/+oso:
-`++:.                           `-/+/
-.`                                 `/
+      /\          user@archlinux
+     /  \         ----------------
+    /    \        OS  Arch Linux x86_64
+   /      \       Host  ASUS ROG CROSSHAIR X870E HERO
+  /   ,,   \      Kernel  Linux 7.3.5-zen1-1-zen
+ /   |  |   \     Uptime  181 days, 6 hours, 7 mins
+/_-''    ''-_\    Shell  zsh 5.9
+                  Display  27" 2560x1440 @ 560 Hz
+                  CPU  AMD Ryzen 9 9950X3D2 (16) @ 4.30 GHz
+                  GPU 1  AMD Radeon Graphics [Integrated]
+                  GPU 2  NVIDIA RTX PRO 6000 Blackwell 96GB [Discrete]
+                  GPU 3  NVIDIA RTX PRO 6000 Blackwell 96GB [Discrete]
+                  Memory  96.2 GiB / 192.0 GiB (50%)
+                  Swap  12.4 GiB / 69.0 GiB (18%)
+                  Disk  7.2 TiB / 16.0 TiB (45%) - btrfs
 ```
 
 In a real terminal the logo is colored with the exact flag RGB values

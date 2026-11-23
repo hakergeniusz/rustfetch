@@ -1,20 +1,23 @@
 #!/bin/sh
-# rustfetch universal installer (Debian/Ubuntu, Fedora/RHEL, Arch, Alpine, openSUSE).
+# rustfetch universal installer (Linux, macOS, Bash/Zsh/POSIX sh).
 # rustfetch is a fastfetch- and hyfetch-inspired system information tool written
 # in Rust.
 #
 # This file is a tiny POSIX-sh bootstrap plus a bash payload kept in a quoted
-# here-doc.  That lets the very same file work in three situations:
-#   * executed as a file:        ./install.sh | bash install.sh
-#   * piped from curl:           curl -fsSL <url> | sh
-#   * run via a command string:  sh -c "$(curl -fsSL <url>)"
-# POSIX sh never has to parse the bash-only payload (arrays, [[ ]], ...).
+# here-doc, so the same file works in every one of these situations:
+#   * piped from curl, any shell:  curl -fsSL <url> | sh
+#   * piped into bash or zsh:      curl -fsSL <url> | bash   (or | zsh)
+#   * run via a command string:    sh -c "$(curl -fsSL <url>)"
+#                                  zsh -c "$(curl -fsSL <url>)"
+#   * executed as a file:          ./install.sh
+# POSIX sh (or bash/zsh in sh-emulation mode) never has to parse the bash-only
+# payload (arrays, [[ ]], process substitutions, ...).
 #
 # This script never installs packages, never invokes sudo on its own, and never
 # depends on fastfetch being present at runtime.
 if [ -f "$0" ]; then
   case "$0" in
-    sh|bash|dash|ash|ksh|zsh|/bin/sh|/bin/bash|/bin/dash|/usr/bin/sh|/usr/bin/bash|/usr/bin/dash)
+    sh|bash|dash|ash|ksh|zsh|*/sh|*/bash|*/dash|*/ash|*/ksh|*/zsh)
       unset RUSTFETCH_LOCAL_FILE 2>/dev/null || :
       ;;
     *)
@@ -25,7 +28,15 @@ if [ -f "$0" ]; then
 else
   unset RUSTFETCH_LOCAL_FILE 2>/dev/null || :
 fi
-exec bash -s -- "$@" <<'RUSTFETCH_PAYLOAD_EOF'
+# macOS ships bash 3.2 at /bin/bash; prefer PATH but fall back to the fixed
+# location, and fail clearly instead of trying to run the bash payload in sh.
+RF_BASH=$(command -v bash 2>/dev/null || :)
+if [ -z "$RF_BASH" ] && [ -x /bin/bash ]; then RF_BASH=/bin/bash; fi
+if [ -z "$RF_BASH" ]; then
+  printf 'error: rustfetch installer needs bash (found neither in PATH nor /bin/bash)\n' >&2
+  exit 1
+fi
+exec "$RF_BASH" -s -- "$@" <<'RUSTFETCH_PAYLOAD_EOF'
 set -euo pipefail
 
 REPO_OWNER="hakergeniusz"
@@ -199,12 +210,31 @@ rust_hint() {
   read -r id idlike < <(detect_distro)
   s=" ${id} ${idlike} "
   case "$s" in
-    *debian*|*ubuntu*)                                  printf '%s' 'sudo apt install -y cargo rustc' ;;
-    *fedora*|*rhel*|*centos*|*rocky*|*alma*|*mageia*) printf '%s' 'sudo dnf install -y cargo rustc' ;;
-    *arch*|*manjaro*|*endeavouros*)                     printf '%s' 'sudo pacman -S --needed rust' ;;
-    *alpine*)                                           printf '%s' 'sudo apk add cargo rust' ;;
-    *suse*|*opensuse*)                                  printf '%s' 'sudo zypper install -y cargo rustc' ;;
-    *)                                                  printf '%s' 'install Rust from https://rustup.rs' ;;
+    # Debian family (incl. popular derivatives)
+    *debian*|*ubuntu*|*mint*|*pop*|*elementary*|*zorin*|*kali*|*raspbian*|*devuan*|*mx*|*lxle*)
+      printf '%s' 'sudo apt install -y cargo rustc' ;;
+    # Fedora / RHEL family (dnf), incl. Amazon Linux and Nobara
+    *fedora*|*rhel*|*centos*|*rocky*|*alma*|*oracle*|*mageia*|*nobara*|*scientific*|*amzn*)
+      printf '%s' 'sudo dnf install -y cargo rustc' ;;
+    # Arch family
+    *arch*|*manjaro*|*endeavouros*|*garuda*|*artix*|*cachyos*|*hyperbola*|*parabola*)
+      printf '%s' 'sudo pacman -S --needed rust' ;;
+    # SUSE family
+    *suse*|*opensuse*|*tumbleweed*|*leap*)
+      printf '%s' 'sudo zypper install -y cargo rustc' ;;
+    # Alpine / postmarketOS
+    *alpine*|*postmarketos*)
+      printf '%s' 'sudo apk add cargo rust' ;;
+    *gentoo*|*funtoo*)
+      printf '%s' 'sudo emerge -a dev-lang/rust' ;;
+    *void*)
+      printf '%s' 'sudo xbps-install -S rust cargo' ;;
+    *nixos*)
+      printf '%s' 'nix-env -iA nixpkgs.rustc nixpkgs.cargo' ;;
+    *solus*)
+      printf '%s' 'sudo eopkg it -y rustc cargo' ;;
+    *)
+      printf '%s' 'install Rust from https://rustup.rs' ;;
   esac
 }
 

@@ -1,25 +1,27 @@
 {
   "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
 
-  // Illustrative popular-spec data for README screenshots — NOT the host's real values.
+  // Illustrative dream-machine data for README screenshots — NOT the host's real values.
   "logo": {
-    "type": "builtin",
+    "type": "small",
     "source": "arch",
     "hyfetch": { "preset": "transgender", "mode": "24bit" }
   },
   "modules": [
-    { "type": "custom", "format": "{#cyan}user@ryzen-box{#}" },
-    { "type": "custom", "format": "{#cyan}------------------{#}" },
+    { "type": "custom", "format": "{#cyan}user@archlinux{#}" },
+    { "type": "custom", "format": "{#cyan}----------------{#}" },
     { "type": "custom", "format": "{#cyan}OS{#}  Arch Linux x86_64" },
-    { "type": "custom", "format": "{#cyan}Host{#}  MSI MAG B650 TOMAHAWK WIFI" },
-    { "type": "custom", "format": "{#cyan}Kernel{#}  Linux 6.8.4-arch1-1" },
-    { "type": "custom", "format": "{#cyan}Uptime{#}  3 hours, 12 mins" },
+    { "type": "custom", "format": "{#cyan}Host{#}  ASUS ROG CROSSHAIR X870E HERO" },
+    { "type": "custom", "format": "{#cyan}Kernel{#}  Linux 7.3.5-zen1-1-zen" },
+    { "type": "custom", "format": "{#cyan}Uptime{#}  181 days, 6 hours, 7 mins" },
     { "type": "custom", "format": "{#cyan}Shell{#}  zsh 5.9" },
-    { "type": "custom", "format": "{#cyan}Display{#}  LG UltraGear 27\" 2560x1440 @ 165 Hz" },
-    { "type": "custom", "format": "{#cyan}CPU{#}  AMD Ryzen 7 7800X3D (8) @ 4.20 GHz" },
-    { "type": "custom", "format": "{#cyan}GPU{#}  NVIDIA GeForce RTX 4070 SUPER [Discrete]" },
-    { "type": "custom", "format": "{#cyan}Memory{#}  18.42 GiB / 31.34 GiB (58%)" },
-    { "type": "custom", "format": "{#cyan}Swap{#}  2.10 GiB / 8.00 GiB (26%)" },
-    { "type": "custom", "format": "{#cyan}Disk (/){#}  612 GiB / 1.82 TiB (34%) - btrfs" }
+    { "type": "custom", "format": "{#cyan}Display{#}  27\" 2560x1440 @ 560 Hz" },
+    { "type": "custom", "format": "{#cyan}CPU{#}  AMD Ryzen 9 9950X3D2 (16) @ 4.30 GHz" },
+    { "type": "custom", "format": "{#cyan}GPU 1{#}  AMD Radeon Graphics [Integrated]" },
+    { "type": "custom", "format": "{#cyan}GPU 2{#}  NVIDIA RTX PRO 6000 Blackwell 96GB [Discrete]" },
+    { "type": "custom", "format": "{#cyan}GPU 3{#}  NVIDIA RTX PRO 6000 Blackwell 96GB [Discrete]" },
+    { "type": "custom", "format": "{#cyan}Memory{#}  96.2 GiB / 192.0 GiB (50%)" },
+    { "type": "custom", "format": "{#cyan}Swap{#}  12.4 GiB / 69.0 GiB (18%)" },
+    { "type": "custom", "format": "{#cyan}Disk{#}  7.2 TiB / 16.0 TiB (45%) - btrfs" }
   ]
 }
