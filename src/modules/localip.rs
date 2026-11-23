@@ -13,6 +13,16 @@ use crate::{
     modules::Row,
 };
 
+/// Call `ioctl(2)` with a request cast to the type the target expects.
+///
+/// glibc declares the request as `c_ulong`, while bionic (Android) declares it
+/// as `c_int`; `as _` lets the compiler pick the right type on each target.
+#[inline]
+unsafe fn portable_ioctl<T>(fd: libc::c_int, request: libc::c_ulong, arg: *mut T) -> libc::c_int {
+    // SAFETY: the caller guarantees `fd` and `arg` are valid for `request`.
+    unsafe { libc::ioctl(fd, request as _, arg) }
+}
+
 /// FFLocalIpType bits.
 mod show {
     pub const LOOP: u16 = 1 << 0;
@@ -612,7 +622,7 @@ fn detect(options: &LocalIpOptions) -> Result<Vec<LocalIpResult>, &'static str> 
 
                 if show & show::MTU != 0 {
                     // SAFETY: ifreq ioctl with an owned buffer.
-                    if unsafe { libc::ioctl(sockfd, libc::SIOCGIFMTU, &ifr) } == 0 {
+                    if unsafe { portable_ioctl(sockfd, libc::SIOCGIFMTU, &mut ifr as *mut _) } == 0 {
                         iface.mtu = unsafe { ifr.ifr_ifru.ifru_mtu };
                     }
                 }
@@ -635,7 +645,7 @@ fn detect(options: &LocalIpOptions) -> Result<Vec<LocalIpResult>, &'static str> 
                     };
                     ifr.ifr_ifru.ifru_data = (&mut edata as *mut EthtoolCmd).cast();
                     // SAFETY: SIOCETHTOOL fills the ethtool_cmd buffer.
-                    if unsafe { libc::ioctl(sockfd, SIOCETHTOOL as libc::c_ulong, &ifr) } == 0 {
+                    if unsafe { portable_ioctl(sockfd, SIOCETHTOOL as libc::c_ulong, &mut ifr as *mut _) } == 0 {
                         iface.speed = ((edata.speed_hi as i32) << 16) | edata.speed as i32;
                     }
                 }

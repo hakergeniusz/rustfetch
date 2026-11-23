@@ -56,6 +56,7 @@ pub(crate) fn invalidate_route_cache() {
     *ROUTE_CACHE.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
+#[cfg(not(target_os = "android"))]
 unsafe fn default_route_ifname_impl() -> Option<String> {
     use libc::{RT_SCOPE_HOST, RTA_GATEWAY, RTA_OIF, RTA_PRIORITY, RTN_LOCAL};
 
@@ -312,6 +313,33 @@ unsafe fn default_route_ifname_impl() -> Option<String> {
         return None;
     }
     Some(unsafe { std::ffi::CStr::from_ptr(name) }.to_string_lossy().into_owned())
+}
+
+/// Android/bionic fallback for the netlink dump above: libc's Android target
+/// has no rtattr definitions, so read the IPv4 default route from
+/// /proc/net/route instead (destination and mask 00000000; lowest metric
+/// wins, like the netlink path). On-link default routes with a zero gateway
+/// are accepted too; Android's mobile interfaces commonly use them.
+#[cfg(target_os = "android")]
+unsafe fn default_route_ifname_impl() -> Option<String> {
+    let content = std::fs::read_to_string("/proc/net/route").ok()?;
+    let mut best_metric = u32::MAX;
+    let mut best_ifname: Option<String> = None;
+    for line in content.lines().skip(1) {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 8
+            || fields[1] != "00000000"
+            || fields[7] != "00000000"
+        {
+            continue;
+        }
+        let metric = fields[6].parse::<u32>().unwrap_or(u32::MAX);
+        if metric < best_metric {
+            best_metric = metric;
+            best_ifname = Some(fields[0].to_string());
+        }
+    }
+    best_ifname
 }
 
 fn read_u64(dir: &std::path::Path, file: &str) -> u64 {

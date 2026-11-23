@@ -10,6 +10,16 @@ use crate::{
     modules::Row,
 };
 
+/// Call `ioctl(2)` with a request cast to the type the target expects.
+///
+/// glibc declares the request as `c_ulong`, while bionic (Android) declares it
+/// as `c_int`; `as _` lets the compiler pick the right type on each target.
+#[inline]
+unsafe fn portable_ioctl<T>(fd: libc::c_int, request: libc::c_ulong, arg: *mut T) -> libc::c_int {
+    // SAFETY: the caller guarantees `fd` and `arg` are valid for `request`.
+    unsafe { libc::ioctl(fd, request as _, arg) }
+}
+
 const VIDIOC_QUERYCAP: libc::c_ulong = 0x8068_5600;
 const VIDIOC_G_FMT: libc::c_ulong = 0xc0d0_5604;
 const V4L2_BUF_TYPE_VIDEO_CAPTURE: u32 = 1;
@@ -108,9 +118,9 @@ fn detect() -> Result<Vec<CameraDevice>, &'static str> {
             _padding: 0,
             pix: [0; 200],
         };
-        let captured = unsafe { libc::ioctl(fd, VIDIOC_QUERYCAP, &mut cap) } >= 0
+        let captured = unsafe { portable_ioctl(fd, VIDIOC_QUERYCAP, &mut cap as *mut _) } >= 0
             && cap.capabilities & V4L2_CAP_VIDEO_CAPTURE != 0
-            && unsafe { libc::ioctl(fd, VIDIOC_G_FMT, &mut fmt) } >= 0;
+            && unsafe { portable_ioctl(fd, VIDIOC_G_FMT, &mut fmt as *mut _) } >= 0;
         unsafe { libc::close(fd) };
         if !captured {
             continue;

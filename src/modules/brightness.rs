@@ -13,6 +13,16 @@ use crate::{
     util,
 };
 
+/// Call `ioctl(2)` with a request cast to the type the target expects.
+///
+/// glibc declares the request as `c_ulong`, while bionic (Android) declares it
+/// as `c_int`; `as _` lets the compiler pick the right type on each target.
+#[inline]
+unsafe fn portable_ioctl<T>(fd: libc::c_int, request: libc::c_ulong, arg: *mut T) -> libc::c_int {
+    // SAFETY: the caller guarantees `fd` and `arg` are valid for `request`.
+    unsafe { libc::ioctl(fd, request as _, arg) }
+}
+
 const I2C_RDWR: libc::c_ulong = 0x0707;
 const I2C_M_RD: u16 = 0x0001;
 const DDC_EDID_ADDR: u16 = 0x50;
@@ -69,7 +79,7 @@ unsafe fn i2c_rdwr(fd: libc::c_int, msgs: &mut [I2cMsg]) -> bool {
         msgs: msgs.as_mut_ptr(),
         nmsgs: msgs.len() as u32,
     };
-    (unsafe { libc::ioctl(fd, I2C_RDWR, &mut data as *mut I2cRdwrIoctlData) }) == msgs.len() as i32
+    (unsafe { portable_ioctl(fd, I2C_RDWR, &mut data as *mut I2cRdwrIoctlData) }) == msgs.len() as i32
 }
 
 /// One DDC/CI GetVCP round trip: write the request, pause, read the reply.

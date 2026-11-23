@@ -3,6 +3,7 @@
 //! older one); when utmp found nobody, the systemd files under /run/systemd
 //! are queried instead (Debian-family systems stopped updating utmp).
 
+#[cfg(not(target_os = "android"))]
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use crate::{
@@ -21,6 +22,7 @@ struct User {
 }
 
 /// ut_user/ut_host are NUL-padded char arrays.
+#[cfg(not(target_os = "android"))]
 fn c_array_str(bytes: &[libc::c_char]) -> String {
     let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
     let bytes: Vec<u8> = bytes[..end].iter().map(|&b| b as u8).collect();
@@ -29,6 +31,7 @@ fn c_array_str(bytes: &[libc::c_char]) -> String {
 
 /// detectByUtmp: USER_PROCESS entries; a newer login of the same user
 /// replaces the older one.
+#[cfg(not(target_os = "android"))]
 fn detect_by_utmp() -> Vec<User> {
     let mut users: Vec<User> = Vec::new();
     unsafe {
@@ -69,9 +72,18 @@ fn detect_by_utmp() -> Vec<User> {
     users
 }
 
+/// Android/bionic has no utmpx APIs, so there are no utmp sessions to
+/// enumerate. Returning an empty list makes the users module print nothing;
+/// the /run/systemd fallback in detect() is also absent on Android.
+#[cfg(target_os = "android")]
+fn detect_by_utmp() -> Vec<User> {
+    Vec::new()
+}
+
 /// fillUtmpIpAddr: ut_addr_v6 as IPv6 when bytes 1..4 are set, else IPv4
 /// when the first byte is set. The string forms match inet_ntop (Rust's
 /// Ipv6Addr Display is the RFC 5952 compressed form).
+#[cfg(not(target_os = "android"))]
 fn fill_utmp_ip(user: &mut User, entry: &libc::utmpx) {
     // ut_addr_v6 is an int32[4] that inet_ntop reads as raw bytes: the IPv4
     // address is the little-endian byte image of the first int32.

@@ -17,6 +17,16 @@ use crate::{
     util,
 };
 
+/// Call `ioctl(2)` with a request cast to the type the target expects.
+///
+/// glibc declares the request as `c_ulong`, while bionic (Android) declares it
+/// as `c_int`; `as _` lets the compiler pick the right type on each target.
+#[inline]
+unsafe fn portable_ioctl<T>(fd: c_int, request: libc::c_ulong, arg: *mut T) -> c_int {
+    // SAFETY: the caller guarantees `fd` and `arg` are valid for `request`.
+    unsafe { libc::ioctl(fd, request as _, arg) }
+}
+
 // ---- nl80211 / genetlink constants (linux/nl80211.h, linux/genetlink.h) ----
 
 const AF_NETLINK: c_int = 16;
@@ -1035,7 +1045,7 @@ fn iw_ioctl<T>(
     prepare(&mut iwr);
     // SAFETY: the kernel writes into the iwreq's own union and the
     // caller-provided external buffers during the call.
-    if unsafe { libc::ioctl(fd, request, &mut iwr as *mut Iwreq) } < 0 {
+    if unsafe { portable_ioctl(fd, request, &mut iwr as *mut Iwreq) } < 0 {
         return None;
     }
     Some(post(&iwr))

@@ -16,6 +16,24 @@ use crate::{
     util,
 };
 
+/// Call `ioctl(2)` with a request cast to the type the target expects.
+///
+/// glibc declares the request as `c_ulong`, while bionic (Android) declares it
+/// as `c_int`; `as _` lets the compiler pick the right type on each target.
+#[inline]
+unsafe fn portable_ioctl<T>(fd: libc::c_int, request: libc::c_ulong, arg: *mut T) -> libc::c_int {
+    // SAFETY: the caller guarantees `fd` and `arg` are valid for `request`.
+    unsafe { libc::ioctl(fd, request as _, arg) }
+}
+
+/// Read the thread-local errno value without glibc's `__errno_location`,
+/// which is unavailable on Android/bionic. Equivalent to dereferencing
+/// `__errno_location()` on Linux.
+#[inline]
+fn errno() -> libc::c_int {
+    std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
+}
+
 const VOLUME_UNKNOWN: u8 = 255;
 
 #[derive(Default)]
@@ -307,7 +325,7 @@ fn write_all(fd: i32, mut data: &[u8]) -> bool {
     while !data.is_empty() {
         let written = unsafe { libc::send(fd, data.as_ptr().cast(), data.len(), MSG_NOSIGNAL) };
         if written < 0 {
-            if unsafe { *libc::__errno_location() } == libc::EINTR {
+            if errno() == libc::EINTR {
                 continue;
             }
             return false;
@@ -322,7 +340,7 @@ fn read_all(fd: i32, mut data: &mut [u8]) -> bool {
     while !data.is_empty() {
         let received = unsafe { libc::recv(fd, data.as_mut_ptr().cast(), data.len(), 0) };
         if received < 0 {
-            if unsafe { *libc::__errno_location() } == libc::EINTR {
+            if errno() == libc::EINTR {
                 continue;
             }
             return false;
@@ -559,7 +577,7 @@ fn send_with_credentials(fd: i32, data: &[u8]) -> bool {
         let mut sent;
         loop {
             sent = libc::sendmsg(fd, &message, MSG_NOSIGNAL);
-            if sent >= 0 || *libc::__errno_location() != libc::EINTR {
+            if sent >= 0 || errno() != libc::EINTR {
                 break;
             }
         }
@@ -1133,7 +1151,7 @@ impl AlsaControls {
                 reserved: [0; 56],
             };
             // SAFETY: the ioctl fills our own id array.
-            if unsafe { libc::ioctl(self.fd, SNDRV_CTL_IOCTL_ELEM_LIST, &mut list) } < 0 {
+            if unsafe { portable_ioctl(self.fd, SNDRV_CTL_IOCTL_ELEM_LIST, &mut list as *mut _) } < 0 {
                 self.done = true;
                 return None;
             }
@@ -1253,7 +1271,7 @@ fn read_alsa_value(fd: i32, id: &SndCtlElemId) -> Option<AlsaValue> {
         reserved: [0; 168],
     };
     // SAFETY: the ioctl fills our own struct.
-    if unsafe { libc::ioctl(fd, SNDRV_CTL_IOCTL_ELEM_INFO, &mut info) } < 0 {
+    if unsafe { portable_ioctl(fd, SNDRV_CTL_IOCTL_ELEM_INFO, &mut info as *mut _) } < 0 {
         return None;
     }
     let mut value = SndCtlElemValue {
@@ -1263,7 +1281,7 @@ fn read_alsa_value(fd: i32, id: &SndCtlElemId) -> Option<AlsaValue> {
         reserved: [0; 640],
     };
     // SAFETY: the ioctl fills our own struct.
-    if unsafe { libc::ioctl(fd, SNDRV_CTL_IOCTL_ELEM_READ, &mut value) } < 0 {
+    if unsafe { portable_ioctl(fd, SNDRV_CTL_IOCTL_ELEM_READ, &mut value as *mut _) } < 0 {
         return None;
     }
 

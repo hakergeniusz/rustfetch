@@ -22,7 +22,8 @@ pub fn run(instance: &Instance) -> Vec<Row> {
 }
 
 /// ffGenerateVersionJsonResult, reporting the reference 2.71.0 package
-/// identity; the glibc version comes from gnu_get_libc_version().
+/// identity; the glibc version comes from gnu_get_libc_version() on Linux,
+/// while Android/bionic reports "bionic" instead.
 pub fn json(_instance: &Instance) -> JsonOutcome {
     let mut obj = Json::obj();
     obj.push("projectName", "fastfetch");
@@ -35,6 +36,7 @@ pub fn json(_instance: &Instance) -> JsonOutcome {
     obj.push("compiler", "gcc 16.2.1");
     obj.push("debugMode", false);
 
+    #[cfg(not(target_os = "android"))]
     let libc_version = unsafe {
         let ptr = libc::gnu_get_libc_version();
         if ptr.is_null() {
@@ -43,10 +45,13 @@ pub fn json(_instance: &Instance) -> JsonOutcome {
             std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
         }
     };
+    #[cfg(not(target_os = "android"))]
     if libc_version.is_empty() {
         obj.push("libc", Json::Null);
     } else {
         obj.push("libc", format!("glibc {libc_version}"));
     }
+    #[cfg(target_os = "android")]
+    obj.push("libc", "bionic");
     JsonOutcome::Result(obj)
 }
