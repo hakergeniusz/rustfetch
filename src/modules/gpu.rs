@@ -867,7 +867,11 @@ mod tests {
         assert_eq!(vendor_string(0x9999), None);
     }
 
+    // pci.ids is not shipped on Android/Termux, so fill_vendor_and_name
+    // cannot resolve device names there; the vendor-string cases below still
+    // run on every platform.
     #[test]
+    #[cfg(not(target_os = "android"))]
     fn modalias_and_names_resolve_like_ffgpu() {
         // The vendor is set from ffGPUGetVendorString before the lookup.
         let mut gpu = GpuResult { vendor: "NVIDIA".to_string(), ..GpuResult::default() };
