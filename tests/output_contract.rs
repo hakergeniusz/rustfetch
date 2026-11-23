@@ -113,16 +113,22 @@ fn list_and_print_flags_are_complete_and_non_empty() {
     let structure = run_ok(&["--print-structure"]);
     assert_eq!(structure.stdout().trim(), DEFAULT_STRUCTURE);
 
+    // These are always populated, on a bare CI runner too.
     for flag in [
         "--list-config-paths",
         "--list-data-paths",
         "--list-logos",
-        "--list-presets",
         "--list-features",
     ] {
         let output = run_ok(&[flag]);
         assert!(!output.stdout().trim().is_empty(), "{flag} produced no output");
     }
+
+    // --list-presets reflects installed fastfetch presets; a clean CI image
+    // has none, so require a clean success (and valid UTF-8) rather than
+    // assuming the host happens to ship a preset collection.
+    let presets = run_ok(&["--list-presets"]);
+    assert!(std::str::from_utf8(presets.stdout_bytes).is_ok());
 }
 
 #[test]
