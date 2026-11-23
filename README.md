@@ -20,7 +20,7 @@
 ### Linux
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/install.sh | sh
+curl -fsSL https://hakergeniusz.github.io/rustfetch/install.sh | sh
 ```
 
 Works in bash, zsh or POSIX sh. The one-liner downloads the release asset,
@@ -45,7 +45,7 @@ brew install rustfetch
 Or the same curl one-liner (works in bash and zsh):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/install.sh | sh
+curl -fsSL https://hakergeniusz.github.io/rustfetch/install.sh | sh
 ```
 
 ### Windows
@@ -53,7 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/install
 PowerShell one-liner:
 
 ```powershell
-irm https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/installers/install.ps1 | iex
+irm https://hakergeniusz.github.io/rustfetch/install.ps1 | iex
 ```
 
 No PowerShell? Download `rustfetch-setup.exe` from the
