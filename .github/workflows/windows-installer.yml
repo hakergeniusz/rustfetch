@@ -1,0 +1,76 @@
+name: Windows installer (EXE)
+
+# Builds the plain, double-clickable rustfetch-setup.exe and, on version tags,
+# attaches it to the release that platform.yml publishes the other assets to.
+# Mirrors the permissions/style of the `attach` job in platform.yml.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The installer crate ships its own Cargo.lock, so --locked is safe here.
+      - name: Build release (rustfetch-setup.exe)
+        shell: bash
+        run: cargo --locked build --release --manifest-path platform/windows-installer/Cargo.toml
+
+      - name: Test
+        shell: bash
+        run: cargo --locked test --manifest-path platform/windows-installer/Cargo.toml
+
+      - name: Clippy (-D warnings)
+        shell: bash
+        run: cargo --locked clippy --all-targets --manifest-path platform/windows-installer/Cargo.toml -- -D warnings
+
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp platform/windows-installer/target/release/rustfetch-setup.exe dist/rustfetch-setup.exe
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfetch-setup.exe
+          path: dist/rustfetch-setup.exe
+          if-no-files-found: error
+
+  attach:
+    needs: [build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rustfetch-setup.exe
+          path: dist
+
+      # The release for the tag is normally already published by platform.yml;
+      # the guard keeps re-runs/partial tag pushes idempotent. --clobber below
+      # makes repeated uploads safe too.
+      - name: Attach installer to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" --generate-notes \
+              --title "rustfetch ${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}"
+          fi
+          gh release upload "${GITHUB_REF_NAME}" \
+            dist/rustfetch-setup.exe \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber

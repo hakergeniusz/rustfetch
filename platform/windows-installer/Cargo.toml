@@ -1,0 +1,24 @@
+[package]
+name = "rustfetch-setup"
+version = "0.2.8"
+edition = "2021"
+description = "Double-clickable Windows installer for rustfetch (no PowerShell, std-only)"
+license = "MIT"
+
+[[bin]]
+name = "rustfetch-setup"
+path = "src/main.rs"
+
+[dependencies]
+
+# Keep the same "no unwrap, no expect" guarantee as the main crate.
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

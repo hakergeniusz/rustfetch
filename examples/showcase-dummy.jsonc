@@ -5,8 +5,7 @@
   "logo": {
     "type": "small",
     "source": "arch",
-    // Standard Ubuntu orange on every colored slot (no pride gradient).
-    "color": { "1": "#E95420", "2": "#E95420" }
+    "hyfetch": { "preset": "transgender", "mode": "24bit" }
   },
   "modules": [
     { "type": "custom", "format": "{#cyan}user@archlinux{#}" },
