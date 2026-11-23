@@ -128,7 +128,7 @@ fn list_and_print_flags_are_complete_and_non_empty() {
     // has none, so require a clean success (and valid UTF-8) rather than
     // assuming the host happens to ship a preset collection.
     let presets = run_ok(&["--list-presets"]);
-    assert!(std::str::from_utf8(presets.stdout_bytes).is_ok());
+    assert!(std::str::from_utf8(&presets.stdout_bytes).is_ok());
 }
 
 #[test]
