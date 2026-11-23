@@ -17,17 +17,50 @@
 
 ## ⚡ Install
 
-```bash
+### Linux
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/install.sh | sh
 ```
 
-The one-liner downloads the signed-off release asset, verifies its SHA-256,
-installs a `0755` binary to `~/.local/bin` (or `/usr/local/bin` as root) and a
-zsh completion to `share/zsh/site-functions`. **No fastfetch installation
-required.** Debian/Ubuntu (`.deb`), Fedora/RHEL (`.rpm`) and Arch (`PKGBUILD`,
-binary `PKGBUILD`) packages are in [`packaging/`](packaging/).
+Works in bash, zsh or POSIX sh. The one-liner downloads the release asset,
+verifies its SHA-256, installs a `0755` binary to `~/.local/bin` (or
+`/usr/local/bin` as root) and a zsh completion to `share/zsh/site-functions`.
+**No fastfetch installation required.** Debian/Ubuntu (`.deb`), Fedora/RHEL
+(`.rpm`) and Arch (`PKGBUILD`, binary `PKGBUILD`) packages are in
+[`packaging/`](packaging/).
 
 Build from source: `cargo build --release` → `target/release/rustfetch`.
+
+### macOS
+
+Homebrew:
+
+```sh
+brew tap hakergeniusz/rustfetch
+brew trust hakergeniusz/rustfetch   # required by newer Homebrew for third-party taps
+brew install rustfetch
+```
+
+Or the same curl one-liner (works in bash and zsh):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/install.sh | sh
+```
+
+### Windows
+
+PowerShell one-liner:
+
+```powershell
+irm https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/installers/install.ps1 | iex
+```
+
+No PowerShell? Download `rustfetch-setup.exe` from the
+[latest release](https://github.com/hakergeniusz/rustfetch/releases/latest),
+double-click it, and it downloads, verifies and installs the binary for you.
+It is a per-user install with no admin rights required. See
+[docs/windows-installer.md](docs/windows-installer.md) for options and notes.
 
 ---
 
@@ -39,34 +72,20 @@ standalone, core-module ports, **not** parity builds. See
 [docs/platform-support.md](docs/platform-support.md) for the support matrix,
 build commands and known limitations.
 
-Windows (x86_64) — PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/hakergeniusz/rustfetch/main/installers/install.ps1 | iex
-```
-
-macOS — Homebrew (once the tap is published):
-
-```bash
-brew tap hakergeniusz/rustfetch
-brew trust hakergeniusz/rustfetch   # required by newer Homebrew for third-party taps
-brew install rustfetch
-```
-
 Both ports provide the core modules (`title`, `os`, `host`, `kernel`, `uptime`,
 `shell`, `terminal`, `cpu`, `memory`, `disk`, `localip`) and the `--pipe`,
 `--format json`, `--help`, `--version`, `--list-modules` and
-`--hyfetch-preset` flags. The tap is published with the release that first
-includes the macOS asset; until then, install the formula directly from a
-checkout (`brew install ./installers/rustfetch.rb`) or build from source, as
-described in the platform doc.
+`--hyfetch-preset` flags. The Homebrew tap is published alongside each release;
+you can also install the formula directly from a checkout
+(`brew install ./installers/rustfetch.rb`) or build from source, as described
+in the platform doc.
 
 ---
 
 ## 🎨 Showcase
 
 [`examples/showcase.jsonc`](examples/showcase.jsonc) — a fastfetch-style layout
-with a standard Ubuntu orange logo:
+with HyFetch's transgender flag gradient:
 
 ```bash
 rustfetch --config examples/showcase.jsonc
@@ -95,8 +114,9 @@ writes the ANSI-colored capture for a screenshot.
                   Disk  7.2 TiB / 16.0 TiB (45%) - btrfs
 ```
 
-In a real terminal the logo uses standard Ubuntu orange (`#E95420`, RGB
-`233,84,32`) on every colored line - a single solid color, no gradient.
+In a real terminal the logo is colored with the exact flag RGB values
+`#55CDFD → #F6AAB7 → #FFFFFF → #F6AAB7 → #55CDFD`, spread once across every
+line — byte-for-byte identical to HyFetch 2.1.1.
 
 ---
 
