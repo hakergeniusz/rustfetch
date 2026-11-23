@@ -1,0 +1,23 @@
+[package]
+name = "rustfetch"
+version = "0.2.7"
+edition = "2024"
+description = "A fastfetch- and hyfetch-inspired system information tool - native FreeBSD build"
+license = "MIT"
+
+[[bin]]
+name = "rustfetch"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+panic = "abort"
+strip = "symbols"

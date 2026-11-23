@@ -12,7 +12,9 @@
 use std::ffi::{c_int, c_void, CString};
 
 use std::net::TcpStream;
-use std::os::fd::{AsRawFd, FromRawFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::os::fd::RawFd;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -22,6 +24,8 @@ const MAX_RESPONSE_SIZE: usize = 1024 * 1024;
 
 enum SendStatus {
     /// The fast path or inline send left the socket ready to read.
+    /// Only Linux/Android construct it (TCP Fast Open is Linux-only).
+    #[cfg_attr(not(any(target_os = "linux", target_os = "android")), allow(dead_code))]
     Ready(TcpStream),
     /// The connect runs in a thread; the channel carries the socket when it
     /// succeeds and closes it on failure, like connectAndSend's error path.
@@ -109,6 +113,7 @@ impl State {
                 &flag as *const _ as *const c_void,
                 std::mem::size_of_val(&flag) as libc::socklen_t,
             );
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             libc::setsockopt(
                 sockfd,
                 libc::IPPROTO_TCP,
@@ -118,6 +123,7 @@ impl State {
             );
         }
 
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         if self.timeout > 0 {
             // Linux: TCP_USER_TIMEOUT carries the full millisecond value.
             unsafe {
@@ -135,6 +141,7 @@ impl State {
         // tryNonThreadingFastPath's result): the traditional connect+send
         // below runs on the same socket, and its thread failure surfaces
         // through the closed fd at recv, like upstream.
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         if self.tfo
             && self.send_fast_open(sockfd, &command, &sockaddr_copy, addr_len).is_ok()
         {
@@ -178,7 +185,8 @@ impl State {
 
     /// tryNonThreadingFastPath: TCP Fast Open sends the request inside
     /// SYN; EAGAIN/EWOULDBLOCK/EINPROGRESS mean the cookie handshake is in
-    /// progress and counts as sent, like upstream.
+    /// progress and counts as sent, like upstream. Linux-only constants.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     fn send_fast_open(
         &mut self,
         sockfd: RawFd,

@@ -52,8 +52,8 @@ Release asset names follow
 `<asset>.sha256` sidecar is used for verification; if none is published the
 installer prints the SHA256 for transparency. If a release has no `.tar.zst`
 asset, the installer falls back to downloading the tagged source tarball and
-running `cargo build --release` (target directory in RAM when `/dev/shm` is
-writable). It **never installs build packages automatically**: if `cargo` or
+running `cargo build --release` (persistent cargo cache at `/var/cache/zstd5/rustfetch-target` when
+writable (Termux falls back to `$HOME/.cache/rustfetch-target`)). It **never installs build packages automatically**: if `cargo` or
 `rustc` are missing it prints the exact distro-specific install command and
 exits.
 
@@ -62,8 +62,8 @@ install method.
 
 All packaging defaults to building from the repository root (`/home/.../rustfetch`).
 To limit SSD writes, the helper scripts stage under `/dev/shm/rf-scratch-pkg/`
-and write only the final artifact into `dist/`. Set `CARGO_TARGET_DIR` to a
-tmpfs path (e.g. `/dev/shm/rustfetch-target`) when building yourself.
+and write only the final artifact into `dist/`. Set `CARGO_TARGET_DIR` to the persistent cache
+(e.g. `/var/cache/zstd5/rustfetch-target`) when building yourself.
 
 ## Path overview
 
@@ -114,10 +114,10 @@ sudo ./install.sh
 ./install.sh --user
 
 # Install an already-built binary without rebuilding
-CARGO_TARGET_DIR=/dev/shm/rustfetch-target ./install.sh --no-build --prefix ~/.local
+CARGO_TARGET_DIR=/var/cache/zstd5/rustfetch-target ./install.sh --no-build --prefix ~/.local
 
 # Honour a custom Cargo target directory while building
-CARGO_TARGET_DIR=/dev/shm/rustfetch-target ./install.sh --prefix ~/.local
+CARGO_TARGET_DIR=/var/cache/zstd5/rustfetch-target ./install.sh --prefix ~/.local
 
 # Non-interactive (no overwrite prompt)
 ./install.sh --yes

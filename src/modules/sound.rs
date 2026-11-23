@@ -358,29 +358,32 @@ fn apply_receive_timeout(fd: i32) {
     // SAFETY: plain setsockopt.
     unsafe {
         let timeout = libc::timeval {
-            tv_sec: (PA_RECV_TIMEOUT_MS / 1000) as i64,
-            tv_usec: ((PA_RECV_TIMEOUT_MS % 1000) * 1000) as i64,
+            // time_t is 64-bit on LP64 but 32-bit on ILP32 targets, and
+            // `suseconds_t` is i32 on some BSDs. `as _` picks the field type.
+            tv_sec: (PA_RECV_TIMEOUT_MS / 1000) as _,
+            tv_usec: ((PA_RECV_TIMEOUT_MS % 1000) * 1000) as _,
         };
         libc::setsockopt(
             fd,
             libc::SOL_SOCKET,
             libc::SO_RCVTIMEO,
             &timeout as *const libc::timeval as *const c_void,
-            std::mem::size_of::<libc::timeval>() as u32,
+            std::mem::size_of::<libc::timeval>() as _,
         );
     }
 }
 
 /// connect(2) to a unix socket at `path`.
 fn connect_unix_socket(path: &str) -> i32 {
-    if path.len() >= 108 {
-        // sizeof sockaddr_un.sun_path
+    // Build the address from a zeroed template instead of a struct literal:
+    // BSD sockaddr_un has an extra `sun_len` field and a shorter `sun_path`
+    // than Linux. Zeroing keeps the Linux bytes identical (family at 0..2,
+    // path at 2..110) while type-checking everywhere.
+    let mut address: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+    if path.len() >= address.sun_path.len() {
         return -1;
     }
-    let mut address = libc::sockaddr_un {
-        sun_family: libc::AF_UNIX as u16,
-        sun_path: [0; 108],
-    };
+    address.sun_family = libc::AF_UNIX as _;
     for (target, byte) in address.sun_path.iter_mut().zip(path.as_bytes()) {
         *target = *byte as libc::c_char;
     }
@@ -390,8 +393,8 @@ fn connect_unix_socket(path: &str) -> i32 {
         if fd < 0 {
             return -1;
         }
-        let length = 2 + path.len() + 1; // offsetof(sun_path) + length + 1
-        if libc::connect(fd, (&address as *const libc::sockaddr_un).cast(), length as u32) < 0 {
+        let length = std::mem::offset_of!(libc::sockaddr_un, sun_path) + path.len() + 1;
+        if libc::connect(fd, (&address as *const libc::sockaddr_un).cast(), length as _) < 0 {
             libc::close(fd);
             return -1;
         }
@@ -539,6 +542,10 @@ fn get_cookie() -> [u8; PA_COOKIE_LENGTH] {
 /// The daemon authorizes same-user clients by the credentials of the last
 /// packet it read before AUTH; they must ride on the whole frame, not a
 /// separate write.
+///
+/// Linux/bionic only: BSD `ucred`/`SCM_CREDENTIALS` have different layouts and
+/// message types, so non-Linux targets send the frame without credentials.
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn send_with_credentials(fd: i32, data: &[u8]) -> bool {
     // SAFETY: sendmsg with a SCM_CREDENTIALS cmsg built from our own ids.
     unsafe {
@@ -586,6 +593,12 @@ fn send_with_credentials(fd: i32, data: &[u8]) -> bool {
         }
         write_all(fd, &data[sent as usize..]) // the remainder carries no credentials
     }
+}
+
+/// Non-Linux compile-coverage fallback: no SCM_CREDENTIALS support here.
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn send_with_credentials(fd: i32, data: &[u8]) -> bool {
+    write_all(fd, data)
 }
 
 fn send_frame(conn_fd: i32, payload: &[u8], with_credentials: bool) -> bool {

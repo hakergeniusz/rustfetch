@@ -173,9 +173,11 @@ truncated:
   hard-code `/tmp` will fail. This script keeps all scratch and build data under
   `$HOME/.cache/` (or you can use `$PREFIX/tmp`). For ad-hoc temp files, use
   `mktemp -d -p "$HOME/.cache"`.
-- **`/var/tmp` is read-only.** Do not point `CARGO_TARGET_DIR` or any cache at
-  `/var/tmp`; builds will fail with "permission denied". Keep the house rule:
-  persistent caches under `$HOME/.cache/rustfetch-target`.
+- **System cache dirs are read-only on Android.** Desktop hosts use the house
+  rule: persistent cargo caches at `/var/cache/zstd5/rustfetch-target`. Termux
+  has no writable `/var/cache` or `/var/tmp`, so builds here necessarily fall
+  back to `$HOME/.cache/rustfetch-target`. Do not point `CARGO_TARGET_DIR` at
+  either system path; it fails with "permission denied".
 - **Root is not required.** The whole flow works as the normal Termux user;
   magisk root is neither used nor needed. Avoid building as root - it can leave
   root-owned files in `$HOME` that later break user builds. If you already

@@ -109,16 +109,22 @@ fn entrypoint_show_type(entrypoint: c_int) -> u8 {
     }
 }
 
+/// NetBSD's dlfcn.h does not define RTLD_NODELETE; fall back to no flag.
+#[cfg(not(target_os = "netbsd"))]
+const DL_NODELETE: libc::c_int = libc::RTLD_NODELETE;
+#[cfg(target_os = "netbsd")]
+const DL_NODELETE: libc::c_int = 0;
+
 /// ffLibraryLoadSingle: plain path first, then ".N" suffixes downwards.
 pub(crate) fn load_library(name: &str, max_version: i32) -> Option<*mut c_void> {
     let plain = CString::new(format!("lib{name}.so")).ok()?;
-    let handle = unsafe { libc::dlopen(plain.as_ptr(), libc::RTLD_LAZY | libc::RTLD_NODELETE) };
+    let handle = unsafe { libc::dlopen(plain.as_ptr(), libc::RTLD_LAZY | DL_NODELETE) };
     if !handle.is_null() {
         return Some(handle);
     }
     for version in (0..=max_version).rev() {
         let path = CString::new(format!("lib{name}.so.{version}")).ok()?;
-        let handle = unsafe { libc::dlopen(path.as_ptr(), libc::RTLD_LAZY | libc::RTLD_NODELETE) };
+        let handle = unsafe { libc::dlopen(path.as_ptr(), libc::RTLD_LAZY | DL_NODELETE) };
         if !handle.is_null() {
             return Some(handle);
         }

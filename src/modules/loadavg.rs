@@ -33,17 +33,26 @@ fn detect() -> Result<[f64; 3], &'static str> {
         }
     }
 
-    let mut sysinfo: libc::sysinfo = unsafe { std::mem::zeroed() };
-    // SAFETY: sysinfo only writes into the caller-provided struct.
-    if unsafe { libc::sysinfo(&mut sysinfo) } != 0 {
-        return Err("both /proc/loadavg and sysinfo() failed");
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        let mut sysinfo: libc::sysinfo = unsafe { std::mem::zeroed() };
+        // SAFETY: sysinfo only writes into the caller-provided struct.
+        if unsafe { libc::sysinfo(&mut sysinfo) } != 0 {
+            return Err("both /proc/loadavg and sysinfo() failed");
+        }
+        let divisor = (1u64 << libc::SI_LOAD_SHIFT) as f64;
+        Ok([
+            sysinfo.loads[0] as f64 / divisor,
+            sysinfo.loads[1] as f64 / divisor,
+            sysinfo.loads[2] as f64 / divisor,
+        ])
     }
-    let divisor = (1u64 << libc::SI_LOAD_SHIFT) as f64;
-    Ok([
-        sysinfo.loads[0] as f64 / divisor,
-        sysinfo.loads[1] as f64 / divisor,
-        sysinfo.loads[2] as f64 / divisor,
-    ])
+    // BSDs have neither /proc/loadavg nor sysinfo(2) in libc; expose the
+    // error path so the module type-checks (and simply prints nothing).
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    {
+        Err("no /proc/loadavg and sysinfo() is Linux-only")
+    }
 }
 
 /// ffGenerateLoadavgJsonResult.

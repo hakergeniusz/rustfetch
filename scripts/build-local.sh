@@ -18,8 +18,10 @@ Environment:
                          Include -C target-cpu=native yourself if you override it.
   RUSTFETCH_BENCH_ARGS   Extra argv passed identically to both benchmarked
                          binaries (e.g. "--local-only").
-  CARGO_TARGET_DIR       Cargo target directory (default: target).
-                         The binary is written to <target-dir>/local/rustfetch.
+  CARGO_TARGET_DIR       Cargo target directory
+                         (default: /var/cache/zstd5/rustfetch-target).
+                         The binary is written to <target-dir>/local/rustfetch
+                         and also saved to target/local/rustfetch in the repo.
 
 NOT PORTABLE: by default the binary contains instructions for the exact CPU
 it was built on. Copying it to another machine (or a VM/migration host) can
@@ -38,7 +40,7 @@ while (($# > 0)); do
 done
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-target_dir="${CARGO_TARGET_DIR:-target}"
+target_dir="${CARGO_TARGET_DIR:-/var/cache/zstd5/rustfetch-target}"
 local_bin="$target_dir/local/rustfetch"
 release_bin="$target_dir/release/rustfetch"
 
@@ -65,6 +67,12 @@ else
     printf '    size: %s bytes\n' "$(wc -c < "$local_bin" | tr -d '[:space:]')"
 fi
 { du -h "$local_bin" 2>/dev/null || true; } | sed 's/^/    on disk: /'
+
+# Keep the machine-local deliverable in the repo even though the build cache
+# lives in /var/cache/zstd5.
+mkdir -p target/local
+cp "$local_bin" target/local/rustfetch
+printf '    saved: %s\n' "$PWD/target/local/rustfetch"
 
 if (( no_bench )); then
     printf '\n(benchmark skipped: --no-bench)\n'

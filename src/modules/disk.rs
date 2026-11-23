@@ -103,7 +103,8 @@ fn is_physical_device(entry: &MountEntry) -> bool {
 }
 
 /// detectNameFromPath: the directory entry whose inode equals the device's.
-fn detect_name_from_path(device_ino: u64, base: &std::path::Path) -> Option<String> {
+fn detect_name_from_path(device_ino: impl Into<u64>, base: &std::path::Path) -> Option<String> {
+    let device_ino = device_ino.into();
     for entry in std::fs::read_dir(base).ok()?.flatten() {
         if entry.file_name().to_string_lossy().starts_with('.') {
             continue;
@@ -212,6 +213,9 @@ fn detect_stats(disk: &mut DiskResult) {
         disk.files_used = disk.files_total - fs.f_ffree as u32;
     }
 
+    // SYS_statx is Linux-only; other targets keep create_time unset.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
     // SYS_statx with STATX_BTIME; birth times before Linux existed are noise.
     //
     // The buffer must match the kernel UAPI struct exactly: the syscall has
@@ -259,6 +263,7 @@ fn detect_stats(disk: &mut DiskResult) {
     };
     if ret == 0 && (stx.mask & 0x800) != 0 && stx.btime.sec > 685065600 {
         disk.create_time = (stx.btime.sec as u64 * 1000) + (stx.btime.nsec as u64 / 1_000_000);
+    }
     }
 }
 

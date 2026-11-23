@@ -656,8 +656,11 @@ source_build() {
   fi
 
   local target="$WORKDIR/target"
-  if [[ -w /dev/shm ]]; then
-    target="/dev/shm/rustfetch-target"
+  # Persistent cargo cache lives outside the repo so recompiles stay fast and
+  # the SSD source tree is not polluted. Termux cannot write here and falls
+  # back to its own home-cache (see docs/termux.md).
+  if [[ -d /var/cache/zstd5 && -w /var/cache/zstd5 ]]; then
+    target="/var/cache/zstd5/rustfetch-target"
   fi
   info "Building with: CARGO_TARGET_DIR='$target' cargo build --release"
   if ! (cd "$crate_dir" && CARGO_TARGET_DIR="$target" cargo build --release); then

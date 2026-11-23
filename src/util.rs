@@ -292,7 +292,9 @@ pub fn time_to_full_str(msec: u64) -> String {
     if msec == 0 {
         return String::new();
     }
-    let seconds_since_epoch = (msec / 1000) as i64;
+    // libc::time_t is i64 on 64-bit targets and i32 on 32-bit ones; casting
+    // to the alias keeps localtime_r's pointer argument width-correct.
+    let seconds_since_epoch = (msec / 1000) as libc::time_t;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe { libc::localtime_r(&seconds_since_epoch, &mut tm) };
     let offset = tm.tm_gmtoff.unsigned_abs();
@@ -317,7 +319,9 @@ pub fn time_to_short_str(msec: u64) -> String {
     if msec == 0 {
         return String::new();
     }
-    let seconds_since_epoch = (msec / 1000) as i64;
+    // libc::time_t is i64 on 64-bit targets and i32 on 32-bit ones; casting
+    // to the alias keeps localtime_r's pointer argument width-correct.
+    let seconds_since_epoch = (msec / 1000) as libc::time_t;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe { libc::localtime_r(&seconds_since_epoch, &mut tm) };
     format!(

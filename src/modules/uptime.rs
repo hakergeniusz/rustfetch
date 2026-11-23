@@ -36,13 +36,21 @@ pub fn detect() -> Result<UptimeResult, String> {
         return Ok(UptimeResult { uptime, boot_time: now_millis().saturating_sub(uptime) });
     }
 
-    // clock_gettime(CLOCK_BOOTTIME) fallback.
-    let mut timespec = libc::timespec { tv_sec: 0, tv_nsec: 0 };
-    if unsafe { libc::clock_gettime(libc::CLOCK_BOOTTIME, &mut timespec) } != 0 {
-        return Err("clock_gettime(CLOCK_BOOTTIME) failed".to_string());
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        // clock_gettime(CLOCK_BOOTTIME) fallback.
+        let mut timespec = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+        if unsafe { libc::clock_gettime(libc::CLOCK_BOOTTIME, &mut timespec) } != 0 {
+            return Err("clock_gettime(CLOCK_BOOTTIME) failed".to_string());
+        }
+        let uptime = (timespec.tv_sec.max(0) as u64) * 1000 + (timespec.tv_nsec as u64) / 1_000_000;
+        Ok(UptimeResult { uptime, boot_time: now_millis().saturating_sub(uptime) })
     }
-    let uptime = (timespec.tv_sec.max(0) as u64) * 1000 + (timespec.tv_nsec as u64) / 1_000_000;
-    Ok(UptimeResult { uptime, boot_time: now_millis().saturating_sub(uptime) })
+    // CLOCK_BOOTTIME is Linux-only; BSD libc has no such clock id.
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    {
+        Err("clock_gettime(CLOCK_BOOTTIME) is Linux-only".to_string())
+    }
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {

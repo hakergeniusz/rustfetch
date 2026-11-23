@@ -2,7 +2,12 @@
 
 mod cli;
 mod config;
+// CPUID and its libcpuid tables only apply to 64-bit x86. On the 32-bit
+// targets the stub functions in cpu_x86.rs keep the public API intact, so
+// the tables and their decoder are intentionally unreferenced there.
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
 mod cpu_tables;
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
 mod cpu_x86;
 mod ffont;
 mod dbus;

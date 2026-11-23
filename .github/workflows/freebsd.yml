@@ -1,0 +1,42 @@
+name: FreeBSD build
+
+# The FreeBSD port is a standalone, libc-only crate with no parity claim.
+# It is checked by cross-compiling to x86_64-unknown-freebsd (no linker needed)
+# and its pure logic is tested natively on Ubuntu. No binary is built or
+# attached to releases - see docs/freebsd.md for the rationale.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  freebsd-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Rust std targets only. `cargo check` does not invoke a linker, so no
+      # FreeBSD sysroot or cross linker is required for this job.
+      - name: Install FreeBSD target
+        run: rustup target add x86_64-unknown-freebsd
+
+      # The platform crate ships its own Cargo.lock, so --locked is safe here.
+      - name: Check (x86_64-unknown-freebsd)
+        run: cargo --locked check --target x86_64-unknown-freebsd --manifest-path platform/freebsd/Cargo.toml
+
+      # Pure Rust logic (config scanner, formatting, gradient math) runs on the
+      # host target; no FreeBSD-specific syscall is exercised by these tests.
+      - name: Test (native)
+        run: cargo --locked test --manifest-path platform/freebsd/Cargo.toml
+
+      - name: Clippy (native)
+        run: cargo --locked clippy --all-targets --manifest-path platform/freebsd/Cargo.toml -- -D warnings

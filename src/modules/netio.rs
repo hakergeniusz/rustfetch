@@ -56,7 +56,7 @@ pub(crate) fn invalidate_route_cache() {
     *ROUTE_CACHE.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(target_os = "linux")]
 unsafe fn default_route_ifname_impl() -> Option<String> {
     use libc::{RT_SCOPE_HOST, RTA_GATEWAY, RTA_OIF, RTA_PRIORITY, RTN_LOCAL};
 
@@ -313,6 +313,13 @@ unsafe fn default_route_ifname_impl() -> Option<String> {
         return None;
     }
     Some(unsafe { std::ffi::CStr::from_ptr(name) }.to_string_lossy().into_owned())
+}
+
+/// BSD compile-coverage fallback: Linux netlink route tables and /sys/class/net
+/// do not exist here, so there is no default-route interface to report.
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+unsafe fn default_route_ifname_impl() -> Option<String> {
+    None
 }
 
 /// Android/bionic fallback for the netlink dump above: libc's Android target

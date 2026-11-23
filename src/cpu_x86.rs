@@ -5,6 +5,7 @@
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::__cpuid;
 
+#[cfg(target_arch = "x86_64")]
 use crate::cpu_tables::{self, MatchEntry};
 use crate::modules::cpu::CpuResult;
 

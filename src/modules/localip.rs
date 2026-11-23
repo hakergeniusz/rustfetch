@@ -324,7 +324,7 @@ fn ifa_name_of(entry: &libc::ifaddrs) -> String {
 }
 
 /// The NI flag names in upstream's table order, matching IFF_* values.
-const NI_FLAGS: [(u32, &str); 19] = [
+const NI_FLAGS: &[(u32, &str)] = &[
     (libc::IFF_UP as u32, "UP"),
     (libc::IFF_BROADCAST as u32, "BROADCAST"),
     (libc::IFF_DEBUG as u32, "DEBUG"),
@@ -335,11 +335,18 @@ const NI_FLAGS: [(u32, &str); 19] = [
     (libc::IFF_PROMISC as u32, "PROMISC"),
     (libc::IFF_ALLMULTI as u32, "ALLMULTI"),
     (libc::IFF_MULTICAST as u32, "MULTICAST"),
+    // Linux-only interface flag bits; BSD libc does not define these.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     (libc::IFF_NOTRAILERS as u32, "NOTRAILERS"),
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     (libc::IFF_MASTER as u32, "MASTER"),
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     (libc::IFF_SLAVE as u32, "SLAVE"),
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     (libc::IFF_PORTSEL as u32, "PORTSEL"),
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     (libc::IFF_AUTOMEDIA as u32, "AUTOMEDIA"),
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     (libc::IFF_DYNAMIC as u32, "DYNAMIC"),
     (0x10000, "LOWER_UP"),
     (0x20000, "DORMANT"),
@@ -350,7 +357,7 @@ const NI_FLAGS: [(u32, &str); 19] = [
 fn fill_ni_flags(flag: u32) -> String {
     let mut buffer = String::new();
     let mut flag = flag;
-    for &(bit, name) in &NI_FLAGS {
+    for &(bit, name) in NI_FLAGS {
         if flag == 0 {
             break;
         }
@@ -428,14 +435,14 @@ fn detect(options: &LocalIpOptions) -> Result<Vec<LocalIpResult>, &'static str> 
                 adapters.push(Adapter {
                     // SAFETY: ifa copies the entry's fields; ifa_name stays a
                     // pointer into the list freed after detection.
-                    mac: libc::ifaddrs {
-                        ifa_next: std::ptr::null_mut(),
-                        ifa_name: ifa.ifa_name,
-                        ifa_flags: ifa.ifa_flags,
-                        ifa_addr: ifa.ifa_addr,
-                        ifa_netmask: ifa.ifa_netmask,
-                        ifa_ifu: ifa.ifa_ifu,
-                        ifa_data: ifa.ifa_data,
+                    // Shallow-copy the whole libc entry: BSD ifaddrs has no
+                    // `ifa_ifu` union field (it uses `ifa_dstaddr`). Only
+                    // name/flags/addr are read from this copy, and ifa_next
+                    // is cleared so it is never walked as a list.
+                    mac: {
+                        let mut copy = ifa;
+                        copy.ifa_next = std::ptr::null_mut();
+                        copy
                     },
                     ipv4: Vec::new(),
                     ipv6: Vec::new(),
@@ -449,6 +456,8 @@ fn detect(options: &LocalIpOptions) -> Result<Vec<LocalIpResult>, &'static str> 
             // The node pointer stays valid until freeifaddrs below.
             libc::AF_INET if show & show::IPV4 != 0 => adapter.ipv4.push(node),
             libc::AF_INET6 if show & show::IPV6 != 0 => adapter.ipv6.push(node),
+            // MAC addresses come from AF_PACKET's sockaddr_ll on Linux only.
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             libc::AF_PACKET => adapter.mac = ifa,
             _ => {},
         }
@@ -562,6 +571,7 @@ fn detect(options: &LocalIpOptions) -> Result<Vec<LocalIpResult>, &'static str> 
             }
         }
 
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         if show & show::MAC != 0 && !adapter.mac.ifa_addr.is_null() {
             // SAFETY: upstream reinterprets the entry's ifa_addr as a
             // sockaddr_ll without checking the family, so an AF_INET entry's
@@ -620,6 +630,8 @@ fn detect(options: &LocalIpOptions) -> Result<Vec<LocalIpResult>, &'static str> 
                 const ETHTOOL_GSET: u32 = 0x00000001;
                 const SIOCETHTOOL: u64 = 0x8946;
 
+                // SIOCGIFMTU and ifr_ifru.ifru_mtu are Linux-only libc items.
+                #[cfg(any(target_os = "linux", target_os = "android"))]
                 if show & show::MTU != 0 {
                     // SAFETY: ifreq ioctl with an owned buffer.
                     if unsafe { portable_ioctl(sockfd, libc::SIOCGIFMTU, &mut ifr as *mut _) } == 0 {

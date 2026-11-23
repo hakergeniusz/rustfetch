@@ -1,0 +1,55 @@
+name: Portability
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+# `cargo check` type-checks without linking, so no cross linker or sysroot is
+# needed. These are real gates: every target below was verified locally with
+# Rust 1.100.0 via `rustup target add <t> && cargo --locked check --target <t>`.
+jobs:
+  cross-check:
+    name: cargo check (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - riscv64gc-unknown-linux-gnu
+          - i686-unknown-linux-gnu
+          - armv7-unknown-linux-gnueabihf
+          - x86_64-unknown-freebsd
+          - x86_64-unknown-netbsd
+          # OpenBSD/DragonFly are tier-3: see "Skipped targets" below.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ${{ matrix.target }} standard library
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Check (${{ matrix.target }})
+        run: cargo --locked check --target ${{ matrix.target }}
+
+# Skipped targets (documented, not silently dropped):
+#
+# * FreeBSD and NetBSD now type-check: SYS_statx, TCP_QUICKACK,
+#   TCP_USER_TIMEOUT, MSG_FASTOPEN/TCP_FASTOPEN and RTLD_NODELETE are all
+#   cfg-gated with neutral fallbacks. This is COMPILE coverage only; the
+#   standalone FreeBSD port at platform/freebsd/ is the runtime-facing build
+#   and has its own gate (freebsd.yml).
+#
+# * x86_64-unknown-openbsd and x86_64-unknown-dragonfly: tier-3 targets. On
+#   stable Rust 1.100.0 `rustup target add <target>` fails with
+#   "toolchain '1.100.0-x86_64-unknown-linux-gnu' has no prebuilt artifacts
+#   available for target '<target>'", so `cargo check` stops at `libc` with
+#   E0463 ("can't find crate for `core`"). They need nightly plus
+#   `cargo -Zbuild-std`, which is intentionally not a stable CI gate here.
