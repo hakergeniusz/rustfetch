@@ -22,7 +22,7 @@ native builds, **not** parity builds — see [Known limitations](#known-limitati
 | Capability | Linux (main crate) | Windows (native port) | macOS (native port) |
 |---|---|---|---|
 | Build target | `x86_64-unknown-linux-gnu` (and other Linux targets) | `x86_64-pc-windows-msvc` | universal (`arm64` + `x86_64`) |
-| fastfetch 2.71.0 parity | **Full** (pipe, TTY, JSON) | No | No |
+| fastfetch 2.71.0 parity | **Full** with `RUSTFETCH_PARITY_VERSION=1` (pipe, TTY, JSON, any terminal size) | No | No |
 | Modules | all 76 modules | 11 core modules | 11 core modules |
 | Custom `format` engine | Full (`{}`/`{N}`/`{name}`, conditionals, colors, padding, ranges, …) | Not implemented | Not implemented |
 | HyFetch presets & OKHSL | Exact (134 vendored presets) | Basic preset support, not exact | Basic preset support, not exact |

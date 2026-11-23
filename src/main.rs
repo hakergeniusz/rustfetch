@@ -21,6 +21,7 @@ mod module_formats;
 mod module_icons;
 mod modules;
 mod networking;
+mod parity;
 mod platform;
 mod render;
 mod settings;
@@ -280,8 +281,13 @@ fn main() {
         .clone()
         .or_else(|| cfg.map(|config| config.player_name.clone()))
         .unwrap_or_default();
-    let disable_linewrap =
-        resolve_disable_linewrap(cli.disable_linewrap, cfg.and_then(|config| config.disable_linewrap));
+    // Parity mode mirrors fastfetch's own default (disableLinewrap=false),
+    // even though rustfetch normally cuts overlong lines at the terminal edge.
+    let disable_linewrap = if parity::enabled() {
+        false
+    } else {
+        resolve_disable_linewrap(cli.disable_linewrap, cfg.and_then(|config| config.disable_linewrap))
+    };
     let hide_cursor = cli
         .hide_cursor
         .or(cfg.and_then(|config| config.hide_cursor))

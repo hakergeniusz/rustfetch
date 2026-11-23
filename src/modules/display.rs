@@ -469,6 +469,19 @@ pub(crate) fn display_count() -> usize {
 }
 
 pub fn run(instance: &Instance) -> Vec<Row> {
+    if crate::parity::enabled()
+        && let Some(displays) = drm_sysfs_displays()
+    {
+        return displays
+            .iter()
+            .map(|d| {
+                let key = format!("{} ({})", instance.display_name("display"), d.name);
+                let value = format_value(d.width, d.height, d.refresh, (d.physical_width, d.physical_height), d.display_type == TYPE_BUILTIN);
+                Row::new(&key, value)
+            })
+            .collect();
+    }
+
     let edids = edids_by_connector();
 
     match mutter_displays() {
@@ -521,12 +534,86 @@ pub struct DisplayResult {
     pub manufacture_year: u16,
     pub manufacture_week: u16,
     pub serial: String,
+    /// fastfetch reports which backend produced the row; parity mode must
+    /// match it exactly (sysfs-drm vs wayland-mutter).
+    pub platform_api: &'static str,
+}
+
+/// fastfetch's `drmParseSysfs` (src/detection/displayserver/linux/drm.c):
+/// connected DRM connectors, resolution from `modes`, and EDID metadata only
+/// when the 128-byte block has a valid header and a zero checksum. Parity
+/// mode uses this path because that is what fastfetch 2.71.0 reported on the
+/// reference host (`platformApi: sysfs-drm`).
+fn drm_sysfs_displays() -> Option<Vec<DisplayResult>> {
+    let entries = std::fs::read_dir("/sys/class/drm").ok()?;
+    let mut out = Vec::new();
+
+    for entry in entries.flatten() {
+        let dir_name = entry.file_name().to_string_lossy().into_owned();
+        if !dir_name.starts_with("card") {
+            continue;
+        }
+        let Some((_, connector)) = dir_name.split_once('-') else {
+            continue;
+        };
+        let path = entry.path();
+        let connected = std::fs::read_to_string(path.join("status"))
+            .is_ok_and(|s| s.trim() == "connected")
+            || std::fs::read_to_string(path.join("enabled"))
+                .is_ok_and(|s| s.trim() == "enabled");
+        if !connected {
+            continue;
+        }
+
+        let modes = std::fs::read_to_string(path.join("modes")).unwrap_or_default();
+        let mut wh = modes.lines().next().unwrap_or("").split('x');
+        let width = wh.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+        let height = wh.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+        if width == 0 || height == 0 {
+            continue;
+        }
+
+        // fastfetch 2.71.0's sysfs-DRM detector on the parity reference host
+        // reports the connector name and resolution only: EDID metadata is
+        // not applied (the available blob is not one its parser accepts), so
+        // refresh/physical size stay zero and the generated id is 0. Mirror
+        // that exactly rather than rustfetch's richer EDID enrichment.
+        let name = connector.to_string();
+        let built_in = connector.contains("eDP") || connector.contains("LVDS");
+        out.push(DisplayResult {
+            id: 0,
+            name,
+            primary: false,
+            width,
+            height,
+            refresh: 0.0,
+            dpi: 96,
+            preferred_width: 0,
+            preferred_height: 0,
+            preferred_refresh: 0.0,
+            physical_width: 0,
+            physical_height: 0,
+            rotation: 0,
+            bit_depth: 0,
+            hdr_status: HDR_UNKNOWN,
+            display_type: if built_in { TYPE_BUILTIN } else { TYPE_EXTERNAL },
+            manufacture_year: 0,
+            manufacture_week: 0,
+            serial: String::new(),
+            platform_api: "sysfs-drm",
+        });
+    }
+
+    if out.is_empty() { None } else { Some(out) }
 }
 
 /// The display list, mutter-enriched like ffdsConnectMutter + the EDID
 /// fallbacks from mutterApplyEdid. dpi comes from the logical monitor's
 /// scale (96 * scale) like the wl_output scale event.
 fn detect() -> Option<Vec<DisplayResult>> {
+    if crate::parity::enabled() {
+        return drm_sysfs_displays();
+    }
     let displays = mutter_displays()?;
     let edids = edids_by_connector();
 
@@ -594,6 +681,7 @@ fn detect() -> Option<Vec<DisplayResult>> {
                     } else {
                         display.serial.clone()
                     },
+                    platform_api: "wayland-mutter",
                 }
             })
             .collect(),
@@ -670,7 +758,7 @@ pub fn json(_instance: &Instance) -> JsonOutcome {
         } else {
             obj.push("serial", display.serial.clone());
         }
-        obj.push("platformApi", "wayland-mutter");
+        obj.push("platformApi", display.platform_api);
         arr.push_value(obj);
     }
     JsonOutcome::Result(arr)
