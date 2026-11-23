@@ -1,9 +1,11 @@
-rustfetch (0.2.7-1) unstable; urgency=medium
+rustfetch (0.2.8-1) unstable; urgency=medium
 
-  * Default --disable-linewrap to true so overlong lines are cut at the
-    terminal edge instead of wrapping their tail onto the next line.
-  * Android/Termux portability: gate glibc-only APIs and portably cast
-    ioctl requests; report the real architecture in --version.
+  * Byte-exact RUSTFETCH_PARITY_VERSION mode (fastfetch line-wrap default
+    and sysfs-DRM display detection).
+  * Portability: i686, armv7, riscv64, FreeBSD and NetBSD compile checks;
+    standalone FreeBSD port; persistent cargo cache at /var/cache/zstd5.
+  * Installer works from sh/bash/zsh on Linux and macOS, with broader
+    distro hints and 5 installer contract tests.
 
  -- hakergeniusz <hakergeniusz@users.noreply.github.com>  Mon, 23 Nov 2026 12:00:00 +0000
 

@@ -3,7 +3,7 @@
 [![Rust](https://img.shields.io/badge/Rust-2024-orange?logo=rust)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux-yellow?logo=linux)](https://kernel.org/)
-[![Version](https://img.shields.io/badge/version-0.2.7-brightgreen)](https://github.com/hakergeniusz/rustfetch/releases)
+[![Version](https://img.shields.io/badge/version-0.2.8-brightgreen)](https://github.com/hakergeniusz/rustfetch/releases)
 [![fastfetch parity](https://img.shields.io/badge/output-parity%20%F0%9F%92%9E%20fastfetch%202.71.0-purple)](https://github.com/fastfetch-cli/fastfetch)
 
 > A **fastfetch-** and **hyfetch-inspired** system information tool, written in Rust.
@@ -136,7 +136,7 @@ Lower is better. Full script: [`scripts/compare-tools.sh`](scripts/compare-tools
 
 | Tool | Wall time | Memory | vs rustfetch |
 |---|---:|---:|---|
-| **rustfetch 0.2.7** | **4.7 ms ± 0.3** | **7.3 MiB** | — |
+| **rustfetch 0.2.8** | **4.7 ms ± 0.3** | **7.3 MiB** | — |
 | fastfetch 2.71.0 | 10.6 ms ± 0.5 | 12.2 MiB | 2.2× slower, 1.7× RAM |
 | hyfetch 2.1.1 | 8.7 ms ± 0.5 | 7.5 MiB | 1.8× slower, +3% RAM |
 | neofetch 7.1.0 | 248.4 ms ± 9.8 | 19.3 MiB | 52.5× slower, 2.6× RAM |

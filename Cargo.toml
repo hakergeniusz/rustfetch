@@ -1,6 +1,6 @@
 [package]
 name = "rustfetch"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2024"
 description = "A fastfetch- and hyfetch-inspired system information tool written in Rust"
 license = "MIT"
