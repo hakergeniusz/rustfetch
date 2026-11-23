@@ -559,7 +559,7 @@ impl Cli {
                     if std::env::var_os("RUSTFETCH_PARITY_VERSION").is_some() {
                         println!("fastfetch 2.71.0 (x86_64)");
                     } else {
-                        println!("rustfetch {} (x86_64)", env!("CARGO_PKG_VERSION"));
+                        println!("rustfetch {} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::ARCH);
                     }
                     std::process::exit(0);
                 },
