@@ -66,7 +66,7 @@ described in the platform doc.
 ## 🎨 Showcase
 
 [`examples/showcase.jsonc`](examples/showcase.jsonc) — a fastfetch-style layout
-with HyFetch's transgender flag gradient:
+with a standard Ubuntu orange logo:
 
 ```bash
 rustfetch --config examples/showcase.jsonc
@@ -95,9 +95,8 @@ writes the ANSI-colored capture for a screenshot.
                   Disk  7.2 TiB / 16.0 TiB (45%) - btrfs
 ```
 
-In a real terminal the logo is colored with the exact flag RGB values
-`#55CDFD → #F6AAB7 → #FFFFFF → #F6AAB7 → #55CDFD`, spread once across every
-line — byte-for-byte identical to HyFetch 2.1.1.
+In a real terminal the logo uses standard Ubuntu orange (`#E95420`, RGB
+`233,84,32`) on every colored line - a single solid color, no gradient.
 
 ---
 
