@@ -4,7 +4,7 @@
 //! detection/disk/disk_linux.c. Text skips types outside the default
 //! showTypes (regular/external/read-only); JSON reports every entry.
 
-use std::os::unix::fs::MetadataExt;
+use std::{os::unix::fs::MetadataExt, sync::mpsc, time::Duration};
 
 use crate::{
     instance::Instance,
@@ -192,25 +192,44 @@ fn detect_type(disks: &[DiskResult], current: &mut DiskResult, entry: &MountEntr
     }
 }
 
-/// detectStats: statvfs usage and the statx birth time.
-fn detect_stats(disk: &mut DiskResult) {
-    let Ok(c_path) = std::ffi::CString::new(disk.mountpoint.as_str()) else {
-        return;
+/// How long a mount may take to answer statvfs/statx before it is treated as
+/// unreachable. On a dead network mount (sshfs, NFS, ...) these syscalls never
+/// return: the caller sits in uninterruptible sleep until the mount recovers,
+/// so probing them synchronously froze the whole run.
+const STATS_TIMEOUT: Duration = Duration::from_millis(200);
+
+/// The fields detectStats keeps out of statvfs/statx.
+struct RawStats {
+    bytes_total: u64,
+    bytes_free: u64,
+    files_total: u32,
+    files_used: u32,
+    create_time: u64,
+}
+
+fn read_stats(c_path: &std::ffi::CString) -> RawStats {
+    let mut stats = RawStats {
+        bytes_total: 0,
+        bytes_free: 0,
+        files_total: 0,
+        files_used: 0,
+        create_time: 0,
     };
+
     let mut fs: libc::statvfs = unsafe { std::mem::zeroed() };
     // SAFETY: c_path is valid for the call; statvfs only writes into fs.
     if unsafe { libc::statvfs(c_path.as_ptr(), &mut fs) } != 0 {
-        return; // zeroed values
+        return stats; // zeroed values
     }
 
     let frsize = fs.f_frsize as u64;
-    disk.bytes_total = fs.f_blocks as u64 * frsize;
+    stats.bytes_total = fs.f_blocks as u64 * frsize;
     // calcType defaults to FREE.
-    disk.bytes_free = fs.f_bfree as u64 * frsize;
+    stats.bytes_free = fs.f_bfree as u64 * frsize;
 
     if fs.f_files >= fs.f_ffree {
-        disk.files_total = fs.f_files as u32;
-        disk.files_used = disk.files_total - fs.f_ffree as u32;
+        stats.files_total = fs.f_files as u32;
+        stats.files_used = stats.files_total - fs.f_ffree as u32;
     }
 
     // SYS_statx is Linux-only; other targets keep create_time unset.
@@ -262,9 +281,43 @@ fn detect_stats(disk: &mut DiskResult) {
         libc::syscall(libc::SYS_statx, 0, c_path.as_ptr(), 0, 0x800u32, &mut stx as *mut Statx)
     };
     if ret == 0 && (stx.mask & 0x800) != 0 && stx.btime.sec > 685065600 {
-        disk.create_time = (stx.btime.sec as u64 * 1000) + (stx.btime.nsec as u64 / 1_000_000);
+        stats.create_time = (stx.btime.sec as u64 * 1000) + (stx.btime.nsec as u64 / 1_000_000);
     }
     }
+
+    stats
+}
+
+/// detectStats: statvfs usage and the statx birth time.
+///
+/// The probe runs on a detached thread with a deadline. A timed-out mount
+/// keeps zeroed stats, so it falls through to the Unknown volume type and is
+/// hidden from the default text output; the abandoned thread cannot keep the
+/// process alive once the probe is abandoned.
+fn detect_stats(disk: &mut DiskResult) {
+    let Ok(c_path) = std::ffi::CString::new(disk.mountpoint.as_str()) else {
+        return;
+    };
+    let (sender, receiver) = mpsc::channel();
+    // Dropping the handle detaches the thread: joining a probe stuck inside a
+    // hung mount would reintroduce the freeze.
+    if std::thread::Builder::new()
+        .name("disk-stats".into())
+        .spawn(move || {
+            let _ = sender.send(read_stats(&c_path));
+        })
+        .is_err()
+    {
+        return;
+    }
+    let Ok(stats) = receiver.recv_timeout(STATS_TIMEOUT) else {
+        return;
+    };
+    disk.bytes_total = stats.bytes_total;
+    disk.bytes_free = stats.bytes_free;
+    disk.files_total = stats.files_total;
+    disk.files_used = stats.files_used;
+    disk.create_time = stats.create_time;
 }
 
 /// ffDetectDisks.
@@ -536,6 +589,17 @@ mod tests {
             vec!["Subvolume", "Read-only"]
         );
         assert!(type_names(VOLUME_REGULAR).is_empty());
+    }
+
+    #[test]
+    fn missing_mountpoint_reports_zero_stats() {
+        let Ok(path) = std::ffi::CString::new("/nonexistent/rustfetch-disk-probe") else {
+            return;
+        };
+        let stats = read_stats(&path);
+        assert_eq!(stats.bytes_total, 0);
+        assert_eq!(stats.files_total, 0);
+        assert_eq!(stats.create_time, 0);
     }
 
     #[test]
