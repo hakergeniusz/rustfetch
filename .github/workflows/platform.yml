@@ -208,9 +208,13 @@ jobs:
           # A tag push can start this job before the release notes are
           # published; create a minimal release first if needed so the
           # upload never races the manual release step.
-          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+          # This job has no checkout, so gh cannot infer the repository from
+          # a git remote; pass it explicitly on every call.
+          if ! gh release view "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release create "${GITHUB_REF_NAME}" --generate-notes \
-              --title "rustfetch ${GITHUB_REF_NAME}"
+              --title "rustfetch ${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}"
           fi
           gh release upload "${GITHUB_REF_NAME}" \
             dist/rustfetch-windows-x86_64.exe \
@@ -221,4 +225,5 @@ jobs:
             dist/rustfetch-windows-aarch64.exe.sha256 \
             dist/rustfetch-macos-universal.sha256 \
             dist/rustfetch-linux-aarch64.sha256 \
+            --repo "${GITHUB_REPOSITORY}" \
             --clobber
