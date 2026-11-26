@@ -1,3 +1,13 @@
+rustfetch (0.2.9-1) unstable; urgency=medium
+
+  * Fix disk detection hanging on unresponsive network mounts: statvfs/statx
+    probes now run on a detached thread with a 200 ms deadline, and timed-out
+    mounts are hidden from default text output.
+  * Website installer wrappers and README one-liners now use the hosted
+    hakergeniusz.github.io/rustfetch/install.sh and install.ps1 URLs.
+
+ -- hakergeniusz <hakergeniusz@users.noreply.github.com>  Thu, 26 Nov 2026 09:00:00 +0000
+
 rustfetch (0.2.8-1) unstable; urgency=medium
 
   * Byte-exact RUSTFETCH_PARITY_VERSION mode (fastfetch line-wrap default

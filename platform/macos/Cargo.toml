@@ -1,6 +1,6 @@
 [package]
 name = "rustfetch"
-version = "0.2.8"
+version = "0.2.9"
 edition = "2024"
 description = "A fastfetch- and hyfetch-inspired system information tool — native macOS build"
 license = "MIT"

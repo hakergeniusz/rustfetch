@@ -1,6 +1,6 @@
 [package]
 name = "rustfetch-setup"
-version = "0.2.8"
+version = "0.2.9"
 edition = "2021"
 description = "Double-clickable Windows installer for rustfetch (no PowerShell, std-only)"
 license = "MIT"
