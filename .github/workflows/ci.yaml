@@ -28,3 +28,23 @@ jobs:
         run: |
           python3 scripts/gen-cli-tests.py target/release/rustfetch
           git diff --exit-code -- tests/cli_flags_generated.rs
+
+  fastfetch-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pin the exact upstream reference instead of relying on whatever
+      # fastfetch version the runner image happens to ship.
+      - name: Download fastfetch 2.71.0 reference
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/fastfetch.tar.gz" \
+            https://github.com/fastfetch-cli/fastfetch/releases/download/2.71.0/fastfetch-linux-amd64.tar.gz
+          tar -xzf "$RUNNER_TEMP/fastfetch.tar.gz" -C "$RUNNER_TEMP"
+          REF="$RUNNER_TEMP/fastfetch-linux-amd64/usr/bin/fastfetch"
+          test "$("$REF" --version-raw)" = "2.71.0"
+
+      - name: Byte-for-byte parity tests
+        env:
+          RUSTFETCH_FASTFETCH: ${{ runner.temp }}/fastfetch-linux-amd64/usr/bin/fastfetch
+        run: cargo --locked test --test fastfetch_parity
