@@ -44,15 +44,19 @@ jobs:
           REF="$RUNNER_TEMP/fastfetch-linux-amd64/usr/bin/fastfetch"
           test "$("$REF" --version-raw)" = "2.71.0"
 
-      - name: Mount namespace support
-        run: |
-          if unshare -Urm -- true; then
-            echo "user namespaces available: distro fixtures will run"
-          else
-            echo "user namespaces unavailable: distro fixtures will skip"
-          fi
-
       - name: Byte-for-byte parity tests
         env:
           RUSTFETCH_FASTFETCH: ${{ runner.temp }}/fastfetch-linux-amd64/usr/bin/fastfetch
         run: cargo --locked test --test fastfetch_parity -- --nocapture
+
+      # Distro fixtures mount a tmpfs over /etc in a private namespace. GitHub
+      # runners block unprivileged user namespaces, so run only those tests as
+      # root; the main suite above still runs unprivileged.
+      - name: Distro identity parity (privileged namespace)
+        env:
+          RUSTFETCH_FASTFETCH: ${{ runner.temp }}/fastfetch-linux-amd64/usr/bin/fastfetch
+        run: |
+          BIN=$(cargo --locked test --no-run --test fastfetch_parity --message-format=json \
+            | python3 -c 'import json,sys; print(next(m["executable"] for m in (json.loads(l) for l in sys.stdin if l.startswith("{")) if m.get("profile",{}).get("test") and m.get("target",{}).get("name")=="fastfetch_parity"))')
+          test -n "$BIN"
+          sudo env RUSTFETCH_FASTFETCH="$RUSTFETCH_FASTFETCH" "$BIN" --nocapture distro::

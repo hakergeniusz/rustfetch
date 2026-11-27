@@ -61,7 +61,10 @@ the child exits; this exercises the same code path a user sees in a terminal.
 The `fastfetch-parity` job in `.github/workflows/ci.yaml` downloads the pinned
 2.71.0 Linux tarball from the upstream release, checks its version, and runs
 only this test suite. No assumptions are made about the runner image's
-fastfetch version.
+fastfetch version. GitHub runners block unprivileged user namespaces, so a
+second step runs just the two `distro::` tests under `sudo` after locating the
+test binary from `cargo test --no-run --message-format=json`. The other tests
+always run as the normal user.
 
 ## Adding a case
 
