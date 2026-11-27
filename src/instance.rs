@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::sync::{Mutex, OnceLock};
 
-use crate::{cli::Cli, format::DisplayFormat, util};
+use crate::{cli::Cli, format::DisplayFormat};
 
 /// The title/key colors fastfetch derives from the logo definition
 /// (colorTitle = colors[0], colorKeys = colors[1]); set even when the
@@ -220,21 +220,11 @@ impl Instance {
 
         let color = !pipe && !cli.format_json;
 
-        let mut distro_id = None;
-        let mut distro_name = None;
-        let mut distro_like = Vec::new();
-        if let Some(content) = util::read_file("/etc/os-release") {
-            for (key, value) in util::parse_kv(&content) {
-                match key {
-                    "ID" => distro_id = Some(value.to_lowercase()),
-                    "PRETTY_NAME" => distro_name = Some(value.to_string()),
-                    "ID_LIKE" => {
-                        distro_like = value.split_whitespace().map(|v| v.to_lowercase()).collect();
-                    },
-                    _ => {},
-                }
-            }
-        }
+        // Use the same quirked identity as the OS module (Ubuntu flavours,
+        // Fedora Atomic variants, LMDE, ...), so logo detection matches
+        // fastfetch's post-detect logo selection.
+        let (distro_id, distro_name, distro_like) =
+            crate::modules::os::OsResult::detect().identity();
 
         Self {
             pipe,
