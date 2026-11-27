@@ -98,25 +98,26 @@ fn preview(bytes: &[u8]) -> String {
     format!("{text:?}")
 }
 
-fn assert_pair(reference: &Reference, args: &[&str], scenario: &[(&str, &str)]) {
-    let upstream = capture(&reference.path, false, args, scenario);
-    let local = capture(Path::new(BIN), true, args, scenario);
-    assert_eq!(
-        upstream.2, local.2,
-        "exit status differs: args={args:?} scenario={scenario:?}"
-    );
+fn assert_captured(upstream: Captured, local: Captured, context: &str) {
+    assert_eq!(upstream.2, local.2, "exit status differs: {context}");
     assert_eq!(
         upstream.1, local.1,
-        "stderr differs: args={args:?} scenario={scenario:?}\nfastfetch: {}\nrustfetch: {}",
+        "stderr differs: {context}\nfastfetch: {}\nrustfetch: {}",
         preview(&upstream.1),
         preview(&local.1)
     );
     assert_eq!(
         upstream.0, local.0,
-        "stdout differs: args={args:?} scenario={scenario:?}\nfastfetch: {}\nrustfetch: {}",
+        "stdout differs: {context}\nfastfetch: {}\nrustfetch: {}",
         preview(&upstream.0),
         preview(&local.0)
     );
+}
+
+fn assert_pair(reference: &Reference, args: &[&str], scenario: &[(&str, &str)]) {
+    let upstream = capture(&reference.path, false, args, scenario);
+    let local = capture(Path::new(BIN), true, args, scenario);
+    assert_captured(upstream, local, &format!("args={args:?} scenario={scenario:?}"));
 }
 
 /// First quoted alias on each `--list-logos` line, e.g. `"Amazon Linux" "amzn"`
@@ -302,6 +303,133 @@ mod pty {
                     "PTY output differs at {cols} columns with {scenario:?}\nfastfetch: {}\nrustfetch: {}",
                     preview(&upstream),
                     preview(&local)
+                );
+            }
+        }
+    }
+}
+
+/// Distro identities are simulated with a private mount namespace: a tmpfs is
+/// mounted over `/etc` and a fixture os-release is copied into it. Both
+/// binaries then read that fake distro instead of the host's, including the
+/// distro logo chosen from the quirked identity.
+#[cfg(target_os = "linux")]
+mod distro {
+    use super::*;
+    use std::fs;
+
+    const FIXTURE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/os-release");
+
+    // Inside the namespace, `$0` is the placeholder and `$@` are the args.
+    const SCRIPT: &str = "set -e\n\
+        mount -t tmpfs tmpfs /etc\n\
+        cp \"$RF_FIXTURE\" /etc/os-release\n\
+        if [ -n \"$RF_PARITY\" ]; then export RUSTFETCH_PARITY_VERSION=1; fi\n\
+        exec \"$RF_BIN\" \"$@\"\n";
+
+    fn unshare_supported() -> bool {
+        static SUPPORTED: OnceLock<bool> = OnceLock::new();
+        *SUPPORTED.get_or_init(|| {
+            Command::new("unshare")
+                .args(["-Urm", "--", "true"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success())
+        })
+    }
+
+    fn fixture(name: &str) -> PathBuf {
+        Path::new(FIXTURE_DIR).join(format!("{name}.release"))
+    }
+
+    fn capture_distro(
+        bin: &Path,
+        parity: bool,
+        os_release: &Path,
+        args: &[&str],
+        scenario: &[(&str, &str)],
+    ) -> Captured {
+        let mut command = Command::new("unshare");
+        command
+            .args(["-Urm", "--", "bash", "-c", SCRIPT, "rustfetch"])
+            .args(args)
+            .env("RF_FIXTURE", os_release)
+            .env("RF_BIN", bin)
+            .env("RF_PARITY", if parity { "1" } else { "" })
+            .env("NO_CONFIG", "1")
+            .env_remove("RUSTFETCH_PARITY_VERSION")
+            .env_remove("XDG_CONFIG_DIRS")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        for (key, value) in scenario {
+            command.env(key, value);
+        }
+        let out = command
+            .output()
+            .unwrap_or_else(|err| panic!("spawn unshare failed: {err}"));
+        (out.stdout, out.stderr, out.status.code())
+    }
+
+    fn fixture_names() -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(FIXTURE_DIR)
+            .unwrap_or_else(|err| panic!("read {FIXTURE_DIR} failed: {err}"))
+            .map(|entry| {
+                let path = entry.unwrap_or_else(|err| panic!("read fixture failed: {err}")).path();
+                path.file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or_else(|| panic!("bad fixture name: {}", path.display()))
+                    .to_string()
+            })
+            .collect();
+        names.sort();
+        assert!(names.len() >= 10, "only {} distro fixtures", names.len());
+        names
+    }
+
+    #[test]
+    fn distro_identities_match_in_pipe_and_json_modes() {
+        let reference = reference_or_skip!();
+        if !unshare_supported() {
+            eprintln!("skipping distro parity test; unshare -Urm is not available");
+            return;
+        }
+        for name in fixture_names() {
+            let os_release = fixture(&name);
+            for args in [
+                &["--pipe", "--structure", "OS"][..],
+                &["--format", "json", "--structure", "OS"][..],
+            ] {
+                let upstream =
+                    capture_distro(&reference.path, false, &os_release, args, &[]);
+                let local = capture_distro(Path::new(BIN), true, &os_release, args, &[]);
+                assert_captured(upstream, local, &format!("distro={name} args={args:?}"));
+            }
+        }
+    }
+
+    #[test]
+    fn ubuntu_flavours_match_with_xdg_config_dirs() {
+        let reference = reference_or_skip!();
+        if !unshare_supported() {
+            eprintln!("skipping Ubuntu flavour parity test; unshare -Urm is not available");
+            return;
+        }
+        let os_release = fixture("ubuntu");
+        for dirs in ["/etc/xdg/kubuntu", "/etc/xdg/xfce", "/etc/xdg/mate"] {
+            let scenario = [("XDG_CONFIG_DIRS", dirs)];
+            for args in [
+                &["--pipe", "--structure", "OS"][..],
+                &["--format", "json", "--structure", "OS"][..],
+            ] {
+                let upstream = capture_distro(&reference.path, false, &os_release, args, &scenario);
+                let local = capture_distro(Path::new(BIN), true, &os_release, args, &scenario);
+                assert_captured(
+                    upstream,
+                    local,
+                    &format!("ubuntu flavour={dirs} args={args:?}"),
                 );
             }
         }

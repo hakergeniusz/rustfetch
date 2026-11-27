@@ -128,10 +128,11 @@ line — byte-for-byte identical to HyFetch 2.1.1.
   this pins the upstream version string, forces fastfetch's
   `disableLinewrap=false` default so overlong lines are left to the terminal
   instead of being cut, and switches the Display module to fastfetch's
-  sysfs-DRM detection. Automated comparisons cover every distro logo, 12
-  locale/terminal/session environments and raw PTY output from 20 to 200
-  columns; see [parity testing](docs/fastfetch-parity-testing.md). Normal
-  invocations keep rustfetch's own defaults (including cutting overlong lines).
+  sysfs-DRM detection. Automated comparisons cover every distro logo, 12 real
+  distro identities, 12 locale/terminal/session environments and raw PTY
+  output from 20 to 200 columns; see
+  [parity testing](docs/fastfetch-parity-testing.md). Normal invocations keep
+  rustfetch's own defaults (including cutting overlong lines).
 - **Format-args engine** — every module's custom `format` string supports
   `{}`/`{N}`/`{name}`, conditionals, colors, padding, truncation, constants
   and ranges.

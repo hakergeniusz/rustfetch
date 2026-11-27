@@ -39,6 +39,17 @@ rustfetch is launched with `RUSTFETCH_PARITY_VERSION=1`.
 | `environment_matrix_matches_in_pipe_and_json_modes` | 12 environments (locale, terminal, color depth, timezone, SSH, CI, desktop session, shell) in pipe and JSON modes |
 | `distro_logo_color_overrides_match_across_environments` | `--logo-color-1`/`--logo-color-2` on five distro logos under four environments |
 | `pty_output_matches_at_multiple_widths_and_terminals` | Raw PTY bytes at 20, 40, 80, 120 and 200 columns with xterm-256color, dumb, `NO_COLOR=1` and truecolor |
+| `distro::distro_identities_match_in_pipe_and_json_modes` | 12 real distro identities (Ubuntu, Debian, Fedora, Arch, Alpine, Linux Mint, openSUSE, Gentoo, Void, NixOS, RHEL, Manjaro) in pipe and JSON |
+| `distro::ubuntu_flavours_match_with_xdg_config_dirs` | Kubuntu, Xubuntu and Ubuntu MATE identities via `XDG_CONFIG_DIRS` |
+
+The distro tests mount a tmpfs over `/etc` inside a private user namespace and
+copy a fixture `os-release` into it, so both binaries see a fake distro instead
+of the host. This exercises OS detection, distro logo selection and the
+quirked identity that fastfetch applies after parsing os-release (for example
+Ubuntu's pretty name uses `NAME + VERSION`, which carries the codename).
+Fixtures live in `tests/fixtures/os-release/`. If `unshare -Urm` is unavailable
+or forbidden, those tests print a skip message and pass; add the missing
+fixture rather than weakening the assertion.
 
 The comparisons use the deterministic `Separator` module and an explicit logo,
 so live system values cannot drift between the two invocations. Terminal width
