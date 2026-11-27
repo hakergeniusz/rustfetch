@@ -44,7 +44,15 @@ jobs:
           REF="$RUNNER_TEMP/fastfetch-linux-amd64/usr/bin/fastfetch"
           test "$("$REF" --version-raw)" = "2.71.0"
 
+      - name: Mount namespace support
+        run: |
+          if unshare -Urm -- true; then
+            echo "user namespaces available: distro fixtures will run"
+          else
+            echo "user namespaces unavailable: distro fixtures will skip"
+          fi
+
       - name: Byte-for-byte parity tests
         env:
           RUSTFETCH_FASTFETCH: ${{ runner.temp }}/fastfetch-linux-amd64/usr/bin/fastfetch
-        run: cargo --locked test --test fastfetch_parity
+        run: cargo --locked test --test fastfetch_parity -- --nocapture
